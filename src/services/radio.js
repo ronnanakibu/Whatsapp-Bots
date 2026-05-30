@@ -33,7 +33,8 @@ async function youtubeSearch(query) {
     const v = results[0]
     return {
         title:    v.title || 'Unknown',
-        url:      v.url,
+        // Konstruksi URL kanonik dari ID — v.url kadang tidak dikenali play-dl.stream()
+        url:      `https://www.youtube.com/watch?v=${v.id}`,
         duration: v.durationInSec || 0,
         thumbnail: v.thumbnails?.[0]?.url || null
     }
@@ -48,7 +49,8 @@ async function youtubeGetInfo(url) {
     const d = info.video_details
     return {
         title:    d.title || 'Unknown',
-        url:      d.url,
+        // Konstruksi URL kanonik dari ID biar stream() tidak gagal
+        url:      `https://www.youtube.com/watch?v=${d.id}`,
         duration: d.durationInSec || 0,
         thumbnail: d.thumbnails?.[0]?.url || null
     }
@@ -60,7 +62,18 @@ async function youtubeGetInfo(url) {
  */
 async function youtubeStream(url) {
     const playdl = await getPlayDl()
-    // quality: 0 = best audio quality
+
+    // Log URL untuk debug
+    process.stdout.write(`\x1b[90m[Radio] youtubeStream URL: ${url}\x1b[0m\n`)
+
+    // Validasi URL sebelum stream agar error lebih informatif
+    const urlType = await playdl.validate(url)
+    process.stdout.write(`\x1b[90m[Radio] URL type: ${urlType}\x1b[0m\n`)
+
+    if (!urlType || urlType === 'search') {
+        throw new Error(`play-dl tidak mendukung URL ini (type=${urlType}): ${url}`)
+    }
+
     const result = await playdl.stream(url, { quality: 0 })
     return result.stream  // PassThrough/Readable stream
 }
