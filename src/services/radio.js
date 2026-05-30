@@ -10,25 +10,16 @@ import path from 'path'
 import { logger } from '../utils/logger.js'
 
 // ─────────────────────────────────────────────
-// YOUTUBE HELPERS (Node.js native, no binary needed)
+// YOUTUBE HELPERS — play-dl (Node.js native, no binary)
 // ─────────────────────────────────────────────
 
-// Lazy-load ytdl-core to avoid startup crash if not yet installed
-async function getYtdlCore() {
+// Lazy-load play-dl agar tidak crash saat startup kalau belum terinstall
+async function getPlayDl() {
     try {
-        const mod = await import('@distube/ytdl-core')
+        const mod = await import('play-dl')
         return mod.default ?? mod
     } catch (e) {
-        throw new Error(`@distube/ytdl-core belum terinstall. Restart bot untuk install otomatis. (${e.message})`)
-    }
-}
-
-async function getYoutubeSR() {
-    try {
-        const mod = await import('youtube-sr')
-        return mod.default?.default ?? mod.default ?? mod
-    } catch (e) {
-        throw new Error(`youtube-sr belum terinstall. Restart bot untuk install otomatis. (${e.message})`)
+        throw new Error(`play-dl belum terinstall. Restart bot untuk install otomatis. (${e.message})`)
     }
 }
 
@@ -36,15 +27,15 @@ async function getYoutubeSR() {
  * Cari lagu di YouTube. Return { title, url, duration (detik), thumbnail }.
  */
 async function youtubeSearch(query) {
-    const YouTube = await getYoutubeSR()
-    const results = await YouTube.search(query, { limit: 1, type: 'video' })
-    if (!results || results.length === 0) throw new Error('Lagu tidak ditemukan di YouTube.')
+    const playdl = await getPlayDl()
+    const results = await playdl.search(query, { limit: 1, source: { youtube: 'video' } })
+    if (!results?.length) throw new Error('Lagu tidak ditemukan di YouTube.')
     const v = results[0]
     return {
-        title: v.title || 'Unknown',
-        url: `https://www.youtube.com/watch?v=${v.id}`,
-        duration: Math.floor((v.duration || 0) / 1000),  // youtube-sr returns ms
-        thumbnail: v.thumbnail?.url || v.thumbnail || null
+        title:    v.title || 'Unknown',
+        url:      v.url,
+        duration: v.durationInSec || 0,
+        thumbnail: v.thumbnails?.[0]?.url || null
     }
 }
 
@@ -52,39 +43,28 @@ async function youtubeSearch(query) {
  * Ambil info lagu dari URL langsung (bukan search).
  */
 async function youtubeGetInfo(url) {
-    const ytdl = await getYtdlCore()
-    const info = await ytdl.getBasicInfo(url)
-    const d = info.videoDetails
+    const playdl = await getPlayDl()
+    const info = await playdl.video_info(url)
+    const d = info.video_details
     return {
-        title: d.title || 'Unknown',
-        url,
-        duration: parseInt(d.lengthSeconds) || 0,
-        thumbnail: d.thumbnails?.slice(-1)[0]?.url || null
+        title:    d.title || 'Unknown',
+        url:      d.url,
+        duration: d.durationInSec || 0,
+        thumbnail: d.thumbnails?.[0]?.url || null
     }
 }
 
 /**
- * Ambil URL audio stream terbaik dari video YouTube.
- * Return: URL CDN yang langsung bisa dipakai ffmpeg.
+ * Buat audio stream dari URL YouTube via play-dl.
+ * Return: Readable stream yang bisa di-pipe ke ffmpeg stdin.
  */
-async function youtubeGetAudioUrl(videoUrl) {
-    const ytdl = await getYtdlCore()
-    const info = await ytdl.getInfo(videoUrl)
-    
-    // Coba audioonly dulu, fallback ke format apapun yang punya audio
-    let format = ytdl.chooseFormat(info.formats, {
-        filter: 'audioonly',
-        quality: 'highestaudio'
-    })
-    if (!format?.url) {
-        format = ytdl.chooseFormat(info.formats, {
-            filter: f => f.hasAudio,
-            quality: 'highestaudio'
-        })
-    }
-    if (!format?.url) throw new Error('Tidak bisa mendapatkan audio stream URL dari YouTube.')
-    return format.url
+async function youtubeStream(url) {
+    const playdl = await getPlayDl()
+    // quality: 0 = best audio quality
+    const result = await playdl.stream(url, { quality: 0 })
+    return result.stream  // PassThrough/Readable stream
 }
+
 
 const TEMP_DIR = path.resolve('./storage/media/radio-temp')
 const RADIO_PORT = parseInt(process.env.RADIO_PORT ?? '8080')
@@ -143,6 +123,7 @@ class RadioService extends EventEmitter {
     #queue = []          // Track[]
     #currentTrack = null        // Track | null
     #ffmpeg = null        // FFmpeg child process
+    #audioStream = null   // play-dl audio stream (Readable)
     #clients = new Set()   // HTTP response streams
     #isPlaying = false
     #activeFx = 'normal'
@@ -171,24 +152,21 @@ class RadioService extends EventEmitter {
     // ─────────────────────────────────────────────
 
     /**
-     * Search YouTube dan return info lagu via ytdl-core + youtube-sr (Node.js native).
+     * Search YouTube dan return info lagu via play-dl (Node.js native).
      * Return Track object atau throw kalau tidak ketemu.
      */
     async search(query, requestedBy) {
         const isUrl = /^https?:\/\//.test(query)
 
-        let info
-        if (isUrl) {
-            info = await youtubeGetInfo(query)
-        } else {
-            info = await youtubeSearch(query)
-        }
+        const info = isUrl
+            ? await youtubeGetInfo(query)
+            : await youtubeSearch(query)
 
         return new Track({
-            title:       info.title,
-            url:         info.url,
-            duration:    info.duration,
-            thumbnail:   info.thumbnail,
+            title:     info.title,
+            url:       info.url,
+            duration:  info.duration,
+            thumbnail: info.thumbnail,
             requestedBy
         })
     }
@@ -270,8 +248,8 @@ class RadioService extends EventEmitter {
     }
 
     /**
-     * Stream satu track via ytdl-core → FFmpeg → HTTP clients.
-     * ytdl-core mengambil URL audio CDN, lalu ffmpeg transcode ke MP3.
+     * Stream satu track via play-dl → FFmpeg stdin → HTTP clients.
+     * play-dl langsung pipe audio stream ke ffmpeg — tidak butuh URL extraction.
      */
     async #streamTrack(track) {
         return new Promise(async (resolve, reject) => {
@@ -282,45 +260,41 @@ class RadioService extends EventEmitter {
                 if (EQ_PRESETS[this.#activeEq]) filters.push(EQ_PRESETS[this.#activeEq])
                 const filterStr = filters.join(',')
 
-                // ytdl-core: ambil URL audio CDN (tanpa download)
-                process.stdout.write(`\x1b[36m[Radio] Resolving audio URL for: ${track.title}\x1b[0m\n`)
-                const streamUrl = await youtubeGetAudioUrl(track.url)
-                process.stdout.write(`\x1b[32m[Radio] Audio URL resolved. Starting FFmpeg...\x1b[0m\n`)
+                // play-dl: ambil audio stream langsung (no URL extraction needed)
+                process.stdout.write(`\x1b[36m[Radio] Streaming: ${track.title}\x1b[0m\n`)
+                const audioStream = await youtubeStream(track.url)
+                this.#audioStream = audioStream
+                process.stdout.write(`\x1b[32m[Radio] Stream ready. FFmpeg starting...\x1b[0m\n`)
 
-                // FFmpeg: transcode ke MP3 128kbps untuk streaming
+                // FFmpeg: baca dari stdin (piped dari play-dl), transcode ke MP3
                 const ffArgs = [
-                    '-reconnect', '1',
-                    '-reconnect_streamed', '1',
-                    '-reconnect_delay_max', '5',
-                    '-i', streamUrl,
+                    '-i', 'pipe:0',                 // baca dari stdin
                     '-vn',                          // no video
                     '-acodec', 'libmp3lame',
                     '-ab', '128k',
                     '-ar', '44100',
                     '-ac', '2',
                 ]
-
-                // Inject audio filter kalau ada
                 if (filterStr) ffArgs.push('-af', filterStr)
+                ffArgs.push('-f', 'mp3', '-loglevel', 'error', 'pipe:1')
 
-                ffArgs.push(
-                    '-f', 'mp3',
-                    '-loglevel', 'error',
-                    'pipe:1'                        // output ke stdout
-                )
-
-                const ffProc = spawn('ffmpeg', ffArgs)
+                const ffProc = spawn('ffmpeg', ffArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
                 this.#ffmpeg = ffProc
 
-                // Broadcast setiap chunk ke semua HTTP clients
-                ffProc.stdout.on('data', (chunk) => this.#broadcast(chunk))
-
-                ffProc.stderr.on('data', d => {
-                    logger.debug('[FFmpeg]', d.toString().trim())
+                // Pipe audio stream ke ffmpeg stdin
+                audioStream.pipe(ffProc.stdin)
+                audioStream.on('error', (e) => {
+                    process.stdout.write(`\x1b[33m[Radio] Audio stream error: ${e.message}\x1b[0m\n`)
+                    try { ffProc.stdin?.destroy() } catch (_) {}
                 })
+
+                // Broadcast setiap chunk ke semua HTTP clients
+                ffProc.stdout.on('data', chunk => this.#broadcast(chunk))
+                ffProc.stderr.on('data', d => logger.debug('[FFmpeg]', d.toString().trim()))
 
                 ffProc.on('close', (ffCode) => {
                     this.#ffmpeg = null
+                    this.#audioStream = null
                     if (ffCode === 0 || this.#skipRequested) {
                         resolve()
                     } else {
@@ -328,9 +302,7 @@ class RadioService extends EventEmitter {
                     }
                 })
 
-                ffProc.on('error', (e) => {
-                    reject(new Error(`FFmpeg error: ${e.message}`))
-                })
+                ffProc.on('error', e => reject(new Error(`FFmpeg error: ${e.message}`)))
 
                 // Timeout safety: kalau lagu > 10 menit timeout
                 const maxDuration = Math.min((track.duration || 600) + 30, 660) * 1000
@@ -460,8 +432,12 @@ class RadioService extends EventEmitter {
 
     #killProcesses() {
         clearTimeout(this.#playTimeout)
-        try { this.#ffmpeg?.kill('SIGKILL') } catch (_) { }
+        // Destroy audio stream first agar ffmpeg stdin tidak hanging
+        try { this.#audioStream?.destroy() } catch (_) {}
+        try { this.#ffmpeg?.stdin?.destroy() } catch (_) {}
+        try { this.#ffmpeg?.kill('SIGKILL') } catch (_) {}
         this.#ffmpeg = null
+        this.#audioStream = null
     }
 
     /**
