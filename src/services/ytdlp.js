@@ -19,16 +19,25 @@ const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-
 export function getYtdlpPath() {
     // 1. Dari env
     if (process.env.YTDLP_PATH) {
-        if (fs.existsSync(process.env.YTDLP_PATH)) return process.env.YTDLP_PATH
+        if (fs.existsSync(process.env.YTDLP_PATH)) {
+            ensureExecutable(process.env.YTDLP_PATH)
+            return process.env.YTDLP_PATH
+        }
         botLogger.warn('ytdlp', `YTDLP_PATH set tapi tidak ditemukan: ${process.env.YTDLP_PATH}`)
     }
 
     // 2. Local binary (tanpa suffix)
-    if (fs.existsSync(BIN_PATH) && isValidBinary(BIN_PATH)) return BIN_PATH
+    if (fs.existsSync(BIN_PATH) && isValidBinary(BIN_PATH)) {
+        ensureExecutable(BIN_PATH)
+        return BIN_PATH
+    }
 
-    // 3. Local binary dengan suffix lama
+    // 3. Local binary dengan suffix lama (_linux)
     const legacyPath = path.resolve('./storage/bin/yt-dlp_linux')
-    if (fs.existsSync(legacyPath) && isValidBinary(legacyPath)) return legacyPath
+    if (fs.existsSync(legacyPath) && isValidBinary(legacyPath)) {
+        ensureExecutable(legacyPath)
+        return legacyPath
+    }
 
     // 4. System PATH
     try {
@@ -42,13 +51,28 @@ export function getYtdlpPath() {
 function isValidBinary(filePath) {
     try {
         const stat = fs.statSync(filePath)
-        if (stat.size < 1_000_000) {  // min 1MB — python wrapper ga valid
+        if (stat.size < 1_000_000) {
             botLogger.warn('ytdlp', `Binary terlalu kecil (${(stat.size / 1024).toFixed(0)}KB): ${filePath}`)
             return false
         }
         return true
     } catch (_) {
         return false
+    }
+}
+
+// Auto chmod +x — silent kalau gagal (misal volume read-only)
+function ensureExecutable(filePath) {
+    try {
+        fs.accessSync(filePath, fs.constants.X_OK)
+        // Sudah executable, skip
+    } catch (_) {
+        try {
+            fs.chmodSync(filePath, 0o755)
+            botLogger.info('ytdlp', `chmod +x applied: ${filePath}`)
+        } catch (e) {
+            botLogger.warn('ytdlp', `Gagal chmod +x ${filePath}: ${e.message}`)
+        }
     }
 }
 
