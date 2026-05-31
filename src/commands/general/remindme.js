@@ -15,6 +15,8 @@ const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db'
 function getDb() {
     const db = new Database(DB_PATH)
     db.pragma('journal_mode = WAL')
+
+    // Step 1: buat tabel dasar dulu (tanpa use_call — aman untuk DB lama)
     db.exec(`
         CREATE TABLE IF NOT EXISTS reminders (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,17 +25,24 @@ function getDb() {
             message     TEXT    NOT NULL,
             fire_at     INTEGER NOT NULL,
             fired       INTEGER NOT NULL DEFAULT 0,
-            use_call    INTEGER NOT NULL DEFAULT 1,
             created_at  INTEGER NOT NULL DEFAULT (unixepoch())
         );
-        CREATE INDEX IF NOT EXISTS idx_reminders_fire ON reminders(fire_at, fired);
-        
+
         CREATE TABLE IF NOT EXISTS reminder_prefs (
             user_jid    TEXT    PRIMARY KEY,
             use_call    INTEGER NOT NULL DEFAULT 1,
             updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
         );
     `)
+
+    // Step 2: migrate kolom use_call kalau belum ada
+    try { db.exec('ALTER TABLE reminders ADD COLUMN use_call INTEGER NOT NULL DEFAULT 1') }
+    catch (_) { /* sudah ada, skip */ }
+
+    // Step 3: index setelah tabel lengkap
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_reminders_fire ON reminders(fire_at, fired)') }
+    catch (_) { }
+
     return db
 }
 
