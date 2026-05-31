@@ -26,72 +26,26 @@ function commandExists(cmd) {
     catch { return false }
 }
 
-function canRun(cmd, args = ['--version']) {
-    try { execSync(`${cmd} ${args.join(' ')}`, { stdio: 'pipe', timeout: 5000 }); return true }
-    catch { return false }
-}
-
-// Coba semua nama Python yang mungkin ada di server
-const PYTHON_CANDIDATES = [
-    'python3', 'python', 'python3.13', 'python3.12', 'python3.11',
-    'python3.10', 'python3.9', 'python3.8',
-    '/usr/bin/python3', '/usr/local/bin/python3',
-    '/usr/bin/python', '/usr/local/bin/python',
-]
-
-function findPython(testArgs = ['--version']) {
-    for (const p of PYTHON_CANDIDATES) {
-        if (canRun(p, testArgs)) return p
-    }
-    return null
-}
-
 function downloadFile(url, destPath) {
     return new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(destPath)
         const request = (targetUrl) => {
             https.get(targetUrl, (res) => {
                 if (res.statusCode === 301 || res.statusCode === 302) {
+                    file.close()
                     return request(res.headers.location)
                 }
                 if (res.statusCode !== 200) {
+                    file.close()
+                    fs.unlink(destPath, () => { })
                     return reject(new Error(`HTTP ${res.statusCode}`))
                 }
-                const file = fs.createWriteStream(destPath)
                 res.pipe(file)
                 file.on('finish', () => { file.close(); resolve() })
-                file.on('error', (e) => { fs.unlink(destPath, () => { }); reject(e) })
-            }).on('error', (e) => { reject(e) })
+            }).on('error', (e) => { fs.unlink(destPath, () => { }); reject(e) })
         }
         request(url)
     })
-}
-
-// ─────────────────────────────────────────────
-// STEP 0: INSTALL DEPENDENCIES
-// Jalankan npm install untuk memastikan semua paket tersedia di server.
-// Ini penting setelah update package.json di Pterodactyl.
-// ─────────────────────────────────────────────
-
-function ensureDependencies() {
-    // Cek apakah ytdl-core sudah terinstall
-    const ytdlCheck = path.resolve('./node_modules/@distube/ytdl-core/package.json')
-    const ytSrCheck = path.resolve('./node_modules/youtube-sr/package.json')
-    if (fs.existsSync(ytdlCheck) && fs.existsSync(ytSrCheck)) {
-        ok('Dependencies: @distube/ytdl-core & youtube-sr ready.')
-        return
-    }
-    inf('Installing npm dependencies (@distube/ytdl-core, youtube-sr)...')
-    inf('Ini mungkin butuh 1-2 menit...')
-    try {
-        execSync('npm install --no-audit --no-fund --prefer-offline', {
-            stdio: 'pipe',
-            timeout: 180_000
-        })
-        ok('npm install selesai.')
-    } catch (e) {
-        wrn(`npm install gagal: ${e.stderr?.toString()?.slice(0, 200) ?? e.message}`)
-        wrn('Coba restart bot lagi. Jika masih gagal, jalankan npm install manual.')
-    }
 }
 
 // ─────────────────────────────────────────────
@@ -234,111 +188,45 @@ async function setupFfmpeg() {
     }
 }
 
-// Dua URL: native ELF (cepat, tidak butuh python) dan zipapp (universal, butuh python3)
-const YTDLP_PATH     = path.resolve('./storage/bin/yt-dlp')       // native ELF binary
-const YTDLP_PYZ_PATH = path.resolve('./storage/bin/yt-dlp.pyz')   // python zipapp fallback
-const YTDLP_URL_ELF  = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux'
-const YTDLP_URL_PYZ  = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp'
+// ─────────────────────────────────────────────
+// STEP 4: YT-DLP BINARY DOWNLOAD
+// Standalone binary — tidak butuh Python sama sekali
+// ─────────────────────────────────────────────
+
+const YTDLP_PATH = path.resolve('./storage/bin/yt-dlp_linux')
+const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux'
 
 async function setupYtDlp() {
-    // 1. Cek yt-dlp global yang benar-benar bisa dijalankan
-    //    (bukan cuma 'which' — karena ./storage/bin juga di PATH dan bisa menipu)
-    if (canRun('yt-dlp')) {
-        const realPath = (() => { try { return execSync('which yt-dlp', { stdio: 'pipe' }).toString().trim() } catch { return 'yt-dlp' } })()
-        // Pastikan bukan binary lokal kita yang broken
-        if (!realPath.includes('storage/bin')) {
-            ok(`yt-dlp (system): ${realPath}`)
-            process.env.YTDLP_PATH = 'yt-dlp'
-            return
-        }
-    }
-
-    // 2. Cek binary ELF lokal: ada dan bisa dijalankan secara native?
-    if (fs.existsSync(YTDLP_PATH) && fs.statSync(YTDLP_PATH).size > 10_000_000) {
-        if (canRun(YTDLP_PATH)) {
-            ok(`yt-dlp (native ELF): ${(fs.statSync(YTDLP_PATH).size / 1024 / 1024).toFixed(1)} MB`)
+    if (fs.existsSync(YTDLP_PATH)) {
+        const size = fs.statSync(YTDLP_PATH).size
+        if (size > 20_000_000) {
+            ok(`yt-dlp_linux exists: ${(size / 1024 / 1024).toFixed(1)} MB`)
             try { fs.chmodSync(YTDLP_PATH, '755') } catch (_) { }
             process.env.YTDLP_PATH = YTDLP_PATH
             return
         }
-        wrn(`yt-dlp ELF ada tapi tidak bisa dijalankan (kemungkinan Alpine/musl Linux). Beralih ke zipapp...`)
+        wrn(`yt-dlp_linux terlalu kecil (${(size / 1024 / 1024).toFixed(1)}MB) — bukan ELF binary, re-downloading...`)
+        fs.unlinkSync(YTDLP_PATH)
     }
 
-    // 3. Cek zipapp lokal dengan semua interpreter Python yang mungkin
-    if (fs.existsSync(YTDLP_PYZ_PATH) && fs.statSync(YTDLP_PYZ_PATH).size > 1_000_000) {
-        const python = findPython([YTDLP_PYZ_PATH, '--version'])
-        if (python) {
-            ok(`yt-dlp (zipapp via ${python}): ${(fs.statSync(YTDLP_PYZ_PATH).size / 1024 / 1024).toFixed(1)} MB`)
-            process.env.YTDLP_PATH = YTDLP_PYZ_PATH
-            process.env.YTDLP_MODE = python
-            return
-        }
+    // Hapus juga yt-dlp lama kalau ada (Python script 3MB)
+    const oldPath = path.resolve('./storage/bin/yt-dlp')
+    if (fs.existsSync(oldPath) && fs.statSync(oldPath).size < 20_000_000) {
+        wrn('Hapus yt-dlp lama (Python script)...')
+        fs.unlinkSync(oldPath)
     }
 
-    // 4. Download ELF binary terlebih dahulu (jika belum atau corrupt)
-    if (!fs.existsSync(YTDLP_PATH) || fs.statSync(YTDLP_PATH).size < 10_000_000) {
-        inf('Downloading yt-dlp Linux ELF binary (~30MB)...')
-        try {
-            if (fs.existsSync(YTDLP_PATH)) fs.unlinkSync(YTDLP_PATH)
-            await downloadFile(YTDLP_URL_ELF, YTDLP_PATH)
-            fs.chmodSync(YTDLP_PATH, '755')
-            const sizeMB = (fs.statSync(YTDLP_PATH).size / 1024 / 1024).toFixed(1)
-            ok(`yt-dlp ELF downloaded: ${sizeMB} MB`)
-            if (canRun(YTDLP_PATH)) {
-                ok('yt-dlp ELF: runnable ✓')
-                process.env.YTDLP_PATH = YTDLP_PATH
-                return
-            }
-            wrn('yt-dlp ELF tidak bisa dijalankan di OS ini (glibc missing). Downloading zipapp...')
-        } catch (e) {
-            wrn(`Gagal download yt-dlp ELF: ${e.message}`)
-        }
+    inf('Downloading yt-dlp_linux ELF binary (~30MB, hanya sekali)...')
+    try {
+        await downloadFile(YTDLP_URL, YTDLP_PATH)
+        fs.chmodSync(YTDLP_PATH, '755')
+        const size = fs.statSync(YTDLP_PATH).size
+        ok(`yt-dlp_linux downloaded: ${(size / 1024 / 1024).toFixed(1)} MB`)
+        process.env.YTDLP_PATH = YTDLP_PATH
+    } catch (e) {
+        wrn(`Gagal download yt-dlp: ${e.message}`)
+        wrn('Fitur radio tidak akan berfungsi.')
     }
-
-    // 5. Download Python zipapp, coba semua interpreter Python
-    if (!fs.existsSync(YTDLP_PYZ_PATH) || fs.statSync(YTDLP_PYZ_PATH).size < 1_000_000) {
-        inf('Downloading yt-dlp Python zipapp (~4MB, universal untuk semua Linux)...')
-        try {
-            if (fs.existsSync(YTDLP_PYZ_PATH)) fs.unlinkSync(YTDLP_PYZ_PATH)
-            await downloadFile(YTDLP_URL_PYZ, YTDLP_PYZ_PATH)
-            fs.chmodSync(YTDLP_PYZ_PATH, '755')
-            ok(`yt-dlp zipapp downloaded: ${(fs.statSync(YTDLP_PYZ_PATH).size / 1024 / 1024).toFixed(1)} MB`)
-        } catch (e) {
-            wrn(`Gagal download yt-dlp zipapp: ${e.message}`)
-        }
-    }
-
-    if (fs.existsSync(YTDLP_PYZ_PATH)) {
-        const python = findPython([YTDLP_PYZ_PATH, '--version'])
-        if (python) {
-            ok(`yt-dlp zipapp via ${python}: runnable ✓`)
-            process.env.YTDLP_PATH = YTDLP_PYZ_PATH
-            process.env.YTDLP_MODE = python
-            return
-        }
-    }
-
-    // 6. Terakhir: coba install via pip
-    inf('Mencoba install yt-dlp via pip (last resort)...')
-    const pipCmds = ['pip3 install -q --user yt-dlp', 'pip install -q --user yt-dlp']
-    for (const pipCmd of pipCmds) {
-        try {
-            inf(`Running: ${pipCmd}`)
-            execSync(pipCmd, { stdio: 'pipe', timeout: 120_000 })
-            if (canRun('yt-dlp')) {
-                const realPath = (() => { try { return execSync('which yt-dlp', { stdio: 'pipe' }).toString().trim() } catch { return 'yt-dlp' } })()
-                ok(`yt-dlp berhasil diinstall via pip: ${realPath}`)
-                process.env.YTDLP_PATH = 'yt-dlp'
-                return
-            }
-        } catch (_) { /* pip tidak tersedia atau gagal */ }
-    }
-
-    wrn('GAGAL: yt-dlp tidak bisa dijalankan di server ini.')
-    wrn('Diagnosis:')
-    wrn(`  - glibc binary: tidak support (Alpine/musl Linux)`)
-    wrn(`  - Python tersedia: ${findPython() ?? 'TIDAK ADA'}`)
-    wrn(`  - Solusi: hubungi hosting untuk install python3 atau yt-dlp secara manual`)
 }
 
 // ─────────────────────────────────────────────
@@ -385,14 +273,14 @@ function validateEnv() {
 function printSummary() {
     const fonts = fs.readdirSync(FONT_DIR).filter(f => f.endsWith('.ttf') || f.endsWith('.otf'))
     const hasFfmpeg = commandExists('ffmpeg') || fs.existsSync(FFMPEG_PATH)
-    const ytdlpInfo = `✅ via @distube/ytdl-core (Node.js native)`
+    const hasYtdlp = fs.existsSync(YTDLP_PATH)
 
     console.log('\n' + '─'.repeat(50))
     console.log('  🤖 RonnBot v2.0 — Bootstrap Summary')
     console.log('─'.repeat(50))
     console.log(`  Fonts         : ${fonts.length > 0 ? fonts.join(', ') : 'none'}`)
     console.log(`  FFmpeg        : ${hasFfmpeg ? '✅ available' : '❌ not found (radio disabled)'}`)
-    console.log(`  yt-dlp        : ${ytdlpInfo}`)
+    console.log(`  yt-dlp        : ${hasYtdlp ? '✅ ready' : '❌ not found (radio disabled)'}`)
     console.log(`  Owner         : ${process.env.OWNER_NUMBER ?? 'not set'}`)
     console.log(`  Prefix        : ${process.env.BOT_PREFIX ?? '!'}`)
     console.log(`  Session path  : ${process.env.SESSION_PATH ?? './storage/sessions'}`)
@@ -427,12 +315,11 @@ function launchBot() {
 async function main() {
     console.log('\n🚀 [Bootstrap] RonnBot v2.0 starting up...\n')
     try {
-        ensureDependencies()      // STEP 0: install npm deps jika perlu
-        setupDirectories()         // STEP 1
-        await setupFonts()         // STEP 2
-        await setupFfmpeg()        // STEP 3
-        // STEP 4: yt-dlp binary sudah tidak diperlukan — radio kini pakai @distube/ytdl-core
-        validateEnv()              // STEP 5
+        setupDirectories()
+        await setupFonts()
+        await setupFfmpeg()
+        await setupYtDlp()
+        validateEnv()
         printSummary()
         launchBot()
     } catch (e) {

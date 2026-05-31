@@ -52,20 +52,27 @@ async function youtubeGetInfo(url) {
 // ─────────────────────────────────────────────
 
 function getYtdlpPath() {
-    // Cek semua kemungkinan lokasi binary
     const candidates = [
         process.env.YTDLP_PATH,
-        path.resolve('./storage/bin/yt-dlp'),
         path.resolve('./storage/bin/yt-dlp_linux'),
-        'yt-dlp',  // kalau ada di PATH sistem
+        path.resolve('./storage/bin/yt-dlp'),
+        'yt-dlp',
     ].filter(Boolean)
 
     for (const p of candidates) {
         try {
-            if (p === 'yt-dlp' || fs.existsSync(p)) return p
+            if (p === 'yt-dlp') return p  // system PATH, cek saat spawn
+            if (!fs.existsSync(p)) continue
+            const size = fs.statSync(p).size
+            // Validasi: harus > 20MB (ELF binary), bukan Python script 3MB
+            if (size < 20_000_000) {
+                console.warn(`\x1b[33m[Radio] Skip ${p} — ukuran ${(size / 1024 / 1024).toFixed(1)}MB terlalu kecil (bukan ELF binary)\x1b[0m`)
+                continue
+            }
+            return p
         } catch (_) { }
     }
-    throw new Error('yt-dlp tidak ditemukan. Pastikan binary ada di storage/bin/')
+    throw new Error('yt-dlp binary tidak ditemukan atau corrupt. Download dari: https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux')
 }
 
 /**
