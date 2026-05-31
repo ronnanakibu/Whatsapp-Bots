@@ -124,7 +124,8 @@ export default {
                     `📝 *Deskripsi:* ${meta.desc ?? '(tidak ada)'}\n` +
                     `👤 *Anggota:* ${members} orang\n` +
                     `👑 *Admin (${admins.length}):*\n${adminList}\n` +
-                    `📅 *Dibuat:* ${created}`
+                    `📅 *Dibuat:* ${created}`,
+                    { mentions: admins.map(a => a.id) }
                 )
             } catch (err) {
                 botLogger.err('admin', err, 'groupinfo')
@@ -150,7 +151,7 @@ export default {
                     return `${i + 1}. ${tag} @${a.id.split('@')[0]}`
                 }).join('\n')
 
-                return reply(`👑 *Daftar Admin (${admins.length}):*\n\n${list}`)
+                return reply(`👑 *Daftar Admin (${admins.length}):*\n\n${list}`, { mentions: admins.map(a => a.id) })
             } catch (err) {
                 botLogger.err('admin', err, 'listadmin')
                 return reply(`❌ Gagal: ${err.message}`)
@@ -225,7 +226,7 @@ export default {
                 }
 
                 await react(status === '200' ? '✅' : '❌')
-                return reply(statusMsg[status] ?? `Status: ${status}`)
+                return reply(statusMsg[status] ?? `Status: ${status}`, { mentions: [targetJid] })
 
             } catch (err) {
                 botLogger.err('admin', err, 'add')
@@ -265,7 +266,7 @@ export default {
                 await sock.groupParticipantsUpdate(chatId, [targetJid], 'remove')
                 botLogger.info('admin', `Kicked ${targetJid} from ${chatId}`)
                 await react('👢')
-                return reply(`👢 *@${targetJid.split('@')[0]}* telah dikeluarkan dari grup.`)
+                return reply(`👢 *@${targetJid.split('@')[0]}* telah dikeluarkan dari grup.`, { mentions: [targetJid] })
             } catch (err) {
                 botLogger.err('admin', err, 'kick')
                 return reply(`❌ Gagal kick: ${err.message}`)
@@ -308,7 +309,7 @@ export default {
                 await sock.groupParticipantsUpdate(chatId, [targetJid], 'promote')
                 botLogger.info('admin', `Promoted ${targetJid} in ${chatId}`)
                 await react('⭐')
-                return reply(`⭐ *@${targetJid.split('@')[0]}* sekarang jadi admin grup.`)
+                return reply(`⭐ *@${targetJid.split('@')[0]}* sekarang jadi admin grup.`, { mentions: [targetJid] })
             } catch (err) {
                 botLogger.err('admin', err, 'promote')
                 return reply(`❌ Gagal promote: ${err.message}`)
@@ -332,7 +333,7 @@ export default {
                 await sock.groupParticipantsUpdate(chatId, [targetJid], 'demote')
                 botLogger.info('admin', `Demoted ${targetJid} in ${chatId}`)
                 await react('🔽')
-                return reply(`🔽 *@${targetJid.split('@')[0]}* dicopot dari admin grup.`)
+                return reply(`🔽 *@${targetJid.split('@')[0]}* dicopot dari admin grup.`, { mentions: [targetJid] })
             } catch (err) {
                 botLogger.err('admin', err, 'demote')
                 return reply(`❌ Gagal demote: ${err.message}`)
