@@ -476,14 +476,15 @@ class RadioService extends EventEmitter {
                     return reject(new Error(`Gagal membuka stream: ${err.message}`))
                 }
 
+                if (!streamData.stream) {
+                    return reject(new Error('play-dl stream tidak mengembalikan readable stream.'))
+                }
+
                 if (this.#skipRequested) return resolve()
 
-                // Jika play-dl mengembalikan URL langsung (biasanya HLS m3u8 dari SoundCloud)
-                // ffmpeg bisa membaca URL ini langsung tanpa pipe stdin
-                let ffmpegInput = 'pipe:0'
-                if (streamData.type === 'arbitrary' && typeof streamData.url === 'string') {
-                    ffmpegInput = streamData.url
-                }
+                this.#currentStream = streamData.stream
+
+                const ffmpegInput = 'pipe:0'
 
                 // ── 3. FFmpeg: input → MP3 stdout ──
                 const ffmpegBin = getFfmpegPath()
@@ -503,7 +504,7 @@ class RadioService extends EventEmitter {
                 const ffProc = spawn(ffmpegBin, ffArgs)
                 this.#ffmpeg = ffProc
 
-                if (ffmpegInput === 'pipe:0' && streamData.stream) {
+                if (streamData.stream) {
                     streamData.stream.pipe(ffProc.stdin)
                     streamData.stream.on('error', e => {
                         botLogger.err('radio', e, 'stream error')
