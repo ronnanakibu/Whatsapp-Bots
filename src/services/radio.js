@@ -48,20 +48,45 @@ async function youtubeGetInfo(url) {
 }
 
 /**
- * Dapatkan play-dl stream langsung.
- * Return: { stream: Readable, type: string }
- * Tidak butuh yt-dlp sama sekali.
+ * Extract audio CDN URL via play-dl video_info.
+ * Lebih reliable dari stream() — tidak butuh auth/cookies.
+ * Return: direct HTTPS URL yang bisa di-pipe ke ffmpeg -i
  */
-async function getPlayDlStream(youtubeUrl) {
+async function getAudioUrl(youtubeUrl) {
     const playdl = await getPlayDl()
 
-    botLogger.info('radio', `play-dl streaming: ${youtubeUrl}`)
+    botLogger.info('radio', `Extracting audio URL: ${youtubeUrl}`)
 
-    // quality: 0 = best, 1 = medium, 2 = worst (untuk kecepatan)
-    const streamData = await playdl.stream(youtubeUrl, { quality: 0 })
+    // Validate dulu biar error message jelas
+    const valid = await playdl.validate(youtubeUrl)
+    if (!valid || valid === 'search') {
+        throw new Error(`URL tidak valid untuk streaming: ${youtubeUrl}`)
+    }
 
-    botLogger.info('radio', `Stream ready — type: ${streamData.type}`)
-    return streamData
+    const info = await playdl.video_info(youtubeUrl)
+    const formats = info.format ?? []
+
+    botLogger.debug('radio', `Got ${formats.length} formats`)
+
+    // Prioritas: audio-only m4a → audio-only webm → audio dari format apapun
+    const audioOnly = formats.filter(f =>
+        f.mimeType?.includes('audio') && !f.mimeType?.includes('video')
+    )
+
+    // Sort by bitrate descending
+    audioOnly.sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))
+
+    // Prefer m4a (AAC) — ffmpeg paling stabil dengan ini
+    const m4a = audioOnly.find(f => f.mimeType?.includes('mp4') || f.mimeType?.includes('m4a'))
+    const webm = audioOnly.find(f => f.mimeType?.includes('webm') || f.mimeType?.includes('opus'))
+    const best = m4a ?? webm ?? audioOnly[0] ?? formats[0]
+
+    if (!best?.url) {
+        throw new Error('Tidak ada audio format yang bisa dipakai dari video ini.')
+    }
+
+    botLogger.info('radio', `Audio format: ${best.mimeType} @ ${best.bitrate ?? '?'}bps`)
+    return { url: best.url, mimeType: best.mimeType ?? 'audio/mp4' }
 }
 
 // ─────────────────────────────────────────────
@@ -239,71 +264,41 @@ class RadioService extends EventEmitter {
     async #streamTrack(track) {
         return new Promise(async (resolve, reject) => {
             try {
-                // Build ffmpeg filter chain
                 const filters = [FX_PRESETS[this.#activeFx], EQ_PRESETS[this.#activeEq]].filter(Boolean)
                 const filterStr = filters.join(',')
 
-                // ── 1. Dapatkan play-dl stream ──
-                let streamData
+                // ── 1. Extract CDN URL via play-dl ──
+                let audioInfo
                 try {
-                    streamData = await getPlayDlStream(track.url)
+                    audioInfo = await getAudioUrl(track.url)
                 } catch (e) {
-                    return reject(new Error(`play-dl stream gagal: ${e.message}`))
+                    return reject(new Error(`Gagal extract audio URL: ${e.message}`))
                 }
 
-                if (this.#skipRequested) {
-                    streamData.stream.destroy?.()
-                    return resolve()
-                }
+                if (this.#skipRequested) return resolve()
 
-                this.#currentStream = streamData.stream
-
-                // ── 2. Tentukan input format untuk ffmpeg ──
-                // play-dl return 'opus' untuk webm/opus stream, 'arbitrary' untuk mp4/m4a
-                const inputFormat = streamData.type === 'opus' ? 'opus' : null
-
+                // ── 2. FFmpeg: CDN URL → MP3 stdout ──
                 const ffmpegBin = getFfmpegPath()
-                const ffArgs = []
-
-                // Input: pipe dari stdin
-                if (inputFormat) {
-                    ffArgs.push('-f', inputFormat)
-                }
-                ffArgs.push('-i', 'pipe:0')   // baca dari stdin
-
-                // Output: MP3 ke stdout
-                ffArgs.push('-vn')
-                ffArgs.push('-acodec', 'libmp3lame')
-                ffArgs.push('-ab', '128k')
-                ffArgs.push('-ar', '44100')
-                ffArgs.push('-ac', '2')
+                const ffArgs = [
+                    '-reconnect', '1',
+                    '-reconnect_streamed', '1',
+                    '-reconnect_delay_max', '5',
+                    '-i', audioInfo.url,
+                    '-vn',
+                    '-acodec', 'libmp3lame',
+                    '-ab', '128k',
+                    '-ar', '44100',
+                    '-ac', '2',
+                ]
 
                 if (filterStr) ffArgs.push('-af', filterStr)
+                ffArgs.push('-f', 'mp3', '-loglevel', 'error', 'pipe:1')
 
-                ffArgs.push(
-                    '-f', 'mp3',
-                    '-loglevel', 'error',
-                    'pipe:1'   // output ke stdout
-                )
-
-                botLogger.info('radio', `FFmpeg starting (${ffmpegBin})`)
+                botLogger.info('radio', `FFmpeg starting → ${ffmpegBin}`)
                 const ffProc = spawn(ffmpegBin, ffArgs)
                 this.#ffmpeg = ffProc
 
-                // ── 3. Pipe play-dl → ffmpeg stdin ──
-                streamData.stream.pipe(ffProc.stdin)
-
-                streamData.stream.on('error', e => {
-                    botLogger.err('radio', e, 'play-dl stream')
-                    ffProc.kill()
-                    reject(new Error(`Stream error: ${e.message}`))
-                })
-
-                ffProc.stdin.on('error', () => {
-                    // Biasa terjadi saat skip — ffmpeg stdin ditutup paksa, aman diabaikan
-                })
-
-                // ── 4. FFmpeg stdout → broadcast ──
+                // ── 3. Broadcast stdout ──
                 ffProc.stdout.on('data', chunk => this.#broadcast(chunk))
 
                 ffProc.stderr.on('data', d => {
@@ -313,7 +308,6 @@ class RadioService extends EventEmitter {
 
                 ffProc.on('close', code => {
                     this.#ffmpeg = null
-                    this.#currentStream = null
                     if (code === 0 || this.#skipRequested) resolve()
                     else reject(new Error(`FFmpeg exit code ${code}`))
                 })
@@ -322,8 +316,7 @@ class RadioService extends EventEmitter {
                     if (e.code === 'ENOENT') {
                         reject(new Error(
                             'FFmpeg tidak ditemukan.\n' +
-                            'Download FFmpeg static build ke storage/bin/ffmpeg\n' +
-                            'atau install di system: apt install ffmpeg'
+                            'Download: https://johnvansickle.com/ffmpeg/ → simpan ke storage/bin/ffmpeg'
                         ))
                     } else {
                         reject(new Error(`FFmpeg error: ${e.message}`))
