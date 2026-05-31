@@ -1,5 +1,5 @@
 // src/commands/general/remindme.js
-// !remindme — Set reminder dengan alarm call / voice note
+// !remindme — Set reminder dengan react alarm
 
 import Database from 'better-sqlite3'
 import path from 'path'
@@ -8,15 +8,11 @@ import { logger } from '../../utils/logger.js'
 
 const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db')
 
-/**
- * Inisialisasi dan ambil koneksi database SQLite
- * @returns {Database} Instance database
- */
 function getDb() {
     const db = new Database(DB_PATH)
     db.pragma('journal_mode = WAL')
 
-    // Step 1: buat tabel dasar dulu (tanpa use_call — aman untuk DB lama)
+    // Step 1: buat tabel dasar dulu
     db.exec(`
         CREATE TABLE IF NOT EXISTS reminders (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,17 +26,16 @@ function getDb() {
 
         CREATE TABLE IF NOT EXISTS reminder_prefs (
             user_jid    TEXT    PRIMARY KEY,
-            use_call    INTEGER NOT NULL DEFAULT 1,
             updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
         );
     `)
 
-    // Step 2: migrate kolom use_call kalau belum ada
-    try { db.exec('ALTER TABLE reminders ADD COLUMN use_call INTEGER NOT NULL DEFAULT 1') }
-    catch (_) { /* sudah ada, skip */ }
+    // Step 2: migrate kolom use_call kalau ada dari versi lama (keep compat)
+    try { db.exec(`ALTER TABLE reminders ADD COLUMN use_call INTEGER NOT NULL DEFAULT 1`) }
+    catch (_) { }
 
-    // Step 3: index setelah tabel lengkap
-    try { db.exec('CREATE INDEX IF NOT EXISTS idx_reminders_fire ON reminders(fire_at, fired)') }
+    // Step 3: index
+    try { db.exec(`CREATE INDEX IF NOT EXISTS idx_reminders_fire ON reminders(fire_at, fired)`) }
     catch (_) { }
 
     return db
@@ -50,78 +45,220 @@ function getDb() {
 // TIME PARSER
 // ─────────────────────────────────────────────
 
-/**
- * Parse durasi singkat (cth: 30m, 1h, 2d)
- */
-function parseDuration(str) {
-    str = str.toLowerCase().trim()
-
-    // Format singkat: 1d2h30m
-    const shortMatch = str.match(/^((\d+)d)?((\d+)h)?((\d+)m)?$/)
-    if (shortMatch && (shortMatch[2] || shortMatch[4] || shortMatch[6])) {
-        const d = parseInt(shortMatch[2] ?? 0)
-        const h = parseInt(shortMatch[4] ?? 0)
-        const m = parseInt(shortMatch[6] ?? 0)
-        const ms = (d * 86400 + h * 3600 + m * 60) * 1000
-        if (ms > 0) return ms
+function getNowInTz() {
+    const now = new Date()
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: TZ,
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+        hour12: false
+    })
+    const parts = formatter.formatToParts(now)
+    const p = Object.fromEntries(parts.map(x => [x.type, x.value]))
+    return {
+        year: parseInt(p.year),
+        month: parseInt(p.month) - 1,
+        day: parseInt(p.day),
+        hour: parseInt(p.hour),
+        minute: parseInt(p.minute),
+        second: parseInt(p.second),
+        time: now.getTime()
     }
-
-    // Format natural: 30 menit, 1 jam, dll
-    const naturalMap = [
-        { re: /(\d+)\s*(detik|sec?)/i, mul: 1_000 },
-        { re: /(\d+)\s*(menit|min(?:ute)?s?)/i, mul: 60_000 },
-        { re: /(\d+)\s*(jam|h(?:ou)?r?s?)/i, mul: 3_600_000 },
-        { re: /(\d+)\s*(hari|days?)/i, mul: 86_400_000 },
-        { re: /(\d+)\s*(minggu|weeks?)/i, mul: 604_800_000 },
-    ]
-
-    let total = 0
-    for (const { re, mul } of naturalMap) {
-        const m = str.match(re)
-        if (m) total += parseInt(m[1]) * mul
-    }
-
-    return total > 0 ? total : null
 }
 
-/**
- * Parse waktu absolut (cth: jam 14:30, besok jam 9)
- */
-function parseAbsoluteTime(str) {
-    const jamMatch = str.match(/jam\s+(\d{1,2})(?::(\d{2}))?\s*(pagi|siang|sore|malam)?/i)
+function targetTzToMs(year, month, day, hour, minute, second) {
+    const utcDate = new Date(Date.UTC(year, month, day, hour, minute, second))
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: TZ,
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+        hour12: false
+    })
+    const parts = formatter.formatToParts(utcDate)
+    const p = Object.fromEntries(parts.map(x => [x.type, x.value]))
+    const formattedUtc = Date.UTC(
+        parseInt(p.year),
+        parseInt(p.month) - 1,
+        parseInt(p.day),
+        parseInt(p.hour),
+        parseInt(p.minute),
+        parseInt(p.second)
+    )
+    const offsetMs = formattedUtc - utcDate.getTime()
+    return utcDate.getTime() - offsetMs
+}
 
-    if (jamMatch) {
-        let hour = parseInt(jamMatch[1])
-        const min = parseInt(jamMatch[2] ?? 0)
-        const period = jamMatch[3]?.toLowerCase()
+function cleanMessage(msg) {
+    msg = msg.trim()
+    msg = msg.replace(/^[:\-|,\s]+/, '').trim()
+    const connectorRegex = /^(?:untuk|buat|agar|supaya|to|for)\s+/i
+    if (connectorRegex.test(msg)) {
+        msg = msg.replace(connectorRegex, '').trim()
+    }
+    msg = msg.replace(/^[:\-|,\s]+/, '').trim()
+    return msg
+}
 
-        if (period === 'sore' || period === 'malam') {
-            if (hour < 12) hour += 12
-        } else if (period === 'pagi') {
-            if (hour === 12) hour = 0
-        } else {
-            if (hour >= 1 && hour <= 6) hour += 12
-        }
-
-        const now = new Date()
-        const target = new Date(now)
-        target.setHours(hour, min, 0, 0)
-
-        if (target <= now) target.setDate(target.getDate() + 1)
-        return target.getTime() - now.getTime()
+function parseReminder(inputStr) {
+    let workStr = inputStr.trim()
+    
+    const leadingPrep = /^(?:in|dalam|selama)\s+/i
+    if (leadingPrep.test(workStr)) {
+        workStr = workStr.replace(leadingPrep, '')
     }
 
-    if (str.includes('besok')) {
-        const inner = str.replace('besok', '').trim()
-        const ms = parseAbsoluteTime(inner) ?? 0
-        return 86_400_000 + ms
+    // --- STRATEGY 1: Relative Duration ---
+    const relativeUnitRegex = /^(?:in\s+)?(\d+)\s*(detik|sec(?:ond)?s?|s|menit|min(?:ute)?s?|m|jam|h(?:ou)?r?s?|h|hari|days?|d|minggu|weeks?|w)(?=\d|\W|$)\s*(?:dan|lebih|,)?\s*/i
+    const unitMultipliers = {
+        'detik': 1000, 'sec': 1000, 'secs': 1000, 'second': 1000, 'seconds': 1000, 's': 1000,
+        'menit': 60000, 'min': 60000, 'mins': 60000, 'minute': 60000, 'minutes': 60000, 'm': 60000,
+        'jam': 3600000, 'hr': 3600000, 'hrs': 3600000, 'hour': 3600000, 'hours': 3600000, 'h': 3600000,
+        'hari': 86400000, 'day': 86400000, 'days': 86400000, 'd': 86400000,
+        'minggu': 604800000, 'week': 604800000, 'weeks': 604800000, 'w': 604800000
+    }
+
+    let totalDuration = 0
+    let tempStr = workStr
+    let matchedRelative = false
+
+    while (true) {
+        const match = tempStr.match(relativeUnitRegex)
+        if (!match) break
+
+        const val = parseInt(match[1])
+        const unit = match[2].toLowerCase()
+        const mult = unitMultipliers[unit]
+
+        if (mult) {
+            totalDuration += val * mult
+            tempStr = tempStr.replace(relativeUnitRegex, '')
+            matchedRelative = true
+        } else {
+            break
+        }
+    }
+
+    if (matchedRelative && totalDuration > 0) {
+        return {
+            timeMs: totalDuration,
+            message: cleanMessage(tempStr)
+        }
+    }
+
+    // --- STRATEGY 2: Absolute Time ---
+    let dayOffset = 0
+    let dayPeriod = null
+    let tempStrAbs = workStr
+
+    const tomorrowRegex = /^(?:besok|tomorrow)\b\s*/i
+    const lusaRegex = /^(?:lusa|day\s+after\s+tomorrow)\b\s*/i
+    const nantiRegex = /^(?:nanti|hari\s+ini|today|later)\b\s*/i
+
+    if (tomorrowRegex.test(tempStrAbs)) {
+        dayOffset = 1
+        tempStrAbs = tempStrAbs.replace(tomorrowRegex, '')
+    } else if (lusaRegex.test(tempStrAbs)) {
+        dayOffset = 2
+        tempStrAbs = tempStrAbs.replace(lusaRegex, '')
+    } else if (nantiRegex.test(tempStrAbs)) {
+        dayOffset = 0
+        tempStrAbs = tempStrAbs.replace(nantiRegex, '')
+    }
+
+    const dayPeriodRegex = /^(?:pagi|siang|sore|malam|morning|afternoon|evening|night)\b\s*/i
+    const periodMatch = tempStrAbs.match(dayPeriodRegex)
+    if (periodMatch) {
+        dayPeriod = periodMatch[0].trim().toLowerCase()
+        tempStrAbs = tempStrAbs.replace(dayPeriodRegex, '')
+    }
+
+    const timeIndicatorRegex = /^(?:jam|pukul|at|time)\b\s*/i
+    if (timeIndicatorRegex.test(tempStrAbs)) {
+        tempStrAbs = tempStrAbs.replace(timeIndicatorRegex, '')
+    }
+
+    const timeTimeRegex = /^(\d{1,2})(?::|\.)(\d{2})\b\s*/i
+    const hourOnlyRegex = /^(\d{1,2})\b\s*/i
+
+    let hour = null
+    let minute = 0
+    let matchedAbsTime = false
+    let match = tempStrAbs.match(timeTimeRegex)
+
+    if (match) {
+        hour = parseInt(match[1])
+        minute = parseInt(match[2])
+        tempStrAbs = tempStrAbs.replace(timeTimeRegex, '')
+        matchedAbsTime = true
+    } else {
+        match = tempStrAbs.match(hourOnlyRegex)
+        if (match) {
+            hour = parseInt(match[1])
+            minute = 0
+            tempStrAbs = tempStrAbs.replace(hourOnlyRegex, '')
+            matchedAbsTime = true
+        }
+    }
+
+    if (matchedAbsTime && hour !== null) {
+        const suffixRegex = /^(?:am|pm|pagi|siang|sore|malam|morning|afternoon|evening|night|wib|wita|wit)\b\s*/i
+        let suffix = null
+        const suffixMatch = tempStrAbs.match(suffixRegex)
+        if (suffixMatch) {
+            suffix = suffixMatch[0].trim().toLowerCase()
+            tempStrAbs = tempStrAbs.replace(suffixRegex, '')
+        }
+
+        const period = suffix || dayPeriod
+
+        if (period === 'pm') {
+            if (hour < 12) hour += 12
+        } else if (period === 'am') {
+            if (hour === 12) hour = 0
+        } else if (['sore', 'malam', 'evening', 'night'].includes(period)) {
+            if (hour < 12) hour += 12
+        } else if (['pagi', 'morning'].includes(period)) {
+            if (hour === 12) hour = 0
+        } else if (['siang', 'afternoon'].includes(period)) {
+            if (hour >= 1 && hour <= 5) hour += 12
+        }
+
+        const now = Date.now()
+        const nowTz = getNowInTz()
+
+        if (!period && hour < 12) {
+            const tsAm = targetTzToMs(nowTz.year, nowTz.month, nowTz.day, hour, minute, 0)
+            const tsPm = targetTzToMs(nowTz.year, nowTz.month, nowTz.day, hour + 12, minute, 0)
+
+            if (tsAm <= now && tsPm > now) {
+                hour += 12
+            } else if (tsAm > now && tsPm > now) {
+                if (tsPm - now < tsAm - now) {
+                    hour += 12
+                }
+            }
+        }
+
+        let targetTs = targetTzToMs(nowTz.year, nowTz.month, nowTz.day, hour, minute, 0)
+        
+        if (dayOffset > 0) {
+            targetTs += dayOffset * 86400000
+        } else {
+            if (targetTs <= now) {
+                targetTs += 86400000
+            }
+        }
+
+        const diffMs = targetTs - now
+        if (diffMs > 0) {
+            return {
+                timeMs: diffMs,
+                message: cleanMessage(tempStrAbs)
+            }
+        }
     }
 
     return null
-}
-
-function parseTime(str) {
-    return parseDuration(str) ?? parseAbsoluteTime(str)
 }
 
 function formatMs(ms) {
@@ -136,7 +273,6 @@ function formatMs(ms) {
     return `${s} detik`
 }
 
-// Timezone dari .env — default WIB (Asia/Jakarta)
 const TZ = process.env.BOT_TIMEZONE ?? 'Asia/Jakarta'
 
 function formatDate(unixTs) {
@@ -157,9 +293,6 @@ function formatDate(unixTs) {
 let _sock = null
 let _schedulerStarted = false
 
-/**
- * Menjalankan background job untuk cek reminder aktif
- */
 export function initReminderScheduler(sock) {
     if (_schedulerStarted) return
     _schedulerStarted = true
@@ -181,17 +314,8 @@ export function initReminderScheduler(sock) {
                 try {
                     logger.info(`[Reminder] Firing #${reminder.id} → ${reminder.chat_id}`)
 
-                    // Kirim ke chat_id (bisa DM atau grup)
-                    // Kalau DM: user_jid = chat_id, call works
-                    // Kalau grup: call tidak bisa, langsung text
-                    const isDM = !reminder.chat_id.endsWith('@g.us')
-
-                    await triggerAlarm(
-                        _sock,
-                        reminder.chat_id,
-                        reminder.message,
-                        isDM && Boolean(reminder.use_call) // Call hanya untuk DM
-                    )
+                    // triggerAlarm sudah handle react spam sendiri
+                    await triggerAlarm(_sock, reminder.chat_id, reminder.message)
 
                     db.prepare('UPDATE reminders SET fired = 1 WHERE id = ?').run(reminder.id)
                 } catch (e) {
@@ -199,7 +323,7 @@ export function initReminderScheduler(sock) {
                 }
             }
         } catch (e) {
-            logger.error("[Reminder] Scheduler tick error:", e.message)
+            logger.error('[Reminder] Scheduler tick error:', e.message)
         }
     }, 30_000)
 }
@@ -210,9 +334,9 @@ export function initReminderScheduler(sock) {
 
 export default {
     name: 'remindme',
-    aliases: ['remind', 'ingatkan', 'alarm', 'r'],
+    aliases: ['remind', 'ingatkan', 'alarm', 'r', 'rme'],
     category: 'general',
-    description: 'Set reminder — bot bakal ring/ping kamu tepat waktu.',
+    description: 'Set reminder — bot akan ping kamu tepat waktu.',
     usage: '!remindme <waktu> <pesan>',
     example: '!remindme 30m Minum obat | !remindme besok jam 9 Meeting',
     cooldown: 2,
@@ -233,69 +357,27 @@ export default {
                 ORDER BY fire_at ASC LIMIT 10
             `).all(sender)
 
-            // Cek preferensi call user
-            const pref = db.prepare('SELECT use_call FROM reminder_prefs WHERE user_jid = ?').get(sender)
-            const useCall = pref ? Boolean(pref.use_call) : true
-            const callStatus = useCall ? '📞 Call ON' : '🔕 Call OFF'
-
             if (!reminders.length) {
                 return reply(
-                    `⏰ *Tidak ada reminder aktif.*\n` +
-                    `Mode: *${callStatus}*\n\n` +
+                    `⏰ *Tidak ada reminder aktif.*\n\n` +
                     `Set reminder:\n` +
                     `• *!remindme 30m minum obat*\n` +
                     `• *!remindme 2h meeting*\n` +
-                    `• *!remindme besok jam 9 sidang*\n\n` +
-                    `Toggle alarm call: *!remindme call on/off*`
+                    `• *!remindme besok jam 9 sidang*\n` +
+                    `• *!remindme jam 14:30 standup*`
                 )
             }
 
             const list = reminders.map((r, i) => {
                 const remaining = r.fire_at - Math.floor(Date.now() / 1000)
                 const eta = remaining > 0 ? `dalam ${formatMs(remaining * 1000)}` : 'segera'
-                const callIcon = r.use_call ? '📞' : '🔔'
-
-                return `${i + 1}. ${callIcon} [#${r.id}] *${r.message}*\n   📅 ${formatDate(r.fire_at)} _(${eta})_`
+                return `${i + 1}. 🔔 [#${r.id}] *${r.message}*\n   📅 ${formatDate(r.fire_at)} _(${eta})_`
             }).join('\n\n')
 
             return reply(
-                `⏰ *Reminder aktif (${reminders.length}):*\n` +
-                `Mode: *${callStatus}*\n\n` +
+                `⏰ *Reminder aktif (${reminders.length}):*\n\n` +
                 `${list}\n\n` +
                 `_Hapus: !remindme delete <id>_`
-            )
-        }
-
-        // ── !remindme call on/off ─────────────────────
-        if (sub === 'call') {
-            const toggle = args[1]?.toLowerCase()
-
-            if (!toggle || !['on', 'off'].includes(toggle)) {
-                const pref = db.prepare('SELECT use_call FROM reminder_prefs WHERE user_jid = ?').get(sender)
-                const current = pref ? Boolean(pref.use_call) : true
-
-                return reply(
-                    `📞 *Mode Alarm Call*\n\n` +
-                    `Status sekarang: *${current ? 'ON ✅' : 'OFF 🔕'}*\n\n` +
-                    `• *!remindme call on* — Bot nge-ring kamu waktu reminder\n` +
-                    `• *!remindme call off* — Kirim notif teks aja\n\n` +
-                    `_⚠️ Call hanya untuk DM ke bot, tidak berlaku di grup._`
-                )
-            }
-
-            const useCall = toggle === 'on'
-            db.prepare(`
-                INSERT INTO reminder_prefs (user_jid, use_call)
-                VALUES (?, ?)
-                ON CONFLICT(user_jid) DO UPDATE SET use_call = excluded.use_call, updated_at = unixepoch()
-            `).run(sender, useCall ? 1 : 0)
-
-            await react(useCall ? '📞' : '🔕')
-
-            return reply(
-                useCall
-                    ? `📞 *Mode Call ON*\nBot bakal nge-ring HP kamu waktu reminder tiba!\n\n_Pastikan chat ini DM ke bot, bukan grup._`
-                    : `🔕 *Mode Call OFF*\nBot cukup kirim notif teks waktu reminder tiba.`
             )
         }
 
@@ -309,76 +391,50 @@ export default {
 
             db.prepare('UPDATE reminders SET fired = 1 WHERE id = ?').run(id)
             await react('✅')
-
             return reply(`✅ Reminder #${id} *"${r.message}"* dibatalkan.`)
         }
 
         // ── !remindme <waktu> <pesan> ─────────────────
-        let timeMs = null
-        let msgStartIdx = 1
-
-        for (let i = 1; i <= Math.min(4, args.length); i++) {
-            const parsed = parseTime(args.slice(0, i).join(' '))
-            if (parsed !== null) {
-                timeMs = parsed
-                msgStartIdx = i
-            }
-        }
-
-        if (timeMs === null) {
+        const parsed = parseReminder(args.join(' '))
+        if (!parsed) {
             return reply(
                 `❌ Format waktu tidak dikenali.\n\n` +
                 `*Format yang didukung:*\n` +
+                `• \`!remindme 20 detik bangun\`\n` +
                 `• \`!remindme 30m minum obat\`\n` +
-                `• \`!remindme 2h meeting\`\n` +
-                `• \`!remindme 1h30m deadline\`\n` +
-                `• \`!remindme jam 14:30 standup\`\n` +
-                `• \`!remindme besok jam 9 sidang\`\n` +
-                `• \`!remindme 1d kirim laporan\``
+                `• \`!remindme 2 jam 30 menit tidur\`\n` +
+                `• \`!remindme 19:30 masak\`\n` +
+                `• \`!remindme besok jam 9 pagi meeting\`\n` +
+                `• \`!remindme jam 14:30 untuk standup\``
             )
         }
+
+        const { timeMs, message: reminderMsg } = parsed
 
         const MIN_MS = 10_000
         const MAX_MS = 30 * 86_400_000
 
         if (timeMs < MIN_MS) return reply(`❌ Minimal 10 detik.`)
         if (timeMs > MAX_MS) return reply(`❌ Maksimal 30 hari.`)
-
-        const reminderMsg = args.slice(msgStartIdx).join(' ').trim()
-        if (!reminderMsg) return reply(`❌ Pesan remindernya mana?\nContoh: !remindme 30m *minum obat*`)
+        if (!reminderMsg) return reply(`❌ Pesan remindernya mana?\nContoh: !remindme 30m minum obat`)
 
         const activeCount = db.prepare('SELECT COUNT(*) as n FROM reminders WHERE user_jid = ? AND fired = 0').get(sender)?.n ?? 0
         if (activeCount >= 10) return reply(`⚠️ Sudah ada 10 reminder aktif. Hapus dulu: !remindme delete <id>`)
 
-        // Ambil preferensi call user
-        const pref = db.prepare('SELECT use_call FROM reminder_prefs WHERE user_jid = ?').get(sender)
-        const useCall = pref ? Boolean(pref.use_call) : true
-
-        // Kalau di grup, call tidak bisa
-        const isDM = !chatId.endsWith('@g.us')
-        const willCall = isDM && useCall
         const fireAt = Math.floor((Date.now() + timeMs) / 1000)
 
         db.prepare(`
-            INSERT INTO reminders (user_jid, chat_id, message, fire_at, use_call)
-            VALUES (?, ?, ?, ?, ?)
-        `).run(sender, chatId, reminderMsg, fireAt, useCall ? 1 : 0)
-
-        const callNote = willCall
-            ? `📞 Bot akan *nge-ring* kamu waktu reminder tiba`
-            : isDM
-                ? `🔕 Mode call off — kirim notif teks`
-                : `🔔 Reminder di grup — notif teks (call hanya DM)`
+            INSERT INTO reminders (user_jid, chat_id, message, fire_at)
+            VALUES (?, ?, ?, ?)
+        `).run(sender, chatId, reminderMsg, fireAt)
 
         await react('⏰')
-
         return reply(
             `⏰ *Reminder diset!*\n\n` +
             `📌 *${reminderMsg}*\n` +
             `🕐 ${formatDate(fireAt)}\n` +
-            `⏳ dalam *${formatMs(timeMs)}*\n` +
-            `${callNote}\n\n` +
-            `_Toggle call: !remindme call on/off_`
+            `⏳ dalam *${formatMs(timeMs)}*\n\n` +
+            `_Bot akan ping kamu saat waktunya tiba 🔔_`
         )
     }
 }
