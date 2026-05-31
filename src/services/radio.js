@@ -418,7 +418,7 @@ class RadioService extends EventEmitter {
                 const filterStr = filters.join(',')
 
                 botLogger.info('radio', `Trying youtube-dl-exec for URL extraction...`)
-                const youtubedl = require('youtube-dl-exec')
+                const { default: youtubedl } = await import('youtube-dl-exec')
                 
                 let cdnUrl = null
                 let usedMethod = 'youtube-dl-exec'
