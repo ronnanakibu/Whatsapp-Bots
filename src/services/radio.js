@@ -7,6 +7,8 @@ import { spawn } from 'child_process'
 import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
+import https from 'https'
+import http from 'http'
 import { botLogger } from '../utils/logger.js'
 
 // ─────────────────────────────────────────────
@@ -129,6 +131,48 @@ async function getAudioUrl(youtubeUrl) {
 
     botLogger.info('radio', `Selected: itag=${best.itag} mime=${best.mimeType ?? '?'} bitrate=${best.bitrate ?? '?'}`)
     return { url: best.url, mimeType: best.mimeType ?? 'audio/mp4' }
+}
+
+// ─────────────────────────────────────────────
+// FETCH URL → NODE READABLE STREAM
+// Bypass ffmpeg DNS — Node.js fetch CDN URL dulu,
+// pipe ke ffmpeg stdin. Ffmpeg tidak perlu resolve apapun.
+// ─────────────────────────────────────────────
+
+function fetchStream(url, redirectCount = 0) {
+    return new Promise((resolve, reject) => {
+        if (redirectCount > 5) return reject(new Error('Too many redirects'))
+
+        const client = url.startsWith('https') ? https : http
+        const req = client.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': '*/*',
+                'Accept-Encoding': 'identity',
+                'Range': 'bytes=0-',
+            },
+            timeout: 15_000,
+        }, (res) => {
+            // Handle redirect
+            if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+                res.destroy()
+                return fetchStream(res.headers.location, redirectCount + 1).then(resolve).catch(reject)
+            }
+
+            if (res.statusCode !== 200 && res.statusCode !== 206) {
+                res.destroy()
+                return reject(new Error(`HTTP ${res.statusCode} dari CDN`))
+            }
+
+            resolve(res) // res adalah Readable stream
+        })
+
+        req.on('error', e => reject(new Error(`Fetch error: ${e.message}`)))
+        req.on('timeout', () => {
+            req.destroy()
+            reject(new Error('Fetch timeout (15s)'))
+        })
+    })
 }
 
 // ─────────────────────────────────────────────
@@ -319,14 +363,23 @@ class RadioService extends EventEmitter {
 
                 if (this.#skipRequested) return resolve()
 
-                // ── 2. FFmpeg: CDN URL → MP3 stdout ──
+                // ── 2. Fetch CDN URL via Node.js (bypass ffmpeg DNS) ──
+                botLogger.info('radio', 'Fetching audio stream via Node.js...')
+                let cdnStream
+                try {
+                    cdnStream = await fetchStream(audioInfo.url)
+                } catch (e) {
+                    return reject(new Error(`Gagal fetch CDN stream: ${e.message}`))
+                }
+
+                if (this.#skipRequested) { cdnStream.destroy(); return resolve() }
+
+                // ── 3. FFmpeg: stdin pipe → MP3 stdout ──
+                // Tidak pakai -i URL — ffmpeg baca dari stdin (Node sudah fetch-kan)
                 const ffmpegBin = getFfmpegPath()
                 const ffArgs = [
-                    '-reconnect', '1',
-                    '-reconnect_streamed', '1',
-                    '-reconnect_delay_max', '5',
-                    '-i', audioInfo.url,
-                    '-vn',
+                    '-i', 'pipe:0',   // baca dari stdin
+                    '-vn',                  // skip video track
                     '-acodec', 'libmp3lame',
                     '-ab', '128k',
                     '-ar', '44100',
@@ -340,7 +393,17 @@ class RadioService extends EventEmitter {
                 const ffProc = spawn(ffmpegBin, ffArgs)
                 this.#ffmpeg = ffProc
 
-                // ── 3. Broadcast stdout ──
+                // Pipe: CDN stream → ffmpeg stdin
+                cdnStream.pipe(ffProc.stdin)
+                cdnStream.on('error', e => {
+                    botLogger.err('radio', e, 'CDN stream error')
+                    ffProc.kill()
+                })
+                ffProc.stdin.on('error', () => {
+                    // Skip saat di-kill — normal
+                })
+
+                // ── 4. Broadcast stdout ──
                 ffProc.stdout.on('data', chunk => this.#broadcast(chunk))
 
                 ffProc.stderr.on('data', d => {
