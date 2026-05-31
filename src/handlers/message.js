@@ -6,6 +6,7 @@ import { memoryService } from '../services/memory.js'
 import { seamlessTracker } from '../services/seamless.js'
 import { checkPermission } from '../middleware/permission.js'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
+import { normalizeNumber } from '../utils/permissions.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
     try {
@@ -45,15 +46,21 @@ export async function handleIncomingMessage(sock, { messages }) {
         // ─────────────────────────────────────────────
 
         const rawBotId = sock.user?.id ?? ''
-        const botJid = rawBotId.includes(':')
-            ? rawBotId.replace(/:\d+@/, '@')
-            : rawBotId
-
         const quotedMsgId = messageContent?.extendedTextMessage?.contextInfo?.stanzaId ?? null
         const isReplyToBot = seamlessTracker.isReplyToBot(quotedMsgId)
 
         const mentionedJids = messageContent?.extendedTextMessage?.contextInfo?.mentionedJid ?? []
-        const isMentionedInGroup = isGroup && mentionedJids.includes(botJid)
+        
+        // Collect all possible bot JID numbers (phone number, LID number, etc.)
+        const botNumbers = new Set([
+            normalizeNumber(rawBotId),
+            normalizeNumber(process.env.BOT_NUMBER ?? '')
+        ].filter(Boolean))
+
+        const isMentionedInGroup = isGroup && mentionedJids.some(jid => {
+            const norm = jid ? normalizeNumber(jid) : ''
+            return norm && botNumbers.has(norm)
+        })
 
         const prefix = process.env.BOT_PREFIX || '!'
         const isCommand = body.startsWith(prefix)
