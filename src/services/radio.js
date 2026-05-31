@@ -1,18 +1,16 @@
 // src/services/radio.js
 // RadioService — Live Radio Streaming Engine
-// Architecture: play-dl (search) + yt-dlp (stream URL) + FFmpeg (transcode) → HTTP
+// Architecture: play-dl (search + stream) → FFmpeg stdin pipe → HTTP broadcast
+// NO yt-dlp dependency — pure Node.js
 
-
-import { ytdlpGetAudioUrl, ensureYtdlp } from './ytdlp.js'
 import { spawn } from 'child_process'
 import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
-import { logger } from '../utils/logger.js'
-
+import { botLogger } from '../utils/logger.js'
 
 // ─────────────────────────────────────────────
-// PLAY-DL — search only
+// PLAY-DL — search + stream (no yt-dlp needed)
 // ─────────────────────────────────────────────
 
 async function getPlayDl() {
@@ -20,7 +18,7 @@ async function getPlayDl() {
         const mod = await import('play-dl')
         return mod.default ?? mod
     } catch (e) {
-        throw new Error(`play-dl belum terinstall: ${e.message}`)
+        throw new Error(`play-dl belum terinstall. Jalankan: npm install play-dl\n${e.message}`)
     }
 }
 
@@ -33,7 +31,7 @@ async function youtubeSearch(query) {
         title: v.title || 'Unknown',
         url: `https://www.youtube.com/watch?v=${v.id}`,
         duration: v.durationInSec || 0,
-        thumbnail: v.thumbnails?.[0]?.url || null
+        thumbnail: v.thumbnails?.[0]?.url || null,
     }
 }
 
@@ -45,8 +43,42 @@ async function youtubeGetInfo(url) {
         title: d.title || 'Unknown',
         url: `https://www.youtube.com/watch?v=${d.id}`,
         duration: d.durationInSec || 0,
-        thumbnail: d.thumbnails?.[0]?.url || null
+        thumbnail: d.thumbnails?.[0]?.url || null,
     }
+}
+
+/**
+ * Dapatkan play-dl stream langsung.
+ * Return: { stream: Readable, type: string }
+ * Tidak butuh yt-dlp sama sekali.
+ */
+async function getPlayDlStream(youtubeUrl) {
+    const playdl = await getPlayDl()
+
+    botLogger.info('radio', `play-dl streaming: ${youtubeUrl}`)
+
+    // quality: 0 = best, 1 = medium, 2 = worst (untuk kecepatan)
+    const streamData = await playdl.stream(youtubeUrl, { quality: 0 })
+
+    botLogger.info('radio', `Stream ready — type: ${streamData.type}`)
+    return streamData
+}
+
+// ─────────────────────────────────────────────
+// FFMPEG PATH
+// ─────────────────────────────────────────────
+
+function getFfmpegPath() {
+    const local = path.resolve('./storage/bin/ffmpeg')
+    if (fs.existsSync(local)) {
+        try {
+            fs.accessSync(local, fs.constants.X_OK)
+        } catch (_) {
+            try { fs.chmodSync(local, 0o755) } catch (_) { }
+        }
+        return local
+    }
+    return 'ffmpeg' // fallback system PATH
 }
 
 // ─────────────────────────────────────────────
@@ -111,10 +143,10 @@ class RadioService extends EventEmitter {
     #activeEq = 'flat'
     #skipRequested = false
     #playTimeout = null
+    #currentStream = null   // play-dl stream reference untuk cleanup
 
     constructor() {
         super()
-        ensureYtdlp().catch(err => console.error('[Radio] ensureYtdlp error:', err.message))
         if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
     }
 
@@ -126,7 +158,7 @@ class RadioService extends EventEmitter {
     get activeEq() { return this.#activeEq }
 
     // ─────────────────────────────────────────────
-    // SEARCH — via play-dl
+    // SEARCH
     // ─────────────────────────────────────────────
 
     async search(query, requestedBy) {
@@ -139,8 +171,7 @@ class RadioService extends EventEmitter {
         const results = []
         for (const q of queries) {
             try {
-                const track = await this.search(q.trim(), requestedBy)
-                results.push({ track, error: null })
+                results.push({ track: await this.search(q.trim(), requestedBy), error: null })
             } catch (err) {
                 results.push({ track: null, error: err.message, query: q })
             }
@@ -156,7 +187,7 @@ class RadioService extends EventEmitter {
         if (this.#queue.length >= MAX_QUEUE) throw new Error(`Queue penuh (max ${MAX_QUEUE}).`)
         this.#queue.push(track)
         this.emit('queue:add', track)
-        logger.info(`[Radio] Queued: ${track.title}`)
+        botLogger.info('radio', `Queued: ${track.title}`)
     }
 
     removeFromQueue(index) {
@@ -176,7 +207,7 @@ class RadioService extends EventEmitter {
             this.#isPlaying = false
             this.#currentTrack = null
             this.emit('radio:idle')
-            logger.info('[Radio] Queue habis, radio idle.')
+            botLogger.info('radio', 'Queue habis, radio idle.')
             return
         }
 
@@ -184,12 +215,12 @@ class RadioService extends EventEmitter {
         this.#isPlaying = true
         this.#skipRequested = false
         this.emit('track:start', this.#currentTrack)
-        console.log(`\x1b[36m[Radio] ▶ ${this.#currentTrack.title}\x1b[0m`)
+        botLogger.info('radio', `▶ Now playing: ${this.#currentTrack.title}`)
 
         try {
             await this.#streamTrack(this.#currentTrack)
         } catch (err) {
-            console.error(`\x1b[31m[Radio] Stream error: ${err.message}\x1b[0m`)
+            botLogger.err('radio', err, 'streamTrack')
             this.emit('track:error', { track: this.#currentTrack, error: err.message })
         }
 
@@ -197,68 +228,103 @@ class RadioService extends EventEmitter {
     }
 
     /**
-     * Stream pipeline:
-     * yt-dlp --get-url → CDN URL → ffmpeg -i [CDN URL] → stdout → broadcast
-     * 
-     * Kenapa -i URL bukan pipe:
-     * CDN URL dari yt-dlp punya token yang valid lebih lama (~6 jam)
-     * dan FFmpeg support HTTP reconnect (-reconnect flags) untuk URL
+     * Stream pipeline (no yt-dlp):
+     * play-dl.stream(url) → Readable → ffmpeg stdin → ffmpeg stdout → broadcast
+     *
+     * Keunggulan vs yt-dlp approach:
+     * - Tidak butuh binary eksternal apapun
+     * - Works di semua environment (Pterodactyl, Railway, Heroku, dll)
+     * - play-dl handle auth & token refresh otomatis
      */
     async #streamTrack(track) {
         return new Promise(async (resolve, reject) => {
             try {
-                // Build filter chain
-                const filters = [
-                    FX_PRESETS[this.#activeFx],
-                    EQ_PRESETS[this.#activeEq]
-                ].filter(Boolean)
+                // Build ffmpeg filter chain
+                const filters = [FX_PRESETS[this.#activeFx], EQ_PRESETS[this.#activeEq]].filter(Boolean)
                 const filterStr = filters.join(',')
 
-                // yt-dlp: extract fresh CDN audio URL
-                const audioUrl = await ytdlpGetAudioUrl(track.url)
+                // ── 1. Dapatkan play-dl stream ──
+                let streamData
+                try {
+                    streamData = await getPlayDlStream(track.url)
+                } catch (e) {
+                    return reject(new Error(`play-dl stream gagal: ${e.message}`))
+                }
 
-                if (this.#skipRequested) return resolve()
+                if (this.#skipRequested) {
+                    streamData.stream.destroy?.()
+                    return resolve()
+                }
 
-                // FFmpeg: transcode CDN URL → MP3 stream
-                const ffmpegBin = (() => {
-                    // Coba ffmpeg static binary dulu, fallback ke system
-                    const local = path.resolve('./storage/bin/ffmpeg')
-                    return fs.existsSync(local) ? local : 'ffmpeg'
-                })()
+                this.#currentStream = streamData.stream
 
-                const ffArgs = [
-                    '-reconnect', '1',
-                    '-reconnect_streamed', '1',
-                    '-reconnect_delay_max', '5',
-                    '-i', audioUrl,
-                    '-vn',
-                    '-acodec', 'libmp3lame',
-                    '-ab', '128k',
-                    '-ar', '44100',
-                    '-ac', '2',
-                ]
+                // ── 2. Tentukan input format untuk ffmpeg ──
+                // play-dl return 'opus' untuk webm/opus stream, 'arbitrary' untuk mp4/m4a
+                const inputFormat = streamData.type === 'opus' ? 'opus' : null
+
+                const ffmpegBin = getFfmpegPath()
+                const ffArgs = []
+
+                // Input: pipe dari stdin
+                if (inputFormat) {
+                    ffArgs.push('-f', inputFormat)
+                }
+                ffArgs.push('-i', 'pipe:0')   // baca dari stdin
+
+                // Output: MP3 ke stdout
+                ffArgs.push('-vn')
+                ffArgs.push('-acodec', 'libmp3lame')
+                ffArgs.push('-ab', '128k')
+                ffArgs.push('-ar', '44100')
+                ffArgs.push('-ac', '2')
+
                 if (filterStr) ffArgs.push('-af', filterStr)
-                ffArgs.push('-f', 'mp3', '-loglevel', 'error', 'pipe:1')
 
-                console.log(`\x1b[90m[Radio] FFmpeg starting (${ffmpegBin})...\x1b[0m`)
+                ffArgs.push(
+                    '-f', 'mp3',
+                    '-loglevel', 'error',
+                    'pipe:1'   // output ke stdout
+                )
+
+                botLogger.info('radio', `FFmpeg starting (${ffmpegBin})`)
                 const ffProc = spawn(ffmpegBin, ffArgs)
                 this.#ffmpeg = ffProc
 
-                ffProc.stdout.on('data', chunk => this.#broadcast(chunk))
-                ffProc.stderr.on('data', d => {
-                    const msg = d.toString().trim()
-                    if (msg) console.log(`\x1b[33m[FFmpeg] ${msg}\x1b[0m`)
+                // ── 3. Pipe play-dl → ffmpeg stdin ──
+                streamData.stream.pipe(ffProc.stdin)
+
+                streamData.stream.on('error', e => {
+                    botLogger.err('radio', e, 'play-dl stream')
+                    ffProc.kill()
+                    reject(new Error(`Stream error: ${e.message}`))
                 })
 
-                ffProc.on('close', (code) => {
+                ffProc.stdin.on('error', () => {
+                    // Biasa terjadi saat skip — ffmpeg stdin ditutup paksa, aman diabaikan
+                })
+
+                // ── 4. FFmpeg stdout → broadcast ──
+                ffProc.stdout.on('data', chunk => this.#broadcast(chunk))
+
+                ffProc.stderr.on('data', d => {
+                    const msg = d.toString().trim()
+                    if (msg) botLogger.debug('ffmpeg', msg)
+                })
+
+                ffProc.on('close', code => {
                     this.#ffmpeg = null
+                    this.#currentStream = null
                     if (code === 0 || this.#skipRequested) resolve()
-                    else reject(new Error(`FFmpeg exit ${code}`))
+                    else reject(new Error(`FFmpeg exit code ${code}`))
                 })
 
                 ffProc.on('error', e => {
                     if (e.code === 'ENOENT') {
-                        reject(new Error('FFmpeg tidak ditemukan. Tunggu download otomatis selesai atau restart bot.'))
+                        reject(new Error(
+                            'FFmpeg tidak ditemukan.\n' +
+                            'Download FFmpeg static build ke storage/bin/ffmpeg\n' +
+                            'atau install di system: apt install ffmpeg'
+                        ))
                     } else {
                         reject(new Error(`FFmpeg error: ${e.message}`))
                     }
@@ -267,7 +333,7 @@ class RadioService extends EventEmitter {
                 // Timeout safety
                 const maxMs = Math.min((track.duration || 600) + 60, 720) * 1000
                 this.#playTimeout = setTimeout(() => {
-                    console.warn(`[Radio] Timeout: ${track.title}`)
+                    botLogger.warn('radio', `Timeout: ${track.title}`)
                     this.#killProcesses()
                     resolve()
                 }, maxMs)
@@ -316,7 +382,7 @@ class RadioService extends EventEmitter {
         this.#currentTrack = null
         this.#isPlaying = false
         this.emit('radio:stop')
-        logger.info('[Radio] Stopped.')
+        botLogger.info('radio', 'Stopped.')
     }
 
     setFx(name) {
@@ -347,8 +413,10 @@ class RadioService extends EventEmitter {
 
     #killProcesses() {
         clearTimeout(this.#playTimeout)
+        try { this.#currentStream?.destroy?.() } catch (_) { }
         try { this.#ffmpeg?.kill('SIGKILL') } catch (_) { }
         this.#ffmpeg = null
+        this.#currentStream = null
     }
 
     getNowPlayingInfo() {
