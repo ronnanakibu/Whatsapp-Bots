@@ -1,6 +1,6 @@
 // src/services/radio.js
 // RadioService — Live Radio Streaming Engine
-// Architecture: play-dl.stream() → pipe stdin → FFmpeg → HTTP chunked stream
+// Architecture: play-dl (search) + yt-dlp (stream URL) + FFmpeg (transcode) → HTTP
 
 import { spawn } from 'child_process'
 import { EventEmitter } from 'events'
@@ -9,7 +9,7 @@ import path from 'path'
 import { logger } from '../utils/logger.js'
 
 // ─────────────────────────────────────────────
-// PLAY-DL HELPERS
+// PLAY-DL — search only
 // ─────────────────────────────────────────────
 
 async function getPlayDl() {
@@ -21,9 +21,6 @@ async function getPlayDl() {
     }
 }
 
-/**
- * Search YouTube — return { title, url, duration, thumbnail }
- */
 async function youtubeSearch(query) {
     const playdl = await getPlayDl()
     const results = await playdl.search(query, { limit: 1, source: { youtube: 'video' } })
@@ -37,9 +34,6 @@ async function youtubeSearch(query) {
     }
 }
 
-/**
- * Get info dari URL langsung
- */
 async function youtubeGetInfo(url) {
     const playdl = await getPlayDl()
     const info = await playdl.video_info(url)
@@ -52,35 +46,71 @@ async function youtubeGetInfo(url) {
     }
 }
 
-/**
- * Stream audio dari YouTube via play-dl.stream()
- * Return: Node.js Readable stream (piped langsung ke FFmpeg stdin)
- * 
- * Ini lebih reliable dari video_info → format URL karena:
- * - CDN URL dari format sudah dihandle play-dl internaly
- * - Tidak perlu reconstruct URL yang expired
- */
-async function youtubeStream(url) {
-    const playdl = await getPlayDl()
+// ─────────────────────────────────────────────
+// YT-DLP — stream URL extraction
+// Lebih reliable dari play-dl untuk dapat CDN URL
+// ─────────────────────────────────────────────
 
-    // Pastikan play-dl tidak butuh auth untuk video publik
-    let stream
-    try {
-        stream = await playdl.stream(url, {
-            quality: 2,         // 0=highest, 2=medium — lebih stabil untuk streaming
-            discordPlayerCompatibility: false
-        })
-    } catch (firstErr) {
-        // Fallback: coba tanpa options
+function getYtdlpPath() {
+    // Cek semua kemungkinan lokasi binary
+    const candidates = [
+        process.env.YTDLP_PATH,
+        path.resolve('./storage/bin/yt-dlp'),
+        path.resolve('./storage/bin/yt-dlp_linux'),
+        'yt-dlp',  // kalau ada di PATH sistem
+    ].filter(Boolean)
+
+    for (const p of candidates) {
         try {
-            stream = await playdl.stream(url)
-        } catch (secondErr) {
-            throw new Error(`play-dl stream gagal: ${secondErr.message}`)
-        }
+            if (p === 'yt-dlp' || fs.existsSync(p)) return p
+        } catch (_) { }
     }
+    throw new Error('yt-dlp tidak ditemukan. Pastikan binary ada di storage/bin/')
+}
 
-    if (!stream?.stream) throw new Error('play-dl tidak return stream valid.')
-    return stream.stream  // Node.js Readable
+/**
+ * Gunakan yt-dlp untuk extract direct audio CDN URL.
+ * URL ini fresh setiap kali di-call, tidak expire saat dipakai FFmpeg.
+ */
+function ytdlpGetAudioUrl(youtubeUrl) {
+    return new Promise((resolve, reject) => {
+        const ytdlpPath = getYtdlpPath()
+
+        const args = [
+            '--no-playlist',
+            '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+            '--get-url',
+            '--no-warnings',
+            '--quiet',
+            youtubeUrl
+        ]
+
+        console.log(`\x1b[90m[Radio] yt-dlp extracting URL: ${youtubeUrl}\x1b[0m`)
+        const proc = spawn(ytdlpPath, args)
+
+        let output = ''
+        let errOutput = ''
+
+        proc.stdout.on('data', d => output += d.toString())
+        proc.stderr.on('data', d => errOutput += d.toString())
+
+        proc.on('close', (code) => {
+            const url = output.trim().split('\n')[0].trim()
+            if (code !== 0 || !url || !url.startsWith('http')) {
+                return reject(new Error(`yt-dlp gagal extract URL: ${errOutput.slice(0, 150)}`))
+            }
+            console.log(`\x1b[32m[Radio] yt-dlp got CDN URL (${url.slice(0, 60)}...)\x1b[0m`)
+            resolve(url)
+        })
+
+        proc.on('error', e => reject(new Error(`yt-dlp spawn error: ${e.message}`)))
+
+        // Timeout 20 detik
+        setTimeout(() => {
+            proc.kill()
+            reject(new Error('yt-dlp timeout (20s)'))
+        }, 20_000)
+    })
 }
 
 // ─────────────────────────────────────────────
@@ -139,7 +169,6 @@ class RadioService extends EventEmitter {
     #queue = []
     #currentTrack = null
     #ffmpeg = null
-    #ytStream = null      // play-dl Readable stream
     #clients = new Set()
     #isPlaying = false
     #activeFx = 'normal'
@@ -160,7 +189,7 @@ class RadioService extends EventEmitter {
     get activeEq() { return this.#activeEq }
 
     // ─────────────────────────────────────────────
-    // SEARCH
+    // SEARCH — via play-dl
     // ─────────────────────────────────────────────
 
     async search(query, requestedBy) {
@@ -190,6 +219,7 @@ class RadioService extends EventEmitter {
         if (this.#queue.length >= MAX_QUEUE) throw new Error(`Queue penuh (max ${MAX_QUEUE}).`)
         this.#queue.push(track)
         this.emit('queue:add', track)
+        logger.info(`[Radio] Queued: ${track.title}`)
     }
 
     removeFromQueue(index) {
@@ -198,13 +228,10 @@ class RadioService extends EventEmitter {
         return removed
     }
 
-    clearQueue() {
-        this.#queue = []
-        this.emit('queue:clear')
-    }
+    clearQueue() { this.#queue = []; this.emit('queue:clear') }
 
     // ─────────────────────────────────────────────
-    // PLAYBACK
+    // PLAYBACK ENGINE
     // ─────────────────────────────────────────────
 
     async #playNext() {
@@ -212,6 +239,7 @@ class RadioService extends EventEmitter {
             this.#isPlaying = false
             this.#currentTrack = null
             this.emit('radio:idle')
+            logger.info('[Radio] Queue habis, radio idle.')
             return
         }
 
@@ -219,7 +247,7 @@ class RadioService extends EventEmitter {
         this.#isPlaying = true
         this.#skipRequested = false
         this.emit('track:start', this.#currentTrack)
-        console.log(`\x1b[36m[Radio] ▶ Now playing: ${this.#currentTrack.title}\x1b[0m`)
+        console.log(`\x1b[36m[Radio] ▶ ${this.#currentTrack.title}\x1b[0m`)
 
         try {
             await this.#streamTrack(this.#currentTrack)
@@ -232,12 +260,12 @@ class RadioService extends EventEmitter {
     }
 
     /**
-     * Stream track: play-dl.stream() → pipe ke FFmpeg stdin → broadcast ke HTTP clients
+     * Stream pipeline:
+     * yt-dlp --get-url → CDN URL → ffmpeg -i [CDN URL] → stdout → broadcast
      * 
-     * Kenapa pipe stdin bukan -i URL:
-     * - YouTube CDN URL expire dalam hitungan detik
-     * - play-dl handle renewal otomatis via pipe
-     * - Lebih stabil untuk long-running streams
+     * Kenapa -i URL bukan pipe:
+     * CDN URL dari yt-dlp punya token yang valid lebih lama (~6 jam)
+     * dan FFmpeg support HTTP reconnect (-reconnect flags) untuk URL
      */
     async #streamTrack(track) {
         return new Promise(async (resolve, reject) => {
@@ -249,14 +277,23 @@ class RadioService extends EventEmitter {
                 ].filter(Boolean)
                 const filterStr = filters.join(',')
 
-                // Ambil stream dari play-dl
-                console.log(`\x1b[90m[Radio] Getting stream for: ${track.url}\x1b[0m`)
-                const ytReadable = await youtubeStream(track.url)
-                this.#ytStream = ytReadable
+                // yt-dlp: extract fresh CDN audio URL
+                const audioUrl = await ytdlpGetAudioUrl(track.url)
 
-                // FFmpeg: baca dari stdin (pipe dari play-dl)
+                if (this.#skipRequested) return resolve()
+
+                // FFmpeg: transcode CDN URL → MP3 stream
+                const ffmpegBin = (() => {
+                    // Coba ffmpeg static binary dulu, fallback ke system
+                    const local = path.resolve('./storage/bin/ffmpeg')
+                    return fs.existsSync(local) ? local : 'ffmpeg'
+                })()
+
                 const ffArgs = [
-                    '-i', 'pipe:0',        // baca dari stdin
+                    '-reconnect', '1',
+                    '-reconnect_streamed', '1',
+                    '-reconnect_delay_max', '5',
+                    '-i', audioUrl,
                     '-vn',
                     '-acodec', 'libmp3lame',
                     '-ab', '128k',
@@ -266,31 +303,11 @@ class RadioService extends EventEmitter {
                 if (filterStr) ffArgs.push('-af', filterStr)
                 ffArgs.push('-f', 'mp3', '-loglevel', 'error', 'pipe:1')
 
-                const ffProc = spawn('ffmpeg', ffArgs, {
-                    env: {
-                        ...process.env,
-                        // Inject storage/bin ke PATH supaya ffmpeg static binary ketemu
-                        PATH: `${path.resolve('./storage/bin')}:${process.env.PATH}`
-                    }
-                })
+                console.log(`\x1b[90m[Radio] FFmpeg starting (${ffmpegBin})...\x1b[0m`)
+                const ffProc = spawn(ffmpegBin, ffArgs)
                 this.#ffmpeg = ffProc
 
-                // Pipe play-dl → ffmpeg stdin
-                ytReadable.pipe(ffProc.stdin)
-
-                // Handle backpressure
-                ytReadable.on('error', (err) => {
-                    console.error(`\x1b[31m[Radio] YT stream error: ${err.message}\x1b[0m`)
-                    ffProc.stdin?.destroy()
-                })
-
-                ffProc.stdin?.on('error', () => {
-                    // stdin error biasanya karena ffmpeg sudah exit — ignore
-                })
-
-                // Broadcast output ke semua listener
                 ffProc.stdout.on('data', chunk => this.#broadcast(chunk))
-
                 ffProc.stderr.on('data', d => {
                     const msg = d.toString().trim()
                     if (msg) console.log(`\x1b[33m[FFmpeg] ${msg}\x1b[0m`)
@@ -298,12 +315,17 @@ class RadioService extends EventEmitter {
 
                 ffProc.on('close', (code) => {
                     this.#ffmpeg = null
-                    this.#ytStream = null
                     if (code === 0 || this.#skipRequested) resolve()
                     else reject(new Error(`FFmpeg exit ${code}`))
                 })
 
-                ffProc.on('error', e => reject(new Error(`FFmpeg error: ${e.message}`)))
+                ffProc.on('error', e => {
+                    if (e.code === 'ENOENT') {
+                        reject(new Error('FFmpeg tidak ditemukan. Tunggu download otomatis selesai atau restart bot.'))
+                    } else {
+                        reject(new Error(`FFmpeg error: ${e.message}`))
+                    }
+                })
 
                 // Timeout safety
                 const maxMs = Math.min((track.duration || 600) + 60, 720) * 1000
@@ -357,17 +379,18 @@ class RadioService extends EventEmitter {
         this.#currentTrack = null
         this.#isPlaying = false
         this.emit('radio:stop')
+        logger.info('[Radio] Stopped.')
     }
 
     setFx(name) {
-        if (!FX_PRESETS.hasOwnProperty(name))
+        if (!Object.hasOwn(FX_PRESETS, name))
             throw new Error(`FX tidak dikenal: ${name}. Tersedia: ${Object.keys(FX_PRESETS).join(', ')}`)
         this.#activeFx = name
         this.emit('fx:change', name)
     }
 
     setEq(name) {
-        if (!EQ_PRESETS.hasOwnProperty(name))
+        if (!Object.hasOwn(EQ_PRESETS, name))
             throw new Error(`EQ tidak dikenal: ${name}. Tersedia: ${Object.keys(EQ_PRESETS).join(', ')}`)
         this.#activeEq = name
         this.emit('eq:change', name)
@@ -387,10 +410,8 @@ class RadioService extends EventEmitter {
 
     #killProcesses() {
         clearTimeout(this.#playTimeout)
-        try { this.#ytStream?.destroy() } catch (_) { }
         try { this.#ffmpeg?.kill('SIGKILL') } catch (_) { }
         this.#ffmpeg = null
-        this.#ytStream = null
     }
 
     getNowPlayingInfo() {
