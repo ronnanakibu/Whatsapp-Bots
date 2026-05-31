@@ -489,6 +489,7 @@ class RadioService extends EventEmitter {
                 // ── 3. FFmpeg: input → MP3 stdout ──
                 const ffmpegBin = getFfmpegPath()
                 const ffArgs = [
+                    '-re',
                     '-i', ffmpegInput,
                     '-vn',
                     '-acodec', 'libmp3lame',
