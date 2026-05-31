@@ -136,13 +136,17 @@ function formatMs(ms) {
     return `${s} detik`
 }
 
+// Timezone dari .env — default WIB (Asia/Jakarta)
+const TZ = process.env.BOT_TIMEZONE ?? 'Asia/Jakarta'
+
 function formatDate(unixTs) {
     return new Date(unixTs * 1000).toLocaleString('id-ID', {
         weekday: 'short',
         day: '2-digit',
         month: 'short',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: TZ
     })
 }
 

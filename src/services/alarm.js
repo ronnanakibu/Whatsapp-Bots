@@ -34,9 +34,11 @@ export async function triggerAlarm(sock, chatId, message, useCall = false) {
     }
 
     // ── Kirim notif text ──
+    const TZ = process.env.BOT_TIMEZONE ?? 'Asia/Jakarta'
     const timeStr = new Date().toLocaleTimeString('id-ID', {
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: TZ
     })
 
     const callNote = useCall && isDM ? '\n📞 _Bot sudah nge-ring kamu!_' : ''
@@ -48,4 +50,4 @@ export async function triggerAlarm(sock, chatId, message, useCall = false) {
             `🕐 ${timeStr}\n` +
             `_Set reminder baru: !remindme [waktu] [pesan]_`
     })
-}   
+}
