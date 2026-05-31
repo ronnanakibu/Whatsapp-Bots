@@ -363,23 +363,44 @@ class RadioService extends EventEmitter {
 
                 if (this.#skipRequested) return resolve()
 
-                // ── 2. Fetch CDN URL via Node.js (bypass ffmpeg DNS) ──
-                botLogger.info('radio', 'Fetching audio stream via Node.js...')
-                let cdnStream
+                // ── 2. Ambil stream via play-dl (primary) atau Node fetch (fallback) ──
+                // play-dl.stream() pakai internal HTTP stack-nya sendiri
+                // yang mungkin bisa bypass network restriction Pterodactyl
+                let cdnStream = null
+                let usedMethod = 'unknown'
+
                 try {
-                    cdnStream = await fetchStream(audioInfo.url)
-                } catch (e) {
-                    return reject(new Error(`Gagal fetch CDN stream: ${e.message}`))
+                    botLogger.info('radio', 'Trying play-dl stream()...')
+                    const playdl = await getPlayDl()
+                    const streamData = await playdl.stream(track.url, { quality: 2 })
+                    cdnStream = streamData.stream
+                    usedMethod = `play-dl (${streamData.type})`
+                    botLogger.info('radio', `play-dl stream OK: ${streamData.type}`)
+                } catch (e1) {
+                    botLogger.warn('radio', `play-dl stream() gagal: ${e1.message} — fallback Node fetch`)
+                    try {
+                        cdnStream = await fetchStream(audioInfo.url)
+                        usedMethod = 'node-fetch'
+                        botLogger.info('radio', 'Node fetch stream OK')
+                    } catch (e2) {
+                        return reject(new Error(
+                            `Semua metode stream gagal.\n` +
+                            `play-dl: ${e1.message}\n` +
+                            `node-fetch: ${e2.message}\n\n` +
+                            `Kemungkinan container tidak punya akses ke YouTube CDN (googlevideo.com). ` +
+                            `Hubungi hosting provider.`
+                        ))
+                    }
                 }
 
-                if (this.#skipRequested) { cdnStream.destroy(); return resolve() }
+                if (this.#skipRequested) { cdnStream.destroy?.(); return resolve() }
 
                 // ── 3. FFmpeg: stdin pipe → MP3 stdout ──
-                // Tidak pakai -i URL — ffmpeg baca dari stdin (Node sudah fetch-kan)
                 const ffmpegBin = getFfmpegPath()
                 const ffArgs = [
-                    '-i', 'pipe:0',   // baca dari stdin
-                    '-vn',                  // skip video track
+                    '-i', 'pipe:0',
+                    '-vn',
+                    '-map', '0:a:0',      // force ambil audio track (handle video+audio itag 18)
                     '-acodec', 'libmp3lame',
                     '-ab', '128k',
                     '-ar', '44100',
@@ -389,19 +410,16 @@ class RadioService extends EventEmitter {
                 if (filterStr) ffArgs.push('-af', filterStr)
                 ffArgs.push('-f', 'mp3', '-loglevel', 'error', 'pipe:1')
 
-                botLogger.info('radio', `FFmpeg starting → ${ffmpegBin}`)
+                botLogger.info('radio', `FFmpeg starting [${usedMethod}] → ${ffmpegBin}`)
                 const ffProc = spawn(ffmpegBin, ffArgs)
                 this.#ffmpeg = ffProc
 
-                // Pipe: CDN stream → ffmpeg stdin
                 cdnStream.pipe(ffProc.stdin)
                 cdnStream.on('error', e => {
-                    botLogger.err('radio', e, 'CDN stream error')
+                    botLogger.err('radio', e, 'stream error')
                     ffProc.kill()
                 })
-                ffProc.stdin.on('error', () => {
-                    // Skip saat di-kill — normal
-                })
+                ffProc.stdin.on('error', () => { /* normal saat skip */ })
 
                 // ── 4. Broadcast stdout ──
                 ffProc.stdout.on('data', chunk => this.#broadcast(chunk))
