@@ -24,26 +24,65 @@ async function getPlayDl() {
     }
 }
 
-// Inisialisasi play-dl sekali — set cookie kalau ada di env
+// Inisialisasi play-dl sekali — set cookie kalau ada
 let _playDlReady = false
 async function initPlayDl() {
     if (_playDlReady) return
     _playDlReady = true
     const playdl = await getPlayDl()
-    const cookie = process.env.YOUTUBE_COOKIE
-    if (cookie && cookie.length > 10) {
+
+    // Cari cookie dari berbagai sumber:
+    // 1. File JSON (recommended — bisa multiline, paste langsung dari browser extension)
+    // 2. ENV var YOUTUBE_COOKIE (single-line header string)
+    const cookieFile = process.env.YOUTUBE_COOKIE_FILE
+        || path.resolve('./storage/youtube-cookies.json')
+
+    let cookieStr = null
+
+    // Source 1: File JSON
+    if (fs.existsSync(cookieFile)) {
         try {
-            await playdl.setToken({ youtube: { cookie } })
-            botLogger.info('radio', 'play-dl: YouTube cookie configured ✓')
+            const raw = fs.readFileSync(cookieFile, 'utf-8').trim()
+            if (raw.startsWith('[')) {
+                const arr = JSON.parse(raw)
+                cookieStr = arr
+                    .filter(c => c.name && c.value)
+                    .map(c => `${c.name}=${c.value}`)
+                    .join('; ')
+                botLogger.info('radio', `Cookie loaded from ${path.basename(cookieFile)} (${arr.length} cookies)`)
+            } else {
+                // Sudah format header string
+                cookieStr = raw
+                botLogger.info('radio', `Cookie loaded from ${path.basename(cookieFile)} (header string)`)
+            }
         } catch (e) {
-            botLogger.warn('radio', `play-dl: cookie setup gagal: ${e.message}`)
+            botLogger.warn('radio', `Gagal baca cookie file ${cookieFile}: ${e.message}`)
         }
-    } else {
+    }
+
+    // Source 2: ENV var (single-line)
+    if (!cookieStr) {
+        const env = process.env.YOUTUBE_COOKIE
+        if (env && env.length > 20 && !env.startsWith('[')) {
+            cookieStr = env.trim()
+            botLogger.info('radio', 'Cookie loaded from YOUTUBE_COOKIE env var')
+        }
+    }
+
+    if (!cookieStr) {
         botLogger.warn('radio', [
-            'play-dl: YOUTUBE_COOKIE tidak diset.',
-            'Streaming dari datacenter IP mungkin diblokir YouTube.',
-            'Set YOUTUBE_COOKIE di .env untuk fix: https://git.io/JOSKl'
+            'YouTube cookie tidak ditemukan.',
+            `Simpan cookie JSON dari browser ke: ${cookieFile}`,
+            'Atau set YOUTUBE_COOKIE di .env (format: name=val; name=val).',
         ].join(' '))
+        return
+    }
+
+    try {
+        await playdl.setToken({ youtube: { cookie: cookieStr } })
+        botLogger.info('radio', 'play-dl: YouTube cookie configured ✓')
+    } catch (e) {
+        botLogger.warn('radio', `play-dl: cookie setup gagal: ${e.message}`)
     }
 }
 
