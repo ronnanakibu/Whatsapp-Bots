@@ -68,24 +68,66 @@ async function getAudioUrl(youtubeUrl) {
 
     botLogger.debug('radio', `Got ${formats.length} formats`)
 
-    // Prioritas: audio-only m4a → audio-only webm → audio dari format apapun
-    const audioOnly = formats.filter(f =>
-        f.mimeType?.includes('audio') && !f.mimeType?.includes('video')
-    )
-
-    // Sort by bitrate descending
-    audioOnly.sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))
-
-    // Prefer m4a (AAC) — ffmpeg paling stabil dengan ini
-    const m4a = audioOnly.find(f => f.mimeType?.includes('mp4') || f.mimeType?.includes('m4a'))
-    const webm = audioOnly.find(f => f.mimeType?.includes('webm') || f.mimeType?.includes('opus'))
-    const best = m4a ?? webm ?? audioOnly[0] ?? formats[0]
-
-    if (!best?.url) {
-        throw new Error('Tidak ada audio format yang bisa dipakai dari video ini.')
+    // Debug: log struktur format pertama
+    if (formats.length > 0) {
+        botLogger.debug('radio', `Format[0]: ${JSON.stringify({
+            itag: formats[0].itag,
+            mimeType: formats[0].mimeType,
+            bitrate: formats[0].bitrate,
+            hasAudio: formats[0].hasAudio,
+            hasVideo: formats[0].hasVideo,
+            quality: formats[0].quality,
+            url: formats[0].url ? '[present]' : '[missing]'
+        })}`)
     }
 
-    botLogger.info('radio', `Audio format: ${best.mimeType} @ ${best.bitrate ?? '?'}bps`)
+    // YouTube audio-only itags (tidak ada video track)
+    const AUDIO_ONLY_ITAGS = new Set([139, 140, 141, 249, 250, 251, 256, 258, 327, 233, 234])
+    const PREFERRED_ITAGS = [140, 141, 251, 250, 139, 249, 258, 256]
+
+    let best = null
+
+    // Strategy 1: itag audio-only foreknown (paling reliable)
+    for (const itag of PREFERRED_ITAGS) {
+        const f = formats.find(f => f.itag === itag && f.url)
+        if (f) { best = f; break }
+    }
+
+    // Strategy 2: mimeType mengandung 'audio'
+    if (!best) {
+        const byMime = formats
+            .filter(f => f.url && f.mimeType?.toLowerCase().includes('audio'))
+            .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))
+        best = byMime[0] ?? null
+    }
+
+    // Strategy 3: hasAudio && !hasVideo (beberapa versi play-dl)
+    if (!best) {
+        const byFlag = formats
+            .filter(f => f.url && f.hasAudio === true && f.hasVideo === false)
+            .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))
+        best = byFlag[0] ?? null
+    }
+
+    // Strategy 4: itag dalam set audio-only
+    if (!best) {
+        best = formats.find(f => f.url && AUDIO_ONLY_ITAGS.has(f.itag)) ?? null
+    }
+
+    // Strategy 5: fallback — format apapun yang punya URL, bitrate paling kecil (kemungkinan audio)
+    if (!best) {
+        const withUrl = formats.filter(f => f.url)
+        withUrl.sort((a, b) => (a.bitrate ?? 999999) - (b.bitrate ?? 999999))
+        best = withUrl[0] ?? null
+        if (best) botLogger.warn('radio', `Fallback ke format non-audio-only (itag ${best.itag})`)
+    }
+
+    if (!best?.url) {
+        const itagList = formats.map(f => f.itag).join(', ')
+        throw new Error(`Tidak ada format audio yang bisa dipakai. Available itags: ${itagList}`)
+    }
+
+    botLogger.info('radio', `Selected: itag=${best.itag} mime=${best.mimeType ?? '?'} bitrate=${best.bitrate ?? '?'}`)
     return { url: best.url, mimeType: best.mimeType ?? 'audio/mp4' }
 }
 
