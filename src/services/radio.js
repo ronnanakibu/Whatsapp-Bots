@@ -338,13 +338,60 @@ class RadioService extends EventEmitter {
     get activeEq() { return this.#activeEq }
 
     // ─────────────────────────────────────────────
-    // SEARCH
+    // SEARCH & EXTRACTION (Powered by SoundCloud)
     // ─────────────────────────────────────────────
+    // Menggunakan SoundCloud karena YouTube memblokir IP Datacenter (Pterodactyl) dengan 403 Forbidden.
+    // SoundCloud tidak memiliki IP block, cipher, atau limit se-strict YouTube, 100% reliable untuk music bot!
 
     async search(query, requestedBy) {
+        const playdl = await getPlayDl()
+        
+        // 1. Pastikan SoundCloud Client ID tersedia
+        try {
+            const clientId = await playdl.getFreeClientID()
+            await playdl.setToken({ soundcloud: { client_id: clientId } })
+        } catch (e) {
+            botLogger.warn('radio', `Gagal set SC Client ID: ${e.message}`)
+        }
+
+        let searchQuery = query
         const isUrl = /^https?:\/\//.test(query)
-        const info = isUrl ? await youtubeGetInfo(query) : await youtubeSearch(query)
-        return new Track({ ...info, requestedBy })
+
+        // 2. Jika input adalah YouTube URL, kita fetch judulnya, lalu cari di SoundCloud
+        if (isUrl) {
+            const ytType = await playdl.validate(query)
+            if (ytType === 'video') {
+                try {
+                    botLogger.info('radio', `Mengambil judul YouTube untuk dialihkan ke SC: ${query}`)
+                    const info = await playdl.video_info(query)
+                    searchQuery = info.video_details?.title || query
+                    botLogger.info('radio', `Judul YouTube: ${searchQuery}`)
+                } catch (e) {
+                    botLogger.warn('radio', `Gagal fetch judul YT: ${e.message}`)
+                }
+            }
+        }
+
+        // 3. Cari di SoundCloud
+        botLogger.info('radio', `Searching SoundCloud: ${searchQuery}`)
+        const scResults = await playdl.search(searchQuery, { source: { soundcloud: 'tracks' }, limit: 1 })
+        
+        if (!scResults || scResults.length === 0) {
+            throw new Error(`Tidak ditemukan di SoundCloud: ${searchQuery}`)
+        }
+
+        const sc = scResults[0]
+        
+        const trackData = {
+            id: sc.id,
+            url: sc.url,
+            title: sc.name + (isUrl ? ' (SC Version)' : ''), // Tandai jika ini versi SC dari YT URL
+            duration: sc.durationInSec,
+            thumbnail: sc.thumbnail || null,
+            requestedBy
+        }
+
+        return new Track(trackData)
     }
 
     async searchBatch(queries, requestedBy) {
@@ -409,7 +456,7 @@ class RadioService extends EventEmitter {
 
     /**
      * Stream pipeline:
-     * youtube-dl-exec (get audio url) → fetch URL → Readable → ffmpeg stdin → ffmpeg stdout → broadcast
+     * play-dl.stream → Readable → ffmpeg stdin → ffmpeg stdout → broadcast
      */
     async #streamTrack(track) {
         return new Promise(async (resolve, reject) => {
@@ -417,55 +464,32 @@ class RadioService extends EventEmitter {
                 const filters = [FX_PRESETS[this.#activeFx], EQ_PRESETS[this.#activeEq]].filter(Boolean)
                 const filterStr = filters.join(',')
 
-                botLogger.info('radio', `Trying youtube-dl-exec for URL extraction...`)
-                const { default: youtubedl } = await import('youtube-dl-exec')
+                botLogger.info('radio', `Memulai streaming untuk: ${track.title}`)
+                const playdl = await getPlayDl()
                 
-                let cdnUrl = null
-                let usedMethod = 'youtube-dl-exec'
-
+                let streamData
                 try {
-                    const output = await youtubedl(track.url, {
-                        dumpJson: true,
-                        noWarnings: true,
-                        callHome: false,
-                        noCheckCertificate: true,
-                        preferFreeFormats: true,
-                        youtubeSkipDashManifest: true
-                    })
-                    
-                    botLogger.debug('radio', `Got ${output.formats?.length || 0} formats dari yt-dlp`)
-                    const audio = output.formats.find(f => f.vcodec === 'none' && f.acodec !== 'none')
-                    
-                    if (!audio?.url) {
-                        return reject(new Error('Tidak ada format audio dari yt-dlp'))
-                    }
-                    
-                    cdnUrl = audio.url
-                    botLogger.info('radio', `youtube-dl-exec OK: format ${audio.format_id}`)
-                } catch (eDL) {
-                    botLogger.warn('radio', `youtube-dl-exec gagal: ${eDL.message}`)
-                    return reject(new Error(`Gagal extract URL: ${eDL.message}`))
+                    botLogger.info('radio', `Trying play-dl stream for URL...`)
+                    streamData = await playdl.stream(track.url)
+                    botLogger.info('radio', `play-dl stream OK: ${streamData.type}`)
+                } catch (err) {
+                    return reject(new Error(`Gagal membuka stream: ${err.message}`))
                 }
 
                 if (this.#skipRequested) return resolve()
 
-                // Ambil stream langsung dari CDN URL yt-dlp
-                let cdnStream = null
-                try {
-                    cdnStream = await fetchStream(cdnUrl)
-                    botLogger.info('radio', 'fetchStream (yt-dlp CDN) OK')
-                } catch (eC) {
-                    return reject(new Error(`Gagal fetch stream dari CDN: ${eC.message}`))
+                // Jika play-dl mengembalikan URL langsung (biasanya HLS m3u8 dari SoundCloud)
+                // ffmpeg bisa membaca URL ini langsung tanpa pipe stdin
+                let ffmpegInput = 'pipe:0'
+                if (streamData.type === 'arbitrary' && typeof streamData.url === 'string') {
+                    ffmpegInput = streamData.url
                 }
 
-                if (this.#skipRequested) { cdnStream.destroy?.(); return resolve() }
-
-                // ── 3. FFmpeg: stdin pipe → MP3 stdout ──
+                // ── 3. FFmpeg: input → MP3 stdout ──
                 const ffmpegBin = getFfmpegPath()
                 const ffArgs = [
-                    '-i', 'pipe:0',
+                    '-i', ffmpegInput,
                     '-vn',
-                    '-map', '0:a:0',      // force ambil audio track (handle video+audio itag 18)
                     '-acodec', 'libmp3lame',
                     '-ab', '128k',
                     '-ar', '44100',
@@ -475,15 +499,18 @@ class RadioService extends EventEmitter {
                 if (filterStr) ffArgs.push('-af', filterStr)
                 ffArgs.push('-f', 'mp3', '-loglevel', 'error', 'pipe:1')
 
-                botLogger.info('radio', `FFmpeg starting [${usedMethod}] → ${ffmpegBin}`)
+                botLogger.info('radio', `FFmpeg starting [${streamData.type}] → ${ffmpegBin}`)
                 const ffProc = spawn(ffmpegBin, ffArgs)
                 this.#ffmpeg = ffProc
 
-                cdnStream.pipe(ffProc.stdin)
-                cdnStream.on('error', e => {
-                    botLogger.err('radio', e, 'stream error')
-                    ffProc.kill()
-                })
+                if (ffmpegInput === 'pipe:0' && streamData.stream) {
+                    streamData.stream.pipe(ffProc.stdin)
+                    streamData.stream.on('error', e => {
+                        botLogger.err('radio', e, 'stream error')
+                        ffProc.kill()
+                    })
+                }
+                
                 ffProc.stdin.on('error', () => { /* normal saat skip */ })
 
                 // ── 4. Broadcast stdout ──
