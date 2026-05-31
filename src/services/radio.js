@@ -2,11 +2,14 @@
 // RadioService — Live Radio Streaming Engine
 // Architecture: play-dl (search) + yt-dlp (stream URL) + FFmpeg (transcode) → HTTP
 
+
+import { ytdlpGetAudioUrl, ensureYtdlp } from './ytdlp.js'
 import { spawn } from 'child_process'
 import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import { logger } from '../utils/logger.js'
+
 
 // ─────────────────────────────────────────────
 // PLAY-DL — search only
@@ -44,80 +47,6 @@ async function youtubeGetInfo(url) {
         duration: d.durationInSec || 0,
         thumbnail: d.thumbnails?.[0]?.url || null
     }
-}
-
-// ─────────────────────────────────────────────
-// YT-DLP — stream URL extraction
-// Lebih reliable dari play-dl untuk dapat CDN URL
-// ─────────────────────────────────────────────
-
-function getYtdlpPath() {
-    const candidates = [
-        process.env.YTDLP_PATH,
-        path.resolve('./storage/bin/yt-dlp_linux'),
-        path.resolve('./storage/bin/yt-dlp'),
-        'yt-dlp',
-    ].filter(Boolean)
-
-    for (const p of candidates) {
-        try {
-            if (p === 'yt-dlp') return p  // system PATH, cek saat spawn
-            if (!fs.existsSync(p)) continue
-            const size = fs.statSync(p).size
-            // Validasi: harus > 20MB (ELF binary), bukan Python script 3MB
-            if (size < 20_000_000) {
-                console.warn(`\x1b[33m[Radio] Skip ${p} — ukuran ${(size / 1024 / 1024).toFixed(1)}MB terlalu kecil (bukan ELF binary)\x1b[0m`)
-                continue
-            }
-            return p
-        } catch (_) { }
-    }
-    throw new Error('yt-dlp binary tidak ditemukan atau corrupt. Download dari: https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux')
-}
-
-/**
- * Gunakan yt-dlp untuk extract direct audio CDN URL.
- * URL ini fresh setiap kali di-call, tidak expire saat dipakai FFmpeg.
- */
-function ytdlpGetAudioUrl(youtubeUrl) {
-    return new Promise((resolve, reject) => {
-        const ytdlpPath = getYtdlpPath()
-
-        const args = [
-            '--no-playlist',
-            '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
-            '--get-url',
-            '--no-warnings',
-            '--quiet',
-            youtubeUrl
-        ]
-
-        console.log(`\x1b[90m[Radio] yt-dlp extracting URL: ${youtubeUrl}\x1b[0m`)
-        const proc = spawn(ytdlpPath, args)
-
-        let output = ''
-        let errOutput = ''
-
-        proc.stdout.on('data', d => output += d.toString())
-        proc.stderr.on('data', d => errOutput += d.toString())
-
-        proc.on('close', (code) => {
-            const url = output.trim().split('\n')[0].trim()
-            if (code !== 0 || !url || !url.startsWith('http')) {
-                return reject(new Error(`yt-dlp gagal extract URL: ${errOutput.slice(0, 150)}`))
-            }
-            console.log(`\x1b[32m[Radio] yt-dlp got CDN URL (${url.slice(0, 60)}...)\x1b[0m`)
-            resolve(url)
-        })
-
-        proc.on('error', e => reject(new Error(`yt-dlp spawn error: ${e.message}`)))
-
-        // Timeout 20 detik
-        setTimeout(() => {
-            proc.kill()
-            reject(new Error('yt-dlp timeout (20s)'))
-        }, 20_000)
-    })
 }
 
 // ─────────────────────────────────────────────
@@ -185,6 +114,7 @@ class RadioService extends EventEmitter {
 
     constructor() {
         super()
+        ensureYtdlp().catch(err => console.error('[Radio] ensureYtdlp error:', err.message))
         if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
     }
 
