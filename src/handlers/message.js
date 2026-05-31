@@ -70,7 +70,6 @@ export async function handleIncomingMessage(sock, { messages }) {
 
         const reply = async (text, options = {}) => {
             const sent = await sock.sendMessage(from, { text, ...options }, { quoted: msg })
-            if (sent?.key?.id) seamlessTracker.track(sent.key.id)
             return sent
         }
 
