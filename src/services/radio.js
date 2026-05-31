@@ -408,13 +408,8 @@ class RadioService extends EventEmitter {
     }
 
     /**
-     * Stream pipeline (no yt-dlp):
-     * play-dl.stream(url) → Readable → ffmpeg stdin → ffmpeg stdout → broadcast
-     *
-     * Keunggulan vs yt-dlp approach:
-     * - Tidak butuh binary eksternal apapun
-     * - Works di semua environment (Pterodactyl, Railway, Heroku, dll)
-     * - play-dl handle auth & token refresh otomatis
+     * Stream pipeline:
+     * youtube-dl-exec (get audio url) → fetch URL → Readable → ffmpeg stdin → ffmpeg stdout → broadcast
      */
     async #streamTrack(track) {
         return new Promise(async (resolve, reject) => {
@@ -422,61 +417,45 @@ class RadioService extends EventEmitter {
                 const filters = [FX_PRESETS[this.#activeFx], EQ_PRESETS[this.#activeEq]].filter(Boolean)
                 const filterStr = filters.join(',')
 
-                // ── 1. Init play-dl (set cookie jika ada) ──
-                await initPlayDl()
+                botLogger.info('radio', `Trying youtube-dl-exec for URL extraction...`)
+                const youtubedl = require('youtube-dl-exec')
+                
+                let cdnUrl = null
+                let usedMethod = 'youtube-dl-exec'
 
-                // ── 2. Extract CDN URL + info via play-dl ──
-                let audioInfo
                 try {
-                    audioInfo = await getAudioUrl(track.url)
-                } catch (e) {
-                    return reject(new Error(`Gagal extract audio URL: ${e.message}`))
+                    const output = await youtubedl(track.url, {
+                        dumpJson: true,
+                        noWarnings: true,
+                        callHome: false,
+                        noCheckCertificate: true,
+                        preferFreeFormats: true,
+                        youtubeSkipDashManifest: true
+                    })
+                    
+                    botLogger.debug('radio', `Got ${output.formats?.length || 0} formats dari yt-dlp`)
+                    const audio = output.formats.find(f => f.vcodec === 'none' && f.acodec !== 'none')
+                    
+                    if (!audio?.url) {
+                        return reject(new Error('Tidak ada format audio dari yt-dlp'))
+                    }
+                    
+                    cdnUrl = audio.url
+                    botLogger.info('radio', `youtube-dl-exec OK: format ${audio.format_id}`)
+                } catch (eDL) {
+                    botLogger.warn('radio', `youtube-dl-exec gagal: ${eDL.message}`)
+                    return reject(new Error(`Gagal extract URL: ${eDL.message}`))
                 }
 
                 if (this.#skipRequested) return resolve()
 
-                // ── 3. Ambil audio stream ──
-                // Priority: stream_from_info() > stream() > fetchStream() langsung
+                // Ambil stream langsung dari CDN URL yt-dlp
                 let cdnStream = null
-                let usedMethod = 'unknown'
-
-                // Method A: stream_from_info — gunakan info yang sudah di-fetch, bukan double-fetch
-                // Ini menghindari "Invalid URL" error yang terjadi di stream() karena double-fetch
-                const playdl = await getPlayDl()
                 try {
-                    botLogger.info('radio', 'Trying stream_from_info()...')
-                    const streamData = await playdl.stream_from_info(audioInfo.info, { quality: 0 })
-                    cdnStream = streamData.stream
-                    usedMethod = `stream_from_info (${streamData.type})`
-                    botLogger.info('radio', `stream_from_info OK: ${streamData.type}`)
-                } catch (eA) {
-                    botLogger.warn('radio', `stream_from_info gagal: ${eA.message}`)
-
-                    // Method B: stream() biasa
-                    try {
-                        botLogger.info('radio', 'Trying playdl.stream()...')
-                        const streamData = await playdl.stream(track.url, { quality: 0 })
-                        cdnStream = streamData.stream
-                        usedMethod = `stream (${streamData.type})`
-                        botLogger.info('radio', `playdl.stream OK: ${streamData.type}`)
-                    } catch (eB) {
-                        botLogger.warn('radio', `playdl.stream gagal: ${eB.message} → fallback CDN fetch`)
-
-                        // Method C: fetch langsung CDN URL dengan YouTube headers
-                        try {
-                            cdnStream = await fetchStream(audioInfo.url)
-                            usedMethod = 'fetchStream (CDN direct)'
-                            botLogger.info('radio', 'fetchStream CDN OK')
-                        } catch (eC) {
-                            return reject(new Error(
-                                `Semua metode stream gagal:\n` +
-                                `  A) stream_from_info: ${eA.message}\n` +
-                                `  B) stream: ${eB.message}\n` +
-                                `  C) fetchStream: ${eC.message}\n\n` +
-                                `FIX: Set YOUTUBE_COOKIE di .env — lihat README atau tanya admin.`
-                            ))
-                        }
-                    }
+                    cdnStream = await fetchStream(cdnUrl)
+                    botLogger.info('radio', 'fetchStream (yt-dlp CDN) OK')
+                } catch (eC) {
+                    return reject(new Error(`Gagal fetch stream dari CDN: ${eC.message}`))
                 }
 
                 if (this.#skipRequested) { cdnStream.destroy?.(); return resolve() }
