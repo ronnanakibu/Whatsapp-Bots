@@ -57,25 +57,34 @@ async function youtubeGetInfo(url) {
 }
 
 /**
- * Buat audio stream dari URL YouTube via play-dl.
- * Return: Readable stream yang bisa di-pipe ke ffmpeg stdin.
+ * Ambil URL audio CDN langsung via play-dl video_info.
+ * Lebih reliable dari play-dl.stream() yang sering gagal karena YouTube API changes.
+ * Return: URL CDN yang bisa langsung dipakai ffmpeg dengan -i flag.
  */
-async function youtubeStream(url) {
+async function youtubeGetAudioUrl(url) {
     const playdl = await getPlayDl()
+    process.stdout.write(`\x1b[90m[Radio] Fetching video_info: ${url}\x1b[0m\n`)
 
-    // Log URL untuk debug
-    process.stdout.write(`\x1b[90m[Radio] youtubeStream URL: ${url}\x1b[0m\n`)
+    const info = await playdl.video_info(url)
+    const formats = (info.format || [])
+        .filter(f => f.has_audio && f.url)
 
-    // Validasi URL sebelum stream agar error lebih informatif
-    const urlType = await playdl.validate(url)
-    process.stdout.write(`\x1b[90m[Radio] URL type: ${urlType}\x1b[0m\n`)
-
-    if (!urlType || urlType === 'search') {
-        throw new Error(`play-dl tidak mendukung URL ini (type=${urlType}): ${url}`)
+    if (!formats.length) {
+        throw new Error(`Tidak ada format audio dari YouTube. (${(info.format || []).length} format total)`)
     }
 
-    const result = await playdl.stream(url, { quality: 0 })
-    return result.stream  // PassThrough/Readable stream
+    // Sort: audio-only dulu, lalu berdasarkan bitrate tertinggi
+    formats.sort((a, b) => {
+        const aOnly = a.has_audio && !a.has_video
+        const bOnly = b.has_audio && !b.has_video
+        if (aOnly && !bOnly) return -1
+        if (!aOnly && bOnly) return 1
+        return (b.abr || 0) - (a.abr || 0)
+    })
+
+    const best = formats[0]
+    process.stdout.write(`\x1b[32m[Radio] Format: ${best.container ?? 'unknown'} ${best.abr ?? '?'}kbps audio_only=${best.has_audio && !best.has_video}\x1b[0m\n`)
+    return best.url
 }
 
 
@@ -136,7 +145,6 @@ class RadioService extends EventEmitter {
     #queue = []          // Track[]
     #currentTrack = null        // Track | null
     #ffmpeg = null        // FFmpeg child process
-    #audioStream = null   // play-dl audio stream (Readable)
     #clients = new Set()   // HTTP response streams
     #isPlaying = false
     #activeFx = 'normal'
@@ -261,8 +269,8 @@ class RadioService extends EventEmitter {
     }
 
     /**
-     * Stream satu track via play-dl → FFmpeg stdin → HTTP clients.
-     * play-dl langsung pipe audio stream ke ffmpeg — tidak butuh URL extraction.
+     * Stream satu track via play-dl video_info → audio CDN URL → FFmpeg → HTTP clients.
+     * Menggunakan CDN URL langsung (bukan piped stream) agar lebih stabil.
      */
     async #streamTrack(track) {
         return new Promise(async (resolve, reject) => {
@@ -273,15 +281,16 @@ class RadioService extends EventEmitter {
                 if (EQ_PRESETS[this.#activeEq]) filters.push(EQ_PRESETS[this.#activeEq])
                 const filterStr = filters.join(',')
 
-                // play-dl: ambil audio stream langsung (no URL extraction needed)
+                // play-dl: ambil CDN URL audio stream (via video_info, lebih reliable dari stream())
                 process.stdout.write(`\x1b[36m[Radio] Streaming: ${track.title}\x1b[0m\n`)
-                const audioStream = await youtubeStream(track.url)
-                this.#audioStream = audioStream
-                process.stdout.write(`\x1b[32m[Radio] Stream ready. FFmpeg starting...\x1b[0m\n`)
+                const audioUrl = await youtubeGetAudioUrl(track.url)
 
-                // FFmpeg: baca dari stdin (piped dari play-dl), transcode ke MP3
+                // FFmpeg: baca dari CDN URL, transcode ke MP3 128kbps
                 const ffArgs = [
-                    '-i', 'pipe:0',                 // baca dari stdin
+                    '-reconnect', '1',
+                    '-reconnect_streamed', '1',
+                    '-reconnect_delay_max', '5',
+                    '-i', audioUrl,
                     '-vn',                          // no video
                     '-acodec', 'libmp3lame',
                     '-ab', '128k',
@@ -291,28 +300,20 @@ class RadioService extends EventEmitter {
                 if (filterStr) ffArgs.push('-af', filterStr)
                 ffArgs.push('-f', 'mp3', '-loglevel', 'error', 'pipe:1')
 
-                const ffProc = spawn('ffmpeg', ffArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+                const ffProc = spawn('ffmpeg', ffArgs)
                 this.#ffmpeg = ffProc
-
-                // Pipe audio stream ke ffmpeg stdin
-                audioStream.pipe(ffProc.stdin)
-                audioStream.on('error', (e) => {
-                    process.stdout.write(`\x1b[33m[Radio] Audio stream error: ${e.message}\x1b[0m\n`)
-                    try { ffProc.stdin?.destroy() } catch (_) {}
-                })
 
                 // Broadcast setiap chunk ke semua HTTP clients
                 ffProc.stdout.on('data', chunk => this.#broadcast(chunk))
-                ffProc.stderr.on('data', d => logger.debug('[FFmpeg]', d.toString().trim()))
+                ffProc.stderr.on('data', d => {
+                    const msg = d.toString().trim()
+                    if (msg) process.stdout.write(`\x1b[33m[FFmpeg] ${msg}\x1b[0m\n`)
+                })
 
                 ffProc.on('close', (ffCode) => {
                     this.#ffmpeg = null
-                    this.#audioStream = null
-                    if (ffCode === 0 || this.#skipRequested) {
-                        resolve()
-                    } else {
-                        reject(new Error(`FFmpeg exit code ${ffCode}`))
-                    }
+                    if (ffCode === 0 || this.#skipRequested) resolve()
+                    else reject(new Error(`FFmpeg exit code ${ffCode}`))
                 })
 
                 ffProc.on('error', e => reject(new Error(`FFmpeg error: ${e.message}`)))
@@ -445,12 +446,8 @@ class RadioService extends EventEmitter {
 
     #killProcesses() {
         clearTimeout(this.#playTimeout)
-        // Destroy audio stream first agar ffmpeg stdin tidak hanging
-        try { this.#audioStream?.destroy() } catch (_) {}
-        try { this.#ffmpeg?.stdin?.destroy() } catch (_) {}
         try { this.#ffmpeg?.kill('SIGKILL') } catch (_) {}
         this.#ffmpeg = null
-        this.#audioStream = null
     }
 
     /**
