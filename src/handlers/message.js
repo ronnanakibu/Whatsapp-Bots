@@ -54,6 +54,7 @@ export async function handleIncomingMessage(sock, { messages }) {
         // Collect all possible bot JID numbers (phone number, LID number, etc.)
         const botNumbers = new Set([
             normalizeNumber(rawBotId),
+            normalizeNumber(sock.user?.lid ?? ''),
             normalizeNumber(process.env.BOT_NUMBER ?? '')
         ].filter(Boolean))
 
