@@ -24,6 +24,29 @@ async function getPlayDl() {
     }
 }
 
+// Inisialisasi play-dl sekali — set cookie kalau ada di env
+let _playDlReady = false
+async function initPlayDl() {
+    if (_playDlReady) return
+    _playDlReady = true
+    const playdl = await getPlayDl()
+    const cookie = process.env.YOUTUBE_COOKIE
+    if (cookie && cookie.length > 10) {
+        try {
+            await playdl.setToken({ youtube: { cookie } })
+            botLogger.info('radio', 'play-dl: YouTube cookie configured ✓')
+        } catch (e) {
+            botLogger.warn('radio', `play-dl: cookie setup gagal: ${e.message}`)
+        }
+    } else {
+        botLogger.warn('radio', [
+            'play-dl: YOUTUBE_COOKIE tidak diset.',
+            'Streaming dari datacenter IP mungkin diblokir YouTube.',
+            'Set YOUTUBE_COOKIE di .env untuk fix: https://git.io/JOSKl'
+        ].join(' '))
+    }
+}
+
 async function youtubeSearch(query) {
     const playdl = await getPlayDl()
     const results = await playdl.search(query, { limit: 1, source: { youtube: 'video' } })
@@ -130,7 +153,8 @@ async function getAudioUrl(youtubeUrl) {
     }
 
     botLogger.info('radio', `Selected: itag=${best.itag} mime=${best.mimeType ?? '?'} bitrate=${best.bitrate ?? '?'}`)
-    return { url: best.url, mimeType: best.mimeType ?? 'audio/mp4' }
+    // Kembalikan juga info object — dipakai stream_from_info() agar tidak double-fetch
+    return { url: best.url, mimeType: best.mimeType ?? 'audio/mp4', info }
 }
 
 // ─────────────────────────────────────────────
@@ -146,14 +170,20 @@ function fetchStream(url, redirectCount = 0) {
         const client = url.startsWith('https') ? https : http
         const req = client.get(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                // Header yang YouTube CDN harapkan dari browser
+                'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 'Accept': '*/*',
-                'Accept-Encoding': 'identity',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'identity',     // Jangan compress — kita stream raw
+                'Origin': 'https://www.youtube.com',
+                'Referer': 'https://www.youtube.com/',
+                'Sec-Fetch-Dest': 'video',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'cross-site',
                 'Range': 'bytes=0-',
             },
             timeout: 15_000,
         }, (res) => {
-            // Handle redirect
             if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
                 res.destroy()
                 return fetchStream(res.headers.location, redirectCount + 1).then(resolve).catch(reject)
@@ -164,7 +194,7 @@ function fetchStream(url, redirectCount = 0) {
                 return reject(new Error(`HTTP ${res.statusCode} dari CDN`))
             }
 
-            resolve(res) // res adalah Readable stream
+            resolve(res)
         })
 
         req.on('error', e => reject(new Error(`Fetch error: ${e.message}`)))
@@ -353,7 +383,10 @@ class RadioService extends EventEmitter {
                 const filters = [FX_PRESETS[this.#activeFx], EQ_PRESETS[this.#activeEq]].filter(Boolean)
                 const filterStr = filters.join(',')
 
-                // ── 1. Extract CDN URL via play-dl ──
+                // ── 1. Init play-dl (set cookie jika ada) ──
+                await initPlayDl()
+
+                // ── 2. Extract CDN URL + info via play-dl ──
                 let audioInfo
                 try {
                     audioInfo = await getAudioUrl(track.url)
@@ -363,33 +396,47 @@ class RadioService extends EventEmitter {
 
                 if (this.#skipRequested) return resolve()
 
-                // ── 2. Ambil stream via play-dl (primary) atau Node fetch (fallback) ──
-                // play-dl.stream() pakai internal HTTP stack-nya sendiri
-                // yang mungkin bisa bypass network restriction Pterodactyl
+                // ── 3. Ambil audio stream ──
+                // Priority: stream_from_info() > stream() > fetchStream() langsung
                 let cdnStream = null
                 let usedMethod = 'unknown'
 
+                // Method A: stream_from_info — gunakan info yang sudah di-fetch, bukan double-fetch
+                // Ini menghindari "Invalid URL" error yang terjadi di stream() karena double-fetch
+                const playdl = await getPlayDl()
                 try {
-                    botLogger.info('radio', 'Trying play-dl stream()...')
-                    const playdl = await getPlayDl()
-                    const streamData = await playdl.stream(track.url, { quality: 2 })
+                    botLogger.info('radio', 'Trying stream_from_info()...')
+                    const streamData = await playdl.stream_from_info(audioInfo.info, { quality: 0 })
                     cdnStream = streamData.stream
-                    usedMethod = `play-dl (${streamData.type})`
-                    botLogger.info('radio', `play-dl stream OK: ${streamData.type}`)
-                } catch (e1) {
-                    botLogger.warn('radio', `play-dl stream() gagal: ${e1.message} — fallback Node fetch`)
+                    usedMethod = `stream_from_info (${streamData.type})`
+                    botLogger.info('radio', `stream_from_info OK: ${streamData.type}`)
+                } catch (eA) {
+                    botLogger.warn('radio', `stream_from_info gagal: ${eA.message}`)
+
+                    // Method B: stream() biasa
                     try {
-                        cdnStream = await fetchStream(audioInfo.url)
-                        usedMethod = 'node-fetch'
-                        botLogger.info('radio', 'Node fetch stream OK')
-                    } catch (e2) {
-                        return reject(new Error(
-                            `Semua metode stream gagal.\n` +
-                            `play-dl: ${e1.message}\n` +
-                            `node-fetch: ${e2.message}\n\n` +
-                            `Kemungkinan container tidak punya akses ke YouTube CDN (googlevideo.com). ` +
-                            `Hubungi hosting provider.`
-                        ))
+                        botLogger.info('radio', 'Trying playdl.stream()...')
+                        const streamData = await playdl.stream(track.url, { quality: 0 })
+                        cdnStream = streamData.stream
+                        usedMethod = `stream (${streamData.type})`
+                        botLogger.info('radio', `playdl.stream OK: ${streamData.type}`)
+                    } catch (eB) {
+                        botLogger.warn('radio', `playdl.stream gagal: ${eB.message} → fallback CDN fetch`)
+
+                        // Method C: fetch langsung CDN URL dengan YouTube headers
+                        try {
+                            cdnStream = await fetchStream(audioInfo.url)
+                            usedMethod = 'fetchStream (CDN direct)'
+                            botLogger.info('radio', 'fetchStream CDN OK')
+                        } catch (eC) {
+                            return reject(new Error(
+                                `Semua metode stream gagal:\n` +
+                                `  A) stream_from_info: ${eA.message}\n` +
+                                `  B) stream: ${eB.message}\n` +
+                                `  C) fetchStream: ${eC.message}\n\n` +
+                                `FIX: Set YOUTUBE_COOKIE di .env — lihat README atau tanya admin.`
+                            ))
+                        }
                     }
                 }
 
