@@ -286,8 +286,8 @@ class MediaService {
         try {
             const cleanText = rawText.trim().toLowerCase()
 
-            // 🌟 FIX 1: Dongkrak limit baris jadi 15 karakter biar "ternyata besok" muat 1 baris
-            const lines = this.#wrapText(cleanText, 15)
+            // 🌟 LIMIT BARIS: Set ke 10 karakter agar teks terbungkus (wrap) lebih pendek, sehingga font size otomatis menjadi jauh lebih besar & padat khas stiker Brat!
+            const lines = this.#wrapText(cleanText, 10)
 
             // 🌟 FIX 2: Hitung font size adaptif biar teks panjang gak nabrak dinding/terpotong
             const maxVisualLen = Math.max(...lines.map(l => {
@@ -296,7 +296,7 @@ class MediaService {
 
             // 462px = Lebar margin aman. 0.43 = Ratio kurus Arial Narrow
             let fontSize = Math.floor(462 / (maxVisualLen * 0.43))
-            fontSize = Math.max(46, Math.min(450, fontSize))
+            fontSize = Math.max(46, Math.min(180, fontSize))
 
             const lineSpacing = fontSize * 1.05
 
