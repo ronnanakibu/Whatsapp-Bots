@@ -124,9 +124,27 @@ class MediaService {
             const lineLen = visualLen(currentLine)
 
             if (wLen > maxCharsPerLine) {
-                if (currentLine.trim()) lines.push(currentLine.trim())
-                lines.push(word)
-                currentLine = ''
+                if (currentLine.trim()) {
+                    lines.push(currentLine.trim())
+                    currentLine = ''
+                }
+                // Pecah kata yang terlampau panjang secara paksa sesuai limit karakter per baris
+                let tempWord = word
+                while (visualLen(tempWord) > maxCharsPerLine) {
+                    let cutIndex = 0
+                    let currentCutLen = 0
+                    for (let i = 0; i < tempWord.length; i++) {
+                        const cp = tempWord.codePointAt(i)
+                        const charLen = cp > 0x2000 ? 2 : 1
+                        if (currentCutLen + charLen > maxCharsPerLine) break
+                        currentCutLen += charLen
+                        cutIndex = i + 1
+                    }
+                    if (cutIndex === 0) cutIndex = 1
+                    lines.push(tempWord.substring(0, cutIndex))
+                    tempWord = tempWord.substring(cutIndex)
+                }
+                if (tempWord) currentLine = tempWord + ' '
                 return
             }
             if (lineLen + wLen > maxCharsPerLine) {
@@ -257,7 +275,9 @@ class MediaService {
             const totalContentWidth = tokenWidths.reduce((a, b) => a + b, 0)
             let gap = (justifyWidth - totalContentWidth) / (tokens.length - 1)
 
-            // Pengaman kalau estimasi meluber kepanjangan
+            // Pengaman agar gap antar kata tidak terlampau menganga lebar (tetap rapat estetis khas brat)
+            const maxGap = fontSize * 0.22
+            if (gap > maxGap) gap = maxGap
             if (gap < 0) gap = fontSize * 0.15
 
             // 3. Render satu per satu dengan plot koordinat mutlak!
@@ -296,6 +316,11 @@ class MediaService {
 
             // 462px = Lebar margin aman. 0.43 = Ratio kurus Arial Narrow
             let fontSize = Math.floor(462 / (maxVisualLen * 0.43))
+
+            // 🌟 FIT VERTIKAL: Batasi ukuran font berdasarkan jumlah baris agar tidak overflow ke atas/bawah kanvas
+            const maxVerticalFontSize = Math.floor(400 / (lines.length * 1.05))
+            fontSize = Math.min(fontSize, maxVerticalFontSize)
+
             fontSize = Math.max(46, Math.min(180, fontSize))
 
             const lineSpacing = fontSize * 1.05
