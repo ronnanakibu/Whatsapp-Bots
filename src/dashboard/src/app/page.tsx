@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Activity, Cpu, Radio, Users, Database, Zap } from 'lucide-react';
+import PipelineVisualizer from '@/components/visualizer/PipelineVisualizer';
 
 export default function BotwaOS() {
   return (
@@ -90,14 +91,9 @@ export default function BotwaOS() {
             <Cpu size={14} className="text-purple-400" />
             <h2 className="text-xs font-bold text-white/50 tracking-widest uppercase">Factory Floor / Media Pipeline</h2>
           </div>
-
           {/* Ini adalah kanvas untuk Tahap 2 (Node & Packet Animations) */}
-          <div className="flex-1 flex items-center justify-center relative w-full">
-            <p className="text-white/20 font-mono text-sm">[PIPELINE VISUALIZER RENDERED HERE]</p>
-            {/* Garis koneksi background */}
-            <div className="absolute inset-0 flex items-center px-12 opacity-10 pointer-events-none">
-              <div className="w-full h-[1px] bg-white border-dashed border-b" />
-            </div>
+          <div className="flex-1 flex items-center justify-center relative w-full mt-4">
+            <PipelineVisualizer />
           </div>
         </section>
 
@@ -142,6 +138,6 @@ export default function BotwaOS() {
         </section>
 
       </main>
-    </div>
+    </div >
   );
 }
