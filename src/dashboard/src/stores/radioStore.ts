@@ -23,9 +23,6 @@ interface RadioState {
   activeFx: string;
   activeEq: string;
   
-  // Audio analysis
-  analyzerData: Uint8Array | null;
-  
   // Real-time Activity Logs
   activityEvents: Array<{ id: string; text: string; type: string; timestamp: number }>;
   
@@ -41,7 +38,6 @@ interface RadioState {
   setListenerCount: (count: number) => void;
   setActiveFx: (fx: string) => void;
   setActiveEq: (eq: string) => void;
-  setAnalyzerData: (data: Uint8Array) => void;
   addActivityEvent: (text: string, type: string) => void;
   updateFromStatus: (status: RadioStatus) => void;
 }
@@ -59,7 +55,6 @@ export const useRadioStore = create<RadioState>((set) => ({
   listenerCount: 0,
   activeFx: 'normal',
   activeEq: 'flat',
-  analyzerData: null,
   activityEvents: [],
   
   // Actions
@@ -74,7 +69,6 @@ export const useRadioStore = create<RadioState>((set) => ({
   setListenerCount: (listenerCount) => set({ listenerCount }),
   setActiveFx: (activeFx) => set({ activeFx }),
   setActiveEq: (activeEq) => set({ activeEq }),
-  setAnalyzerData: (analyzerData) => set({ analyzerData }),
   addActivityEvent: (text, type) => set((s) => ({
     activityEvents: [
       { id: Math.random().toString(36).substring(7), text, type, timestamp: Date.now() },

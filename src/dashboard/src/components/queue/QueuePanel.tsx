@@ -35,6 +35,7 @@ export function QueuePanel() {
           {/* Header tabs */}
           <div className="flex border-b border-white/5 p-3 gap-2">
             <button
+              type="button"
               onClick={() => setActiveTab('queue')}
               className={`flex-1 py-2 flex items-center justify-center gap-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
                 activeTab === 'queue'
@@ -46,6 +47,7 @@ export function QueuePanel() {
               Queue ({queue.length})
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('history')}
               className={`flex-1 py-2 flex items-center justify-center gap-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
                 activeTab === 'history'

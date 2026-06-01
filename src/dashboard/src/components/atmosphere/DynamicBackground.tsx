@@ -3,19 +3,26 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useRadioStore } from '@/stores/radioStore';
+import { audioManager } from '@/lib/audioManager';
 
-/**
- * Immersive, genre-adaptive dynamic atmosphere background.
- * Adapts to album art colors, track keywords, and Web Audio API real-time frequencies.
- */
+interface Particle {
+  x: number;
+  y: number;
+  size: number;
+  speedY: number;
+  opacity: number;
+}
+
 export function DynamicBackground() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
+  const particlesRef = useRef<Particle[]>([]);
+  
   const { albumColors, immersiveBackground, blurAmount, performanceMode } = useSettingsStore();
-  const { nowPlaying, analyzerData, isPlaying } = useRadioStore();
+  const { nowPlaying } = useRadioStore();
 
   const [mood, setMood] = useState<'lofi' | 'edm' | 'orchestral' | 'ambient'>('ambient');
-  const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number; size: number; speedY: number; opacity: number }>>([]);
 
   // 1. Detect song mood/genre based on track metadata
   useEffect(() => {
@@ -39,52 +46,38 @@ export function DynamicBackground() {
     }
   }, [nowPlaying]);
 
-  // 2. Initialize particle field
+  // 2. Initialize particle field in a mutable ref (prevents React re-renders)
   useEffect(() => {
-    const particleCount = performanceMode ? 20 : 60;
-    const items = Array.from({ length: particleCount }).map((_, i) => ({
-      id: i,
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      size: Math.random() * (mood === 'orchestral' ? 4 : 3) + 1,
-      speedY: -(Math.random() * 0.4 + 0.1),
-      opacity: Math.random() * 0.5 + 0.1,
+    const particleCount = performanceMode ? 15 : 55;
+    const items: Particle[] = Array.from({ length: particleCount }).map(() => ({
+      x: Math.random() * 100, // percentage x
+      y: Math.random() * 100, // percentage y
+      size: Math.random() * (mood === 'orchestral' ? 3.5 : 2.5) + 0.8,
+      speedY: -(Math.random() * 0.3 + 0.08),
+      opacity: Math.random() * 0.45 + 0.08,
     }));
-    setParticles(items);
+    particlesRef.current = items;
   }, [mood, performanceMode]);
 
-  // 3. Main real-time Web Audio rendering loop for ambient lights and particles
+  // 3. Optimized direct Canvas rendering and CSS variable update loop
   useEffect(() => {
-    let scaleVal = 1;
     let blurVal = blurAmount;
     let rotationAngle = 0;
     let swayX = 0;
     let swayY = 0;
     let swayDir = 1;
 
-    const { primary, secondary, tertiary } = albumColors;
     const root = document.documentElement;
 
     const runLoop = () => {
-      let bassMultiplier = 1;
-      let trebleMultiplier = 1;
+      // Direct raw read from Web Audio analyser (NO React State overhead!)
+      const { bass, treble, energy } = audioManager.getAnalyzerVolume();
+      
+      const bassMultiplier = 1 + bass * 0.4;
+      const trebleMultiplier = 1 + treble * 0.3;
 
-      // Extract frequency features if audio is playing
-      if (analyzerData && isPlaying) {
-        // Average low-bin frequencies (bass)
-        let bassSum = 0;
-        for (let i = 0; i < 6; i++) bassSum += analyzerData[i];
-        const avgBass = bassSum / 6;
-        bassMultiplier = 1 + (avgBass / 255) * 0.4;
-
-        // Average high-bin frequencies (treble)
-        let trebleSum = 0;
-        for (let i = 12; i < 24; i++) trebleSum += analyzerData[i];
-        const avgTreble = trebleSum / 12;
-        trebleMultiplier = 1 + (avgTreble / 255) * 0.3;
-      }
-
-      // Sync color tokens (and modulate intensities with audio data)
+      // Sync CSS custom color variables
+      const { primary, secondary, tertiary } = albumColors;
       root.style.setProperty('--accent-r', String(Math.round(primary[0] * bassMultiplier)));
       root.style.setProperty('--accent-g', String(Math.round(primary[1] * bassMultiplier)));
       root.style.setProperty('--accent-b', String(Math.round(primary[2] * bassMultiplier)));
@@ -95,23 +88,24 @@ export function DynamicBackground() {
       root.style.setProperty('--tertiary-g', String(tertiary[1]));
       root.style.setProperty('--tertiary-b', String(tertiary[2]));
 
-      // 4. Mood specific animation adjustments
-      let speedFactor = 1;
+      // Ambiance speed factors
+      let speedFactor = 1.0;
       if (mood === 'lofi') {
-        speedFactor = 0.5;
-        blurVal = blurAmount * 1.3;
+        speedFactor = 0.55;
+        blurVal = blurAmount * 1.35;
       } else if (mood === 'edm') {
-        speedFactor = 2.0 * bassMultiplier;
-        blurVal = blurAmount * 0.75;
+        speedFactor = 1.95 * bassMultiplier;
+        blurVal = blurAmount * 0.78;
       } else if (mood === 'orchestral') {
-        speedFactor = 0.6;
-        blurVal = blurAmount * 1.1;
-        // Simulated slow camera movement (sway)
-        swayX += 0.02 * swayDir;
-        swayY += 0.015 * swayDir;
-        if (Math.abs(swayX) > 15) swayDir *= -1;
+        speedFactor = 0.65;
+        blurVal = blurAmount * 1.15;
+        
+        // Parallax swaying container logic
+        swayX += 0.018 * swayDir;
+        swayY += 0.012 * swayDir;
+        if (Math.abs(swayX) > 12) swayDir *= -1;
         if (containerRef.current) {
-          containerRef.current.style.transform = `scale(1.05) translate(${swayX}px, ${swayY}px)`;
+          containerRef.current.style.transform = `scale(1.04) translate(${swayX}px, ${swayY}px)`;
         }
       } else {
         speedFactor = 1.0;
@@ -122,19 +116,59 @@ export function DynamicBackground() {
       }
 
       // Rotate gradients slowly
-      rotationAngle += 0.05 * speedFactor;
+      rotationAngle += 0.04 * speedFactor;
       root.style.setProperty('--bg-rotate', `${rotationAngle}deg`);
 
-      // Update particle positions on screen
-      setParticles((prevParticles) =>
-        prevParticles.map((p) => {
-          let nextY = p.y + p.speedY * speedFactor;
-          if (nextY < -5) {
-            nextY = 105;
+      // 4. Render particles on direct HTML5 2D Canvas (60fps, 0% React re-render load!)
+      const canvas = canvasRef.current;
+      if (canvas && !performanceMode) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+          const w = canvas.clientWidth;
+          const h = canvas.clientHeight;
+          
+          // Re-scale canvas if container dimension changes
+          if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            ctx.scale(dpr, dpr);
           }
-          return { ...p, y: nextY };
-        })
-      );
+
+          ctx.clearRect(0, 0, w, h);
+
+          const { vibrant } = albumColors;
+
+          // Draw particles
+          particlesRef.current.forEach((p) => {
+            // Update y coordinate
+            p.y += p.speedY * speedFactor;
+            if (p.y < -5) {
+              p.y = 105;
+              p.x = Math.random() * 100;
+            }
+
+            // Convert percentages to pixels
+            const px = (p.x / 100) * w;
+            const py = (p.y / 100) * h;
+
+            // Fluid color choice based on tracks
+            let fillCol;
+            if (mood === 'lofi') {
+              fillCol = `rgba(230, 190, 150, ${p.opacity * 0.9})`;
+            } else if (mood === 'edm') {
+              fillCol = `rgba(${vibrant[0]}, ${vibrant[1]}, ${vibrant[2]}, ${p.opacity * (0.8 + energy * 0.2)})`;
+            } else {
+              fillCol = `rgba(255, 255, 255, ${p.opacity})`;
+            }
+
+            ctx.fillStyle = fillCol;
+            ctx.beginPath();
+            ctx.arc(px, py, p.size * (1 + energy * 0.4), 0, Math.PI * 2);
+            ctx.fill();
+          });
+        }
+      }
 
       animRef.current = requestAnimationFrame(runLoop);
     };
@@ -142,9 +176,9 @@ export function DynamicBackground() {
     animRef.current = requestAnimationFrame(runLoop);
 
     return () => cancelAnimationFrame(animRef.current);
-  }, [albumColors, mood, blurAmount, analyzerData, isPlaying]);
+  }, [albumColors, mood, blurAmount, performanceMode]);
 
-  const { primary, secondary, tertiary, vibrant } = albumColors;
+  const { primary, secondary, vibrant } = albumColors;
 
   return (
     <div className="atmosphere-layer transition-all duration-[2000ms]" ref={containerRef}>
@@ -159,7 +193,7 @@ export function DynamicBackground() {
 
       {/* 2. Glow Orbs with dynamic reactive shadows */}
       <div
-        className="absolute w-[650px] h-[650px] rounded-full animate-breathe"
+        className="absolute w-[650px] h-[650px] rounded-full"
         style={{
           top: '-15%',
           left: '-5%',
@@ -181,23 +215,13 @@ export function DynamicBackground() {
         }}
       />
 
-      {/* 3. Floating Particles / Ambient Dust Field */}
+      {/* 3. High-Performance Hardware-Accelerated 2D Canvas Embers */}
       {!performanceMode && (
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 opacity-70">
-          {particles.map((p) => (
-            <circle
-              key={p.id}
-              cx={`${p.x}%`}
-              cy={`${p.y}%`}
-              r={p.size}
-              fill={`rgba(${mood === 'lofi' ? '230, 190, 150' : mood === 'edm' ? `${vibrant[0]}, ${vibrant[1]}, ${vibrant[2]}` : '255, 255, 255'}, ${p.opacity})`}
-              style={{
-                filter: mood === 'lofi' ? 'blur(1px)' : 'none',
-                transition: 'fill 2s ease-in-out',
-              }}
-            />
-          ))}
-        </svg>
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full pointer-events-none z-10 opacity-70"
+          style={{ mixBlendMode: 'screen' }}
+        />
       )}
 
       {/* 4. Film Grain Overlay (Explicitly triggered for Lo-Fi tracks) */}

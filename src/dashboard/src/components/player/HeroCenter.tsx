@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, Volume2, VolumeX, Radio, Disc, User, Calendar, ExternalLink } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Radio, Disc, User } from 'lucide-react';
 import { useRadioStore } from '@/stores/radioStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { audioManager } from '@/lib/audioManager';
 
 // Magnetic button helper hook
 function useMagnetic() {
@@ -32,15 +33,13 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
     isBuffering,
     volume,
     isMuted,
-    setVolume,
     toggleMute,
-    analyzerData,
   } = useRadioStore();
 
-  const { albumColors, setRightPanelOpen, rightPanelOpen, setVisualizerMode, visualizerMode } = useSettingsStore();
+  const { rightPanelOpen, setRightPanelOpen, setVisualizerMode, visualizerMode } = useSettingsStore();
 
   const [elapsed, setElapsed] = useState(0);
-  const [volumeHovered, setVolumeHovered] = useState(false);
+  const artRef = useRef<HTMLDivElement>(null);
 
   // Magnetic coordinate handlers for controls
   const playMag = useMagnetic();
@@ -54,7 +53,6 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
       return;
     }
 
-    // Initialize/sync elapsed time
     const start = nowPlaying.startedAt || Date.now();
     const updateElapsed = () => {
       const diff = Math.floor((Date.now() - start) / 1000);
@@ -76,23 +74,34 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // 2. Real-time audio reactive scale for artwork border glow
-  const [pulseGlow, setPulseGlow] = useState(1);
+  // 2. Direct DOM pulse scale loop (0% React rendering overhead!)
   useEffect(() => {
-    if (!analyzerData || !isPlaying) {
-      setPulseGlow(1);
-      return;
-    }
-    const updateGlow = () => {
-      let sum = 0;
-      for (let i = 0; i < 4; i++) sum += analyzerData[i];
-      const avg = sum / 4;
-      setPulseGlow(1 + (avg / 255) * 0.08); // reactive scale up to +8%
-      requestAnimationFrame(updateGlow);
+    let animId = 0;
+    const runPulseLoop = () => {
+      const { bass } = audioManager.getAnalyzerVolume();
+      const scale = 1 + bass * 0.06; // up to +6% scale on bass peaks
+      
+      if (artRef.current) {
+        artRef.current.style.transform = `scale(${scale})`;
+        artRef.current.style.boxShadow = `
+          0 20px 80px -10px rgba(var(--accent-r), var(--accent-g), var(--accent-b), ${0.25 + bass * 0.2}), 
+          0 0 60px rgba(var(--secondary-r), var(--secondary-g), var(--secondary-b), ${0.1 + bass * 0.1})
+        `;
+      }
+      animId = requestAnimationFrame(runPulseLoop);
     };
-    const animId = requestAnimationFrame(updateGlow);
+
+    if (isPlaying) {
+      animId = requestAnimationFrame(runPulseLoop);
+    } else {
+      if (artRef.current) {
+        artRef.current.style.transform = 'scale(1)';
+        artRef.current.style.boxShadow = '0 20px 80px -10px rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.25)';
+      }
+    }
+
     return () => cancelAnimationFrame(animId);
-  }, [analyzerData, isPlaying]);
+  }, [isPlaying]);
 
   const handlePlayToggle = () => {
     if (isConnected) {
@@ -108,19 +117,17 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
       {/* ── Album Art Hero Card (35% viewport height) ── */}
       <div className="relative flex items-center justify-center w-full mb-10 group">
         <motion.div
+          ref={artRef}
           className="relative flex items-center justify-center aspect-square rounded-[32px] overflow-hidden bg-zinc-950 border border-white/10 shadow-2xl glass"
           style={{
             height: '35vh',
             maxHeight: '320px',
             minHeight: '220px',
-            scale: pulseGlow,
-            transition: 'scale 0.08s ease-out, box-shadow 0.2s ease-out',
-            boxShadow: `0 20px 80px -10px rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.35), 0 0 60px rgba(var(--secondary-r), var(--secondary-g), var(--secondary-b), 0.15)`,
+            willChange: 'transform, box-shadow',
           }}
-          whileHover={{ scale: 1.03 }}
+          whileHover={{ scale: 1.02 }}
           transition={{ type: 'spring', stiffness: 300, damping: 20 }}
         >
-          {/* Glowing ring */}
           <div className="absolute inset-0 bg-gradient-to-tr from-purple-500/10 to-cyan-500/10 opacity-60 pointer-events-none" />
 
           <AnimatePresence mode="wait">
@@ -129,11 +136,11 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
                 key={nowPlaying.thumbnail}
                 src={nowPlaying.thumbnail}
                 alt={nowPlaying.title}
-                className="w-full h-full object-cover select-none pointer-events-none"
-                initial={{ opacity: 0, scale: 1.15, filter: 'blur(10px)' }}
+                className="w-full h-full object-cover select-none pointer-events-none animate-fade-in"
+                initial={{ opacity: 0, scale: 1.1, filter: 'blur(6px)' }}
                 animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
-                transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                exit={{ opacity: 0, scale: 0.95, filter: 'blur(6px)' }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               />
             ) : (
               <motion.div
@@ -143,17 +150,17 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
               >
-                <Disc className="w-20 h-20 animate-spin-slow text-zinc-500 opacity-60" />
-                <span className="text-xs uppercase tracking-wider text-zinc-500 mt-4">Offline Stream</span>
+                <Disc className="w-18 h-18 animate-spin-slow text-zinc-500 opacity-65" />
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500 mt-4 font-mono">Offline Stream</span>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* Buffering overlay */}
           {isBuffering && (
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-10">
-              <div className="w-12 h-12 rounded-full border-t-2 border-r-2 border-purple-500 animate-spin" />
-              <span className="text-xs text-purple-400 mt-3 font-semibold uppercase tracking-widest">Buffering...</span>
+            <div className="absolute inset-0 bg-black/65 backdrop-blur-sm flex flex-col items-center justify-center z-10">
+              <div className="w-10 h-10 rounded-full border-t-2 border-r-2 border-purple-500 animate-spin" />
+              <span className="text-[10px] text-purple-400 mt-3 font-semibold uppercase tracking-widest font-mono">Buffering...</span>
             </div>
           )}
         </motion.div>
@@ -164,24 +171,24 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
         <AnimatePresence mode="wait">
           <motion.div
             key={nowPlaying?.title || 'idle'}
-            initial={{ opacity: 0, y: 15, filter: 'blur(5px)' }}
+            initial={{ opacity: 0, y: 12, filter: 'blur(4px)' }}
             animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: -15, filter: 'blur(5px)' }}
-            transition={{ duration: 0.4, ease: 'easeOut' }}
+            exit={{ opacity: 0, y: -12, filter: 'blur(4px)' }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
             className="flex flex-col items-center"
           >
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white line-clamp-1 max-w-full drop-shadow-md">
               {nowPlaying?.title || 'RonnBot Radio'}
             </h1>
-            <p className="text-base text-white/50 font-medium tracking-wide mt-2 flex items-center gap-2">
+            <p className="text-sm text-white/50 font-medium tracking-wide mt-2 flex items-center gap-2">
               <User className="w-4 h-4 text-purple-400 opacity-70" />
-              {nowPlaying?.requestedBy ? `Requested by ${nowPlaying.requestedBy}` : 'Station Idle — bot ready'}
+              {nowPlaying?.requestedBy ? `Requested by ${nowPlaying.requestedBy}` : 'Station Idle — awaiting commands'}
             </p>
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* ── Interactive Progress Bar ── */}
+      {/* ── Progress Bar ── */}
       {nowPlaying && (
         <div className="w-full max-w-md flex flex-col gap-2 mb-8">
           <div className="relative w-full h-1 bg-white/5 rounded-full overflow-hidden">
@@ -198,11 +205,12 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
         </div>
       )}
 
-      {/* ── Futuristic Controls Menu ── */}
+      {/* ── Magnetic Controls (Secured with explicit type="button") ── */}
       <div className="flex items-center gap-6 z-20">
         
         {/* Toggle Mute Button */}
         <motion.button
+          type="button"
           onMouseMove={muteMag.handleMouseMove}
           onMouseLeave={muteMag.handleMouseLeave}
           onClick={toggleMute}
@@ -214,37 +222,36 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
           {isMuted ? <VolumeX className="w-5 h-5 text-red-400" /> : <Volume2 className="w-5 h-5" />}
         </motion.button>
 
-        {/* Master Live Connection Button (Center Magnetic Node) */}
+        {/* Play/Pause Main Connection Button */}
         <motion.button
+          type="button"
           onMouseMove={playMag.handleMouseMove}
           onMouseLeave={playMag.handleMouseLeave}
           onClick={handlePlayToggle}
           className="relative w-20 h-20 flex items-center justify-center rounded-full cursor-pointer transition-shadow"
           style={{
             background: 'linear-gradient(135deg, rgba(var(--accent-r), 0.85) 0%, rgba(var(--secondary-r), 0.85) 100%)',
-            boxShadow: isConnected 
-              ? '0 0 40px rgba(var(--accent-r), 0.4)' 
-              : '0 10px 30px rgba(var(--accent-r), 0.2)',
           }}
           animate={{ x: playMag.coords.x, y: playMag.coords.y }}
           whileHover={{ scale: 1.08 }}
           whileTap={{ scale: 0.93 }}
         >
           {isConnected ? (
-            <Pause className="w-8 h-8 text-white fill-white ml-0" />
+            <Pause className="w-7 h-7 text-white fill-white" />
           ) : (
-            <Play className="w-8 h-8 text-white fill-white ml-1" />
+            <Play className="w-7 h-7 text-white fill-white ml-0.5" />
           )}
         </motion.button>
 
         {/* Queue panel toggler */}
         <motion.button
+          type="button"
           onMouseMove={actionMag.handleMouseMove}
           onMouseLeave={actionMag.handleMouseLeave}
           onClick={() => setRightPanelOpen(!rightPanelOpen)}
           className="relative w-12 h-12 flex items-center justify-center rounded-full glass border border-white/5 hover:border-white/10 transition-colors cursor-pointer text-white/70 hover:text-white"
           style={{
-            borderColor: rightPanelOpen ? 'rgba(var(--accent-r), 0.3)' : 'rgba(255, 255, 255, 0.05)'
+            borderColor: rightPanelOpen ? 'rgba(var(--accent-r), 0.35)' : 'rgba(255, 255, 255, 0.05)'
           }}
           animate={{ x: actionMag.coords.x, y: actionMag.coords.y }}
           whileHover={{ scale: 1.1 }}
@@ -255,13 +262,14 @@ export function HeroCenter({ onConnect, onDisconnect }: HeroCenterProps) {
 
       </div>
 
-      {/* Visualizer selector widget */}
+      {/* Visualizer selector pills (Secured with type="button") */}
       <div className="flex gap-2 mt-8 z-20">
         {(['spectrum', 'circular', 'waveform', 'galaxy', 'particles', 'aurora'] as const).map((mode) => (
           <button
+            type="button"
             key={mode}
             onClick={() => setVisualizerMode(mode)}
-            className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border transition-all cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border transition-all cursor-pointer ${
               visualizerMode === mode
                 ? 'bg-white text-black border-white shadow-lg'
                 : 'bg-black/40 text-white/50 border-white/5 hover:border-white/10 hover:text-white/80'

@@ -3,13 +3,14 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useRadioStore } from '@/stores/radioStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { audioManager } from '@/lib/audioManager';
 
 interface Particle {
   angle: number;
   distance: number;
   size: number;
   speed: number;
-  colorOffset: number; // For shifting between primary and vibrant colors
+  colorOffset: number;
 }
 
 export function GalaxyViz() {
@@ -17,25 +18,21 @@ export function GalaxyViz() {
   const animFrameRef = useRef<number>(0);
   const particlesRef = useRef<Particle[]>([]);
   const rotationRef = useRef<number>(0);
+  const dataArrayRef = useRef<Uint8Array>(new Uint8Array(64));
 
-  const { analyzerData, isPlaying } = useRadioStore();
   const { albumColors, performanceMode } = useSettingsStore();
 
   // 1. Initialize the galaxy spiral particles once
   useEffect(() => {
-    const pCount = performanceMode ? 150 : 350;
+    const pCount = performanceMode ? 150 : 320;
     const items: Particle[] = [];
     const arms = 3;
 
     for (let i = 0; i < pCount; i++) {
-      // Group particles into spiral arms
       const armIndex = i % arms;
       const baseAngle = (armIndex * (Math.PI * 2)) / arms;
       
-      // Distribute particles outwards
       const distance = Math.pow(Math.random(), 1.5) * 220 + 20;
-      
-      // Spiral curvature
       const spiralAngle = distance * 0.015;
       
       items.push({
@@ -76,15 +73,20 @@ export function GalaxyViz() {
     let trebleMultiplier = 0.5;
     let energy = 0;
 
-    if (analyzerData && isPlaying) {
+    const isPlaying = useRadioStore.getState().isPlaying;
+    const hasData = audioManager.getByteFrequencyData(dataArrayRef.current);
+
+    if (hasData && isPlaying) {
+      const data = dataArrayRef.current;
+      
       // Analyze bass for rotation speed
       let bassSum = 0;
-      for (let i = 0; i < 6; i++) bassSum += analyzerData[i];
+      for (let i = 0; i < 6; i++) bassSum += data[i];
       bassMultiplier = bassSum / (255 * 6);
 
       // Analyze treble/mids for radial displacement
       let trebleSum = 0;
-      for (let i = 10; i < 26; i++) trebleSum += analyzerData[i];
+      for (let i = 10; i < 26; i++) trebleSum += data[i];
       trebleMultiplier = trebleSum / (255 * 16);
 
       energy = (bassMultiplier + trebleMultiplier) / 2;
@@ -107,17 +109,12 @@ export function GalaxyViz() {
 
     // Render particles
     particlesRef.current.forEach((p) => {
-      // Dynamic angle of rotation
       const currentAngle = p.angle + rotationRef.current;
-      
-      // Dynamic radius expand/contract matching high treble beats
       const dynamicDistance = p.distance * (1 + trebleMultiplier * 0.15 * p.colorOffset);
 
-      // Cartesian coordinates
       const x = centerX + Math.cos(currentAngle) * dynamicDistance;
       const y = centerY + Math.sin(currentAngle) * dynamicDistance;
 
-      // Particle color blending based on radius
       let r, g, b;
       if (p.colorOffset > 0.6) {
         r = vibrant[0]; g = vibrant[1]; b = vibrant[2];
@@ -129,12 +126,11 @@ export function GalaxyViz() {
 
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${p.colorOffset * 0.4 + 0.3 + energy * 0.3})`;
       ctx.beginPath();
-      // Stars pulse in size with energy
       ctx.arc(x, y, p.size * (1 + energy * 0.6), 0, Math.PI * 2);
       ctx.fill();
 
       // High energy star trails
-      if (energy > 0.65 && p.colorOffset > 0.8) {
+      if (energy > 0.65 && p.colorOffset > 0.8 && !performanceMode) {
         ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.12)`;
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -145,7 +141,7 @@ export function GalaxyViz() {
     });
 
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [analyzerData, isPlaying, albumColors, performanceMode]);
+  }, [albumColors, performanceMode]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);

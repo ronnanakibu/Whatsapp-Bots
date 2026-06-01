@@ -3,14 +3,17 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useRadioStore } from '@/stores/radioStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { audioManager } from '@/lib/audioManager';
 
 /**
  * Circular audio visualizer that renders frequency data in a ring around album art.
+ * Directly reads Web Audio frequencies from the AudioManager singleton.
  */
 export function CircularViz() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
-  const { analyzerData, isPlaying } = useRadioStore();
+  const dataArrayRef = useRef<Uint8Array>(new Uint8Array(128));
+
   const { albumColors, performanceMode } = useSettingsStore();
 
   const draw = useCallback(() => {
@@ -44,13 +47,17 @@ export function CircularViz() {
     ctx.lineWidth = 1;
     ctx.stroke();
 
+    const isPlaying = useRadioStore.getState().isPlaying;
+    const hasData = audioManager.getByteFrequencyData(dataArrayRef.current);
+
     for (let i = 0; i < barCount; i++) {
       const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
       
       let value = 0;
-      if (analyzerData && isPlaying) {
-        const dataIndex = Math.floor(i * (analyzerData.length / barCount));
-        value = (analyzerData[dataIndex] || 0) / 255;
+      if (hasData && isPlaying) {
+        const data = dataArrayRef.current;
+        const dataIndex = Math.floor(i * (data.length / barCount));
+        value = (data[dataIndex] || 0) / 255;
       } else {
         // Idle subtle pulse
         value = 0.03 + Math.sin(Date.now() / 2000 + i * 0.2) * 0.02;
@@ -92,7 +99,7 @@ export function CircularViz() {
     }
 
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [analyzerData, isPlaying, albumColors, performanceMode]);
+  }, [albumColors, performanceMode]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);

@@ -3,13 +3,14 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useRadioStore } from '@/stores/radioStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { audioManager } from '@/lib/audioManager';
 
 export function AuroraViz() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
   const phaseRef = useRef<number>(0);
+  const dataArrayRef = useRef<Uint8Array>(new Uint8Array(64));
 
-  const { analyzerData, isPlaying } = useRadioStore();
   const { albumColors, performanceMode } = useSettingsStore();
 
   const draw = useCallback(() => {
@@ -35,20 +36,25 @@ export function AuroraViz() {
     let mid = 0.3;
     let treble = 0.3;
 
-    if (analyzerData && isPlaying) {
+    const isPlaying = useRadioStore.getState().isPlaying;
+    const hasData = audioManager.getByteFrequencyData(dataArrayRef.current);
+
+    if (hasData && isPlaying) {
+      const data = dataArrayRef.current;
+      
       // Bass (indices 0 to 5)
       let bassSum = 0;
-      for (let i = 0; i < 5; i++) bassSum += analyzerData[i];
+      for (let i = 0; i < 5; i++) bassSum += data[i];
       bass = bassSum / (255 * 5);
 
       // Mid (indices 6 to 15)
       let midSum = 0;
-      for (let i = 6; i < 15; i++) midSum += analyzerData[i];
+      for (let i = 6; i < 15; i++) midSum += data[i];
       mid = midSum / (255 * 9);
 
       // Treble (indices 16 to 32)
       let trebleSum = 0;
-      for (let i = 16; i < 32; i++) trebleSum += analyzerData[i];
+      for (let i = 16; i < 32; i++) trebleSum += data[i];
       treble = trebleSum / (255 * 16);
     }
 
@@ -57,18 +63,16 @@ export function AuroraViz() {
 
     const { primary, secondary, vibrant } = albumColors;
 
-    // Draw three overlapping auroral ribbons
+    // Draw overlapping auroral ribbons
     const ribbonCount = performanceMode ? 2 : 4;
     for (let r = 0; r < ribbonCount; r++) {
       ctx.beginPath();
 
-      // Configure each ribbon's unique wave pattern
       const amplitude = (h * 0.12) + (r * 18) + (mid * h * 0.16);
       const frequency = 0.0015 + (r * 0.0008) + (bass * 0.002);
       const verticalOffset = (h * 0.35) + (r * (h * 0.1));
       const phaseOffset = r * Math.PI * 0.35;
 
-      // Colors mapping
       let color1, color2;
       if (r % 3 === 0) {
         color1 = `rgba(${primary[0]}, ${primary[1]}, ${primary[2]}, 0)`;
@@ -81,9 +85,7 @@ export function AuroraViz() {
         color2 = `rgba(${secondary[0]}, ${secondary[1]}, ${secondary[2]}, ${0.08 + treble * 0.15})`;
       }
 
-      // Draw Ribbon Path
       for (let x = 0; x <= w; x += 10) {
-        // Multi-layered wave superposition
         const y = verticalOffset + 
                   Math.sin(x * frequency + phaseRef.current + phaseOffset) * amplitude +
                   Math.cos(x * frequency * 1.5 - phaseRef.current * 0.6) * (amplitude * 0.3);
@@ -95,7 +97,6 @@ export function AuroraViz() {
         }
       }
 
-      // Draw thick glowing overlay using linear/radial gradient stroke
       const gradient = ctx.createLinearGradient(0, verticalOffset - amplitude, 0, verticalOffset + amplitude);
       gradient.addColorStop(0, color1);
       gradient.addColorStop(0.5, color2);
@@ -106,7 +107,6 @@ export function AuroraViz() {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       
-      // Soft glow shadow layering
       if (!performanceMode) {
         ctx.shadowColor = color2.replace(/,\s*[0-9.]+\)$/, ', 0.45)');
         ctx.shadowBlur = 30;
@@ -116,7 +116,7 @@ export function AuroraViz() {
     }
 
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [analyzerData, isPlaying, albumColors, performanceMode]);
+  }, [albumColors, performanceMode]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);

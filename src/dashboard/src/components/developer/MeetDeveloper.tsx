@@ -94,6 +94,7 @@ export function MeetDeveloper() {
           {/* Top Navbar */}
           <div className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 bg-zinc-950/20 backdrop-blur-xl border-b border-white/5">
             <button
+              type="button"
               onClick={() => setActiveView('home')}
               className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white transition-colors cursor-pointer group"
             >

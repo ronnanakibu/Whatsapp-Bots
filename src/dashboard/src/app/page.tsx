@@ -82,6 +82,7 @@ export default function DashboardPage() {
       <footer className="absolute bottom-6 right-6 z-30 flex items-center gap-2 select-none select-none">
         {/* Toggle Meet Dev */}
         <button
+          type="button"
           onClick={() => setActiveView('meet-dev')}
           className="p-3 rounded-2xl glass-light border border-white/5 hover:border-white/10 hover:text-white transition-all cursor-pointer flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/60 shadow-lg"
         >

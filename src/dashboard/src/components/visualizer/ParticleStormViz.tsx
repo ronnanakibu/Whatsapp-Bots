@@ -3,6 +3,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useRadioStore } from '@/stores/radioStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { audioManager } from '@/lib/audioManager';
 
 interface StormParticle {
   x: number;
@@ -21,8 +22,8 @@ export function ParticleStormViz() {
   const animFrameRef = useRef<number>(0);
   const particlesRef = useRef<StormParticle[]>([]);
   const lastBassRef = useRef<number>(0);
+  const dataArrayRef = useRef<Uint8Array>(new Uint8Array(64));
 
-  const { analyzerData, isPlaying } = useRadioStore();
   const { albumColors, performanceMode } = useSettingsStore();
 
   // 1. Particle creation helpers
@@ -53,12 +54,12 @@ export function ParticleStormViz() {
         size: Math.random() * 2.5 + 0.8,
         opacity: 0.9,
         life: 0,
-        maxLife: Math.random() * 60 + 20, // fast fade-out
+        maxLife: Math.random() * 60 + 20,
         isBurst: true,
       });
     }
 
-    particlesRef.current = [...particlesRef.current, ...items].slice(0, 500); // cap particles
+    particlesRef.current = [...particlesRef.current, ...items].slice(0, 400); // cap particles
   };
 
   // 2. Draw rendering loop
@@ -84,20 +85,24 @@ export function ParticleStormViz() {
     let bassIntensity = 0;
     let trebleIntensity = 0;
 
-    if (analyzerData && isPlaying) {
+    const isPlaying = useRadioStore.getState().isPlaying;
+    const hasData = audioManager.getByteFrequencyData(dataArrayRef.current);
+
+    if (hasData && isPlaying) {
+      const data = dataArrayRef.current;
+      
       // Analyze bass (0-5)
       let bassSum = 0;
-      for (let i = 0; i < 5; i++) bassSum += analyzerData[i];
+      for (let i = 0; i < 5; i++) bassSum += data[i];
       bassIntensity = bassSum / (255 * 5);
 
       // Analyze treble (15-28)
       let trebleSum = 0;
-      for (let i = 15; i < 28; i++) trebleSum += analyzerData[i];
+      for (let i = 15; i < 28; i++) trebleSum += data[i];
       trebleIntensity = trebleSum / (255 * 13);
 
-      // Bass beat detection (detect sudden volume surge compared to last frame)
+      // Bass beat detection
       if (bassIntensity > 0.68 && bassIntensity - lastBassRef.current > 0.15) {
-        // Trigger a burst!
         const burstCount = performanceMode ? 20 : 60;
         triggerBurst(w, h, burstCount, bassIntensity);
       }
@@ -105,7 +110,7 @@ export function ParticleStormViz() {
     }
 
     // Initialize base ambient embers
-    const maxEmbers = performanceMode ? 40 : 120;
+    const maxEmbers = performanceMode ? 35 : 100;
     const currentBaseEmbers = particlesRef.current.filter((p) => !p.isBurst).length;
     if (currentBaseEmbers < maxEmbers) {
       particlesRef.current.push(createBaseParticle(w, h));
@@ -121,57 +126,49 @@ export function ParticleStormViz() {
       // Accelerate velocities with music energy
       let speedFactor = 1;
       if (p.isBurst) {
-        // Slow down radial burst friction
         p.vx *= 0.95;
         p.vy *= 0.95;
       } else {
-        // Ambient particles rise faster with bass beats
         speedFactor = 1 + bassIntensity * 2.8;
       }
 
       p.x += p.vx * speedFactor;
       p.y += p.vy * speedFactor;
 
-      // Wrap horizontal borders for ambient embers
       if (!p.isBurst) {
         if (p.x < 0) p.x = w;
         if (p.x > w) p.x = 0;
       }
 
-      // Calculate faded opacity
       const opacityPercent = 1 - p.life / p.maxLife;
       const alpha = Math.min(p.opacity * opacityPercent * (p.isBurst ? 1 : 1.2), 1.0);
 
-      // Gradient color based on type
       let r, g, b;
       if (p.isBurst) {
-        // Explosion particles glow secondary/vibrant
         r = vibrant[0]; g = vibrant[1]; b = vibrant[2];
       } else {
-        // Rising embers shift primary/secondary
         r = primary[0]; g = primary[1]; b = primary[2];
       }
 
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
 
-      // Draw embers as softly glowing particles
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * (p.isBurst ? 1.0 : 1.0 + trebleIntensity * 0.4), 0, Math.PI * 2);
       ctx.fill();
 
-      // High-frequency flare trails for exploding elements
-      if (p.isBurst && alpha > 0.4) {
+      // High-frequency flare trails
+      if (p.isBurst && alpha > 0.4 && !performanceMode) {
         ctx.shadowColor = `rgba(${vibrant[0]}, ${vibrant[1]}, ${vibrant[2]}, 0.8)`;
         ctx.shadowBlur = 8;
         ctx.fill();
         ctx.shadowBlur = 0;
       }
 
-      return p.y > -10 && p.y < h + 30; // verify bounds
+      return p.y > -10 && p.y < h + 30;
     });
 
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [analyzerData, isPlaying, albumColors, performanceMode]);
+  }, [albumColors, performanceMode]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);

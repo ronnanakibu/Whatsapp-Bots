@@ -91,6 +91,7 @@ export function DeveloperConsole() {
                 RonnBot Stream Control Console — v2.0.4-live
               </div>
               <button
+                type="button"
                 onClick={() => setDeveloperModeOpen(false)}
                 className="p-1 hover:bg-emerald-900/20 rounded-md transition-colors text-emerald-500 hover:text-emerald-300 cursor-pointer"
               >

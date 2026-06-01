@@ -3,15 +3,17 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useRadioStore } from '@/stores/radioStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { audioManager } from '@/lib/audioManager';
 
 /**
  * Animated audio spectrum bars visualization.
- * Uses Web Audio API frequency data to render responsive bars.
+ * Directly reads Web Audio frequencies from the AudioManager singleton.
  */
 export function SpectrumBars() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
-  const { analyzerData, isPlaying } = useRadioStore();
+  const dataArrayRef = useRef<Uint8Array>(new Uint8Array(64));
+
   const { albumColors, performanceMode } = useSettingsStore();
 
   const draw = useCallback(() => {
@@ -32,7 +34,10 @@ export function SpectrumBars() {
 
     ctx.clearRect(0, 0, width, height);
 
-    if (!analyzerData || !isPlaying) {
+    const isPlaying = useRadioStore.getState().isPlaying;
+    const hasData = audioManager.getByteFrequencyData(dataArrayRef.current);
+
+    if (!hasData || !isPlaying) {
       // Draw idle state — subtle static bars
       const barCount = 48;
       const barWidth = width / barCount - 2;
@@ -42,7 +47,7 @@ export function SpectrumBars() {
         const x = i * (barWidth + 2);
         const y = height - barHeight;
         
-        ctx.fillStyle = `rgba(${albumColors.primary[0]}, ${albumColors.primary[1]}, ${albumColors.primary[2]}, 0.15)`;
+        ctx.fillStyle = `rgba(${albumColors.primary[0]}, ${albumColors.primary[1]}, ${albumColors.primary[2]}, 0.12)`;
         ctx.beginPath();
         ctx.roundRect(x, y, barWidth, barHeight, 1);
         ctx.fill();
@@ -52,7 +57,7 @@ export function SpectrumBars() {
       return;
     }
 
-    const data = analyzerData;
+    const data = dataArrayRef.current;
     const barCount = Math.min(data.length, performanceMode ? 32 : 64);
     const barWidth = width / barCount - 2;
     const { primary, secondary, vibrant } = albumColors;
@@ -77,16 +82,16 @@ export function SpectrumBars() {
       ctx.fill();
 
       // Glow effect for high-intensity bars
-      if (value > 0.6) {
-        ctx.shadowColor = `rgba(${vibrant[0]}, ${vibrant[1]}, ${vibrant[2]}, ${value * 0.4})`;
-        ctx.shadowBlur = 8;
+      if (value > 0.6 && !performanceMode) {
+        ctx.shadowColor = `rgba(${vibrant[0]}, ${vibrant[1]}, ${vibrant[2]}, ${value * 0.45})`;
+        ctx.shadowBlur = 10;
         ctx.fill();
         ctx.shadowBlur = 0;
       }
     }
 
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [analyzerData, isPlaying, albumColors, performanceMode]);
+  }, [albumColors, performanceMode]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);

@@ -3,14 +3,17 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useRadioStore } from '@/stores/radioStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { audioManager } from '@/lib/audioManager';
 
 /**
- * Real-time waveform renderer using time-domain data.
+ * Real-time waveform renderer using Web Audio time/frequency domain data.
+ * Directly reads Web Audio frequencies from the AudioManager singleton.
  */
 export function WaveformViz() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
-  const { analyzerData, isPlaying } = useRadioStore();
+  const dataArrayRef = useRef<Uint8Array>(new Uint8Array(128));
+
   const { albumColors, performanceMode } = useSettingsStore();
 
   const draw = useCallback(() => {
@@ -42,7 +45,10 @@ export function WaveformViz() {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    if (!analyzerData || !isPlaying) {
+    const isPlaying = useRadioStore.getState().isPlaying;
+    const hasData = audioManager.getByteFrequencyData(dataArrayRef.current);
+
+    if (!hasData || !isPlaying) {
       // Idle: subtle sine wave
       ctx.beginPath();
       for (let x = 0; x < width; x++) {
@@ -59,7 +65,7 @@ export function WaveformViz() {
       return;
     }
 
-    const data = analyzerData;
+    const data = dataArrayRef.current;
     const points = data.length;
     const step = width / points;
 
@@ -125,7 +131,7 @@ export function WaveformViz() {
     ctx.fill();
 
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [analyzerData, isPlaying, albumColors, performanceMode]);
+  }, [albumColors, performanceMode]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);
