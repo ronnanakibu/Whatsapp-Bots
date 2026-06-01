@@ -48,10 +48,18 @@ export async function loadCommands(dir = './src/commands') {
                 continue
             }
 
+            if (commands.has(cmd.name)) {
+                const existing = commands.get(cmd.name)
+                console.warn(`⚠️ [Debug Loader] CONFLICT: Nama command '${cmd.name}' di ${entry} menimpa command/alias yang sudah terdaftar (${existing.name} [kategori: ${existing.category}])!`)
+            }
             commands.set(cmd.name, cmd)
 
             if (cmd.aliases) {
                 for (const alias of cmd.aliases) {
+                    if (commands.has(alias)) {
+                        const existing = commands.get(alias)
+                        console.warn(`⚠️ [Debug Loader] CONFLICT: Alias '${alias}' di ${entry} menimpa command/alias yang sudah terdaftar (${existing.name} [kategori: ${existing.category}])!`)
+                    }
                     commands.set(alias, cmd)
                 }
             }

@@ -24,7 +24,7 @@ function formatSize(bytes) {
 
 export default {
     name: 'files',
-    aliases: ['fs', 'file', 'src'],
+    aliases: ['file'],
     category: 'owner',
     description: '[OWNER] Akses filesystem bot — lihat, baca, edit source code',
     usage: '!files [ls|cat|edit|tree] [path] [content?]',

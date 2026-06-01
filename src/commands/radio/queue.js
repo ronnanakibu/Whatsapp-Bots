@@ -3,7 +3,7 @@ import { radioService } from '../../services/radio.js'
 
 export default {
     name: 'queue',
-    aliases: ['q', 'antrian', 'daftar'],
+    aliases: ['rq', 'antrian', 'daftar'],
     category: 'radio',
     description: 'Lihat antrian lagu radio',
     usage: '!queue',

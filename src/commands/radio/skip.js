@@ -3,7 +3,7 @@ import { radioService } from '../../services/radio.js'
 
 export default {
     name: 'skip',
-    aliases: ['s', 'next'],
+    aliases: ['sk', 'next'],
     category: 'radio',
     description: 'Skip lagu yang sedang diputar',
     usage: '!skip',
