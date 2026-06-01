@@ -1,29 +1,9 @@
 import { create } from 'zustand';
-import type { DynamicColors, VisualizerMode } from '@/types/radio';
 
-interface SettingsState {
-  // Visualizer
-  visualizerMode: VisualizerMode;
-  
-  // Atmosphere
-  immersiveBackground: boolean;
-  dynamicColors: boolean;
-  motionIntensity: number; // 0-1
-  blurAmount: number; // 0-100
-  
-  // Performance
-  performanceMode: boolean;
-  fpsLimit: number; // 30 or 60
-  
-  // Dynamic colors from album art
-  albumColors: DynamicColors;
-  isExtractingColors: boolean;
-  
-  // Sidebar
+interface SettingsStore {
   sidebarExpanded: boolean;
-  
-  // Right panel
   rightPanelOpen: boolean;
+<<<<<<< HEAD
 
   // Immersive state
   developerModeOpen: boolean;
@@ -43,27 +23,25 @@ interface SettingsState {
   setRightPanelOpen: (open: boolean) => void;
   setDeveloperModeOpen: (open: boolean) => void;
   setActiveView: (view: 'home' | 'meet-dev') => void;
+=======
+  visualizerMode: 'spectrum' | 'circular' | 'waveform' | 'aurora' | 'galaxy' | 'particle-storm';
+  developerMode: boolean;
+  soundEnabled: boolean;
+  theme: 'dark' | 'light';
+  
+  // Actions
+  toggleSidebar: () => void;
+  toggleRightPanel: () => void;
+  setVisualizerMode: (mode: any) => void;
+  setDeveloperMode: (enabled: boolean) => void;
+  setSoundEnabled: (enabled: boolean) => void;
+  setTheme: (theme: 'dark' | 'light') => void;
+>>>>>>> 6960750c1007a4c373cf52181fb713410b6f1e99
 }
 
-const DEFAULT_COLORS: DynamicColors = {
-  primary: [139, 92, 246],    // violet
-  secondary: [59, 130, 246],  // blue
-  tertiary: [236, 72, 153],   // pink
-  vibrant: [168, 85, 247],    // purple
-  muted: [100, 116, 139],     // slate
-};
-
-export const useSettingsStore = create<SettingsState>((set) => ({
-  visualizerMode: 'spectrum',
-  immersiveBackground: true,
-  dynamicColors: true,
-  motionIntensity: 0.8,
-  blurAmount: 60,
-  performanceMode: false,
-  fpsLimit: 60,
-  albumColors: DEFAULT_COLORS,
-  isExtractingColors: false,
+export const useSettingsStore = create<SettingsStore>((set) => ({
   sidebarExpanded: false,
+<<<<<<< HEAD
   rightPanelOpen: true,
   developerModeOpen: false,
   activeView: 'home',
@@ -82,3 +60,18 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setDeveloperModeOpen: (developerModeOpen) => set({ developerModeOpen }),
   setActiveView: (activeView) => set({ activeView }),
 }));
+=======
+  rightPanelOpen: false,
+  visualizerMode: 'spectrum',
+  developerMode: false,
+  soundEnabled: true,
+  theme: 'dark',
+
+  toggleSidebar: () => set((state) => ({ sidebarExpanded: !state.sidebarExpanded })),
+  toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
+  setVisualizerMode: (mode) => set({ visualizerMode: mode }),
+  setDeveloperMode: (enabled) => set({ developerMode: enabled }),
+  setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
+  setTheme: (theme) => set({ theme }),
+}));
+>>>>>>> 6960750c1007a4c373cf52181fb713410b6f1e99
