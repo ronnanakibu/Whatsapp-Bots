@@ -22,6 +22,7 @@ export function useRadioSSE() {
     setActiveFx,
     setActiveEq,
     updateFromStatus,
+    addActivityEvent,
   } = useRadioStore();
 
   const connect = useCallback(() => {
@@ -39,6 +40,8 @@ export function useRadioSSE() {
       try {
         const status: RadioStatus = JSON.parse(e.data);
         updateFromStatus(status);
+        addActivityEvent('System initialized: Connected to WABOT radio host', 'socket');
+        addActivityEvent(`FFmpeg streaming active with ${status.listeners} listener(s)`, 'ffmpeg');
       } catch (err) {
         console.warn('[SSE] Failed to parse init data:', err);
       }
@@ -50,6 +53,8 @@ export function useRadioSSE() {
         const track: Track = JSON.parse(e.data);
         setNowPlaying(track);
         setPlaying(true);
+        addActivityEvent(`Track changed: "${track.title}"`, 'track');
+        addActivityEvent(`Metadata synced (Requested by: ${track.requestedBy || 'System'})`, 'download');
       } catch (err) {
         console.warn('[SSE] Failed to parse track:start:', err);
       }
@@ -59,7 +64,16 @@ export function useRadioSSE() {
     es.addEventListener('queue:update', (e) => {
       try {
         const queue: QueueTrack[] = JSON.parse(e.data);
+        const prevQueue = useRadioStore.getState().queue;
         setQueue(queue);
+        if (queue.length > prevQueue.length) {
+          const newSong = queue[queue.length - 1];
+          addActivityEvent(`User requested song: "${newSong.title}"`, 'queue');
+        } else if (queue.length < prevQueue.length && queue.length > 0) {
+          addActivityEvent('Queue updated: song consumed', 'queue');
+        } else if (queue.length === 0 && prevQueue.length > 0) {
+          addActivityEvent('Queue cleared by host', 'queue');
+        }
       } catch (err) {
         console.warn('[SSE] Failed to parse queue:update:', err);
       }
@@ -69,7 +83,13 @@ export function useRadioSSE() {
     es.addEventListener('listeners:update', (e) => {
       try {
         const { count } = JSON.parse(e.data);
+        const prevCount = useRadioStore.getState().listenerCount;
         setListenerCount(count);
+        if (count > prevCount) {
+          addActivityEvent(`New listener joined the stream (Total: ${count})`, 'listener');
+        } else if (count < prevCount) {
+          addActivityEvent(`Listener left the stream (Total: ${count})`, 'listener');
+        }
       } catch (err) {
         console.warn('[SSE] Failed to parse listeners:update:', err);
       }
@@ -79,6 +99,7 @@ export function useRadioSSE() {
     es.addEventListener('radio:idle', () => {
       setPlaying(false);
       setNowPlaying(null);
+      addActivityEvent('Radio went idle: queue is empty', 'ffmpeg');
     });
 
     // Radio stop
@@ -86,6 +107,7 @@ export function useRadioSSE() {
       setPlaying(false);
       setNowPlaying(null);
       setQueue([]);
+      addActivityEvent('Radio streaming stopped by admin', 'ffmpeg');
     });
 
     // FX change
@@ -93,6 +115,7 @@ export function useRadioSSE() {
       try {
         const { fx } = JSON.parse(e.data);
         setActiveFx(fx);
+        addActivityEvent(`Audio filter changed to: ${fx.toUpperCase()}`, 'fx');
       } catch {}
     });
 
@@ -101,6 +124,7 @@ export function useRadioSSE() {
       try {
         const { eq } = JSON.parse(e.data);
         setActiveEq(eq);
+        addActivityEvent(`Equalizer mode adjusted to: ${eq.toUpperCase()}`, 'eq');
       } catch {}
     });
 
@@ -108,6 +132,7 @@ export function useRadioSSE() {
     es.onerror = () => {
       es.close();
       eventSourceRef.current = null;
+      addActivityEvent('Lost host connection. Attempting to reconnect...', 'socket');
       
       // Reconnect after 5 seconds
       reconnectTimeoutRef.current = setTimeout(() => {
@@ -118,7 +143,7 @@ export function useRadioSSE() {
     return es;
   }, [
     setNowPlaying, setQueue, setHistory, setListenerCount,
-    setPlaying, setActiveFx, setActiveEq, updateFromStatus,
+    setPlaying, setActiveFx, setActiveEq, updateFromStatus, addActivityEvent
   ]);
 
   const disconnect = useCallback(() => {

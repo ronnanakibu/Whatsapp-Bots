@@ -24,6 +24,10 @@ interface SettingsState {
   
   // Right panel
   rightPanelOpen: boolean;
+
+  // Immersive state
+  developerModeOpen: boolean;
+  activeView: 'home' | 'meet-dev';
   
   // Actions
   setVisualizerMode: (mode: VisualizerMode) => void;
@@ -37,6 +41,8 @@ interface SettingsState {
   setIsExtractingColors: (extracting: boolean) => void;
   setSidebarExpanded: (expanded: boolean) => void;
   setRightPanelOpen: (open: boolean) => void;
+  setDeveloperModeOpen: (open: boolean) => void;
+  setActiveView: (view: 'home' | 'meet-dev') => void;
 }
 
 const DEFAULT_COLORS: DynamicColors = {
@@ -59,6 +65,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   isExtractingColors: false,
   sidebarExpanded: false,
   rightPanelOpen: true,
+  developerModeOpen: false,
+  activeView: 'home',
   
   setVisualizerMode: (visualizerMode) => set({ visualizerMode }),
   setImmersiveBackground: (immersiveBackground) => set({ immersiveBackground }),
@@ -71,4 +79,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setIsExtractingColors: (isExtractingColors) => set({ isExtractingColors }),
   setSidebarExpanded: (sidebarExpanded) => set({ sidebarExpanded }),
   setRightPanelOpen: (rightPanelOpen) => set({ rightPanelOpen }),
+  setDeveloperModeOpen: (developerModeOpen) => set({ developerModeOpen }),
+  setActiveView: (activeView) => set({ activeView }),
 }));

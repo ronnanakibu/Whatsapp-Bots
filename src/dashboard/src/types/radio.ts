@@ -31,7 +31,7 @@ export interface SSEEvent {
   data: unknown;
 }
 
-export type VisualizerMode = 'spectrum' | 'circular' | 'waveform' | 'none';
+export type VisualizerMode = 'spectrum' | 'circular' | 'waveform' | 'galaxy' | 'particles' | 'aurora' | 'none';
 
 export type ThemeName = 'aurora' | 'midnight' | 'glass' | 'neon' | 'cyberpunk' | 'minimal' | 'oled';
 
