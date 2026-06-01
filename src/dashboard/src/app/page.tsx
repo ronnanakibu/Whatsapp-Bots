@@ -3,6 +3,7 @@
 import React from 'react';
 import { Activity, Cpu, Radio, Users, Database, Zap } from 'lucide-react';
 import PipelineVisualizer from '@/components/visualizer/PipelineVisualizer';
+import LiveEventFeed from '@/components/feed/LiveEventFeed';
 
 export default function BotwaOS() {
   return (
@@ -67,21 +68,8 @@ export default function BotwaOS() {
               <Activity size={14} className="text-white/30" />
             </div>
 
-            {/* Terminal Feed Placeholder */}
-            <div className="flex-1 overflow-y-auto font-mono text-[11px] flex flex-col gap-3 scrollbar-hide">
-              <div className="flex gap-3 text-blue-300">
-                <span className="opacity-50">20:30:12</span>
-                <span className="break-words">[REQUEST] +62812... requested Joji - Glimpse of Us</span>
-              </div>
-              <div className="flex gap-3 text-yellow-300">
-                <span className="opacity-50">20:30:14</span>
-                <span>[SEARCH] Source located (NlprozGcs80)</span>
-              </div>
-              <div className="flex gap-3 text-green-300">
-                <span className="opacity-50">20:30:15</span>
-                <span>[DOWNLOAD] Buffering media chunk 1/4...</span>
-              </div>
-            </div>
+            {/* Realtime Event Feed */}
+            <LiveEventFeed />
           </div>
         </section>
 
