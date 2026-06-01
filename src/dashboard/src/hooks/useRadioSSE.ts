@@ -1,21 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect } from 'react';
 import { useRadioStore } from '@/stores/radioStore';
-import { getRadioUrl } from '@/lib/utils';
-import type { RadioStatus, QueueTrack, Track } from '@/types/radio';
+import { detectGenre, getAtmosphereForGenre } from '@/lib/musicAnalyzer';
 
-/**
- * Hook for SSE (Server-Sent Events) connection to radio backend.
- * Receives real-time updates for track changes, queue updates, listener counts.
- */
 export function useRadioSSE() {
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  
   const {
     setNowPlaying,
     setQueue,
+<<<<<<< HEAD
     setHistory,
     setListenerCount,
     setPlaying,
@@ -157,10 +150,43 @@ export function useRadioSSE() {
   }, []);
 
   // Auto-connect on mount, cleanup on unmount
-  useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
+=======
+    setIsPlaying,
+    setAtmosphere,
+    setListeners,
+  } = useRadioStore();
 
-  return { connect, disconnect };
+>>>>>>> 6960750c1007a4c373cf52181fb713410b6f1e99
+  useEffect(() => {
+    const eventSource = new EventSource('/api/radio/sse');
+
+    eventSource.addEventListener('nowplaying', (e) => {
+      const data = JSON.parse(e.data);
+      setNowPlaying(data);
+
+      // Detect genre and set atmosphere
+      const genre = detectGenre(data.title, data.artist);
+      const atmosphere = getAtmosphereForGenre(genre);
+      setAtmosphere(atmosphere);
+    });
+
+    eventSource.addEventListener('queue', (e) => {
+      const data = JSON.parse(e.data);
+      setQueue(data);
+    });
+
+    eventSource.addEventListener('playing', (e) => {
+      const data = JSON.parse(e.data);
+      setIsPlaying(data.isPlaying);
+    });
+
+    eventSource.addEventListener('listeners', (e) => {
+      const data = JSON.parse(e.data);
+      setListeners(data.count);
+    });
+
+    return () => {
+      eventSource.close();
+    };
+  }, [setNowPlaying, setQueue, setIsPlaying, setAtmosphere, setListeners]);
 }

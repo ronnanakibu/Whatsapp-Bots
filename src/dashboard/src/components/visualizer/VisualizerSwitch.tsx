@@ -2,17 +2,24 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettingsStore } from '@/stores/settingsStore';
+<<<<<<< HEAD
 import { SpectrumBars } from './SpectrumBars';
 import { CircularViz } from './CircularViz';
 import { WaveformViz } from './WaveformViz';
 import { GalaxyViz } from './GalaxyViz';
 import { ParticleStormViz } from './ParticleStormViz';
 import { AuroraViz } from './AuroraViz';
+=======
+import { SpectrumVisualizer } from './modes/SpectrumVisualizer';
+import { CircularVisualizer } from './modes/CircularVisualizer';
+import { WaveformVisualizer } from './modes/WaveformVisualizer';
+>>>>>>> 6960750c1007a4c373cf52181fb713410b6f1e99
 
 export function VisualizerSwitch() {
   const { visualizerMode } = useSettingsStore();
 
   return (
+<<<<<<< HEAD
     <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
       <AnimatePresence mode="wait">
         {visualizerMode === 'spectrum' && (
@@ -89,5 +96,21 @@ export function VisualizerSwitch() {
         )}
       </AnimatePresence>
     </div>
+=======
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={visualizerMode}
+        className="w-full h-full"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        {visualizerMode === 'spectrum' && <SpectrumVisualizer />}
+        {visualizerMode === 'circular' && <CircularVisualizer />}
+        {visualizerMode === 'waveform' && <WaveformVisualizer />}
+      </motion.div>
+    </AnimatePresence>
+>>>>>>> 6960750c1007a4c373cf52181fb713410b6f1e99
   );
 }
