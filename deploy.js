@@ -20,7 +20,8 @@ const ignoreList = [
     '.vscode',
     'package-lock.json',
     'deploy.js',
-    'pull.js'
+    'pull.js',
+    '.next'
 ];
 
 function runGitCommand(command) {
@@ -115,8 +116,9 @@ async function main() {
             if (changedFilesRaw) {
                 filesToUpload = changedFilesRaw.split('\n').filter(file => {
                     if (!file) return false;
-                    const firstPart = file.split(/[/\\]/)[0];
-                    return !ignoreList.includes(firstPart) && fs.existsSync(file);
+                    const parts = file.split(/[/\\]/);
+                    const isIgnored = parts.some(part => ignoreList.includes(part));
+                    return !isIgnored && fs.existsSync(file);
                 });
             }
         }
