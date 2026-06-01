@@ -296,7 +296,7 @@ class MediaService {
 
             // 462px = Lebar margin aman. 0.43 = Ratio kurus Arial Narrow
             let fontSize = Math.floor(462 / (maxVisualLen * 0.43))
-            fontSize = Math.max(46, Math.min(115, fontSize))
+            fontSize = Math.max(46, Math.min(180, fontSize))
 
             const lineSpacing = fontSize * 1.05
 
