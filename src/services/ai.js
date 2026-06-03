@@ -201,27 +201,59 @@ async function analyzeImage(imageBuffer, mimeType = 'image/jpeg', prompt = 'Desk
 // ─────────────────────────────────────────────
 
 async function generateImage(prompt) {
-    // Gemini 2.0 Flash Experimental support image generation
-    try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' })
-        const result = await model.generateContent({
-            contents: [{ role: 'user', parts: [{ text: `Generate an image: ${prompt}` }] }],
-            generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
-        })
-
-        for (const part of result.response.candidates[0].content.parts) {
-            if (part.inlineData) {
+    // Mode 1: Hugging Face (jika ada HF_TOKEN di .env)
+    if (process.env.HF_TOKEN) {
+        try {
+            logger.info(`[AI] Generating image via Hugging Face (FLUX.1-schnell) for: ${prompt}`)
+            const res = await fetch(
+                "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+                {
+                    headers: {
+                        Authorization: `Bearer ${process.env.HF_TOKEN}`,
+                        "Content-Type": "application/json"
+                    },
+                    method: "POST",
+                    body: JSON.stringify({ inputs: prompt }),
+                }
+            )
+            if (res.ok) {
+                const arrayBuffer = await res.arrayBuffer()
                 return {
-                    buffer: Buffer.from(part.inlineData.data, 'base64'),
-                    mimeType: part.inlineData.mimeType,
-                    provider: 'gemini'
+                    buffer: Buffer.from(arrayBuffer),
+                    mimeType: 'image/jpeg',
+                    provider: 'huggingface'
                 }
             }
+            const errText = await res.text()
+            logger.warn(`[AI] Hugging Face failed with status ${res.status}: ${errText}, falling back to Pollinations`)
+        } catch (hfErr) {
+            logger.warn(`[AI] Hugging Face error: ${hfErr.message}, falling back to Pollinations`)
         }
-        throw new Error('No image in response')
+    }
+
+    // Mode 2: Pollinations.ai (Free, no key)
+    try {
+        logger.info(`[AI] Generating image via Pollinations.ai for: ${prompt}`)
+        const res = await fetch(
+            `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&private=true`
+        )
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}))
+            throw new Error(errData.error || `HTTP error ${res.status}`)
+        }
+        
+        const arrayBuffer = await res.arrayBuffer()
+        return {
+            buffer: Buffer.from(arrayBuffer),
+            mimeType: 'image/jpeg',
+            provider: 'pollinations'
+        }
     } catch (err) {
         logger.error('[AI] Image generation failed:', err.message)
-        throw new Error('Gagal generate gambar. Coba prompt yang lebih spesifik.')
+        throw new Error(
+            `${err.message}.\n\n` +
+            `💡 *Tips:* Jika terkena limit/antrean, kamu bisa mendaftar token Hugging Face gratis dan memasukkannya ke file .env sebagai \`HF_TOKEN\` untuk menggunakan model FLUX.1 yang sangat stabil.`
+        )
     }
 }
 
