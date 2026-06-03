@@ -14,6 +14,7 @@ import { handleIncomingMessage } from '../handlers/message.js'
 import { logger, botLogger } from '../utils/logger.js'
 import { initReminderScheduler } from '../commands/general/remindme.js'
 import { startRadioServer } from '../server/radio.js'
+import { metricsService } from '../services/metrics.js'
 
 const pinoLogger = logger.child({ module: 'baileys' })
 
@@ -114,11 +115,13 @@ async function startBot() {
 
         if (connection === 'connecting') {
             botLogger.connect('connecting')
+            metricsService.setWhatsAppStatus('connecting')
         }
 
         if (connection === 'open') {
             reconnectCount = 0
             botLogger.connect('open', `Logged in as ${sock.user?.name ?? sock.user?.id}`)
+            metricsService.setWhatsAppStatus('online')
             botLogger.section('BOT READY 🚀')
 
             // Start reminder scheduler setelah connected
@@ -132,6 +135,7 @@ async function startBot() {
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut
 
             botLogger.connect('close', `status=${statusCode} | ${error?.message ?? 'unknown'}`)
+            metricsService.setWhatsAppStatus('offline')
 
             if (shouldReconnect) {
                 if (reconnectCount < MAX_RECONNECT_ATTEMPTS) {

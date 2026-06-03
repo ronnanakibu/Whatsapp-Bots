@@ -7,6 +7,7 @@ import { seamlessTracker } from '../services/seamless.js'
 import { checkPermission } from '../middleware/permission.js'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { normalizeNumber } from '../utils/permissions.js'
+import { metricsService } from '../services/metrics.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
     try {
@@ -151,6 +152,7 @@ export async function handleIncomingMessage(sock, { messages }) {
             const startMs = Date.now()
 
             try {
+                metricsService.incrementCommands(commandName)
                 await command.execute(ctx)
                 botLogger.commandDone(commandName, Date.now() - startMs)
             } catch (err) {

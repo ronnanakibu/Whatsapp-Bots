@@ -50,6 +50,21 @@ async function getAllFiles(dir, fileList = []) {
     return fileList;
 }
 
+// Membaca file build dashboard
+async function getDashboardOutFiles(dir = 'dashboard/out', fileList = []) {
+    if (!fs.existsSync(dir)) return fileList;
+    const files = fs.readdirSync(dir);
+    for (const file of files) {
+        const name = path.join(dir, file);
+        if (fs.statSync(name).isDirectory()) {
+            await getDashboardOutFiles(name, fileList);
+        } else {
+            fileList.push(name);
+        }
+    }
+    return fileList;
+}
+
 async function main() {
     // ─────────────────────────────────────────────
     // 🌟 PARSING FLAGS & CONDITIONAL LOGIC
@@ -125,6 +140,37 @@ async function main() {
                 });
             }
         }
+
+        // Auto build & include dashboard/out if dashboard source files changed
+        const hasDashboardChanges = filesToUpload.some(file => {
+            const normalized = file.replace(/\\/g, '/');
+            return normalized.startsWith('dashboard/') && 
+                   !normalized.startsWith('dashboard/out/') && 
+                   !normalized.startsWith('dashboard/node_modules/');
+        });
+
+        if (hasDashboardChanges) {
+            // Remove any existing dashboard/out/ files from filesToUpload since they will be rebuilt
+            filesToUpload = filesToUpload.filter(file => {
+                const normalized = file.replace(/\\/g, '/');
+                return !normalized.startsWith('dashboard/out/');
+            });
+
+            console.log('\n⚙️ [Dashboard] Perubahan source code dashboard terdeteksi.');
+            console.log('⚙️ [Dashboard] Membangun ulang Next.js dashboard secara otomatis (npm run build)...');
+            try {
+                execSync('npm run build', { cwd: 'dashboard', stdio: 'inherit' });
+                console.log('✅ [Dashboard] Build sukses! Memasukkan file "dashboard/out" ke queue upload...');
+                const outFiles = await getDashboardOutFiles();
+                filesToUpload = [...filesToUpload, ...outFiles];
+            } catch (buildErr) {
+                console.error('❌ [Dashboard] Gagal melakukan build dashboard:', buildErr.message);
+                console.log('⚠️ [Dashboard] Melanjutkan sftp upload tanpa update dashboard.');
+            }
+        }
+
+        // Deduplicate files to upload
+        filesToUpload = Array.from(new Set(filesToUpload));
 
         if (filesToUpload.length === 0) {
             console.log('👍 [SFTP] Tidak ada file baru/delta yang perlu diunggah. Proses selesai.');

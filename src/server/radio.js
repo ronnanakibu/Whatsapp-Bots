@@ -9,6 +9,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { radioService } from '../services/radio.js'
 import { logger } from '../utils/logger.js'
+import { metricsService } from '../services/metrics.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -17,6 +18,8 @@ const RADIO_PORT = parseInt(process.env.RADIO_PORT ?? '8080')
 const MAX_HISTORY = 20
 
 let server = null
+let metricsInterval = null
+let analyticsInterval = null
 
 // ─────────────────────────────────────────────
 // RECENTLY PLAYED HISTORY
@@ -137,6 +140,8 @@ function getFullStatus() {
         history: recentlyPlayed.slice(0, 10),
         fx: radioService.activeFx,
         eq: radioService.activeEq,
+        metrics: metricsService.getSystemMetrics(),
+        analytics: metricsService.getAnalyticsData(),
     }
 }
 
@@ -207,6 +212,16 @@ export function startRadioServer() {
     if (server) return // sudah running
 
     setupSSEBroadcasts()
+
+    // Broadcast metrics periodically
+    metricsInterval = setInterval(() => {
+        broadcastSSE('metrics', metricsService.getSystemMetrics())
+    }, 3000)
+
+    // Broadcast analytics periodically
+    analyticsInterval = setInterval(() => {
+        broadcastSSE('analytics', metricsService.getAnalyticsData())
+    }, 10000)
 
     server = http.createServer((req, res) => {
         const url = req.url?.split('?')[0]
@@ -326,6 +341,15 @@ export function startRadioServer() {
 }
 
 export function stopRadioServer() {
+    if (metricsInterval) {
+        clearInterval(metricsInterval)
+        metricsInterval = null
+    }
+    if (analyticsInterval) {
+        clearInterval(analyticsInterval)
+        analyticsInterval = null
+    }
+
     // Close all SSE clients
     for (const client of sseClients) {
         try { client.end() } catch (_) { }

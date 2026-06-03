@@ -336,6 +336,7 @@ class RadioService extends EventEmitter {
     get listenerCount() { return this.#clients.size }
     get activeFx() { return this.#activeFx }
     get activeEq() { return this.#activeEq }
+    get isFfmpegActive() { return this.#ffmpeg !== null }
 
     // ─────────────────────────────────────────────
     // SEARCH & EXTRACTION (Powered by SoundCloud)

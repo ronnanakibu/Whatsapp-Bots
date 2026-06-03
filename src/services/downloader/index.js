@@ -9,6 +9,7 @@ import { downloadYouTube } from './providers/youtube.js'
 import { downloadFacebook } from './providers/facebook.js'
 import { DownloadQueue } from './queue.js'
 import { logger } from '../../utils/logger.js'
+import { metricsService } from '../metrics.js'
 
 // Singleton queue — shared across all providers
 export const downloadQueue = new DownloadQueue({ concurrency: 3, timeout: 90_000 })
@@ -41,9 +42,11 @@ export async function download(url, options = {}) {
     logger.info(`[Downloader] Platform: ${platform} | URL: ${url.slice(0, 60)}`)
 
     // Queue-based execution — mencegah overload
-    return downloadQueue.add(() => provider(url, options), {
+    const result = await downloadQueue.add(() => provider(url, options), {
         label: `${platform}:${url.slice(-20)}`
     })
+    metricsService.incrementDownloads()
+    return result
 }
 
 export { detectPlatform }
