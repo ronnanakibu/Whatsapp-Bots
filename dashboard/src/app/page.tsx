@@ -48,7 +48,24 @@ function renderPage(section: string) {
 
 export default function DashboardPage() {
     const [cmdOpen, setCmdOpen] = useState(false)
-    const { activeSection, setActiveSection } = useDashboardStore()
+    const { activeSection, setActiveSection, loadSettings, setAccentColor } = useDashboardStore()
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const saved = localStorage.getItem('botwa_settings')
+                if (saved) {
+                    loadSettings(JSON.parse(saved))
+                }
+                const savedAccent = localStorage.getItem('botwa_accent_color')
+                if (savedAccent) {
+                    setAccentColor(savedAccent)
+                }
+            } catch (err) {
+                console.error('Failed to load settings from localStorage', err)
+            }
+        }
+    }, [loadSettings, setAccentColor])
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {

@@ -48,11 +48,15 @@ function extractDominantColor(img: HTMLImageElement): string {
 
 export function useAccentColor(thumbnailUrl: string | null | undefined) {
     const setAccentColor = useDashboardStore((s) => s.setAccentColor)
+    const dynamicColors = useDashboardStore((s) => s.settings.dynamicColors)
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     useEffect(() => {
+        if (!dynamicColors) return
+
         if (!thumbnailUrl) {
-            setAccentColor('#00D4FF')
+            const savedAccent = typeof window !== 'undefined' ? localStorage.getItem('botwa_accent_color') : null
+            setAccentColor(savedAccent ?? '#00D4FF')
             return
         }
 
@@ -64,7 +68,6 @@ export function useAccentColor(thumbnailUrl: string | null | undefined) {
             img.onload = () => {
                 const color = extractDominantColor(img)
                 setAccentColor(color)
-                // Also update CSS variable
                 document.documentElement.style.setProperty('--accent-color', color)
             }
             img.onerror = () => setAccentColor('#00D4FF')
@@ -74,5 +77,5 @@ export function useAccentColor(thumbnailUrl: string | null | undefined) {
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current)
         }
-    }, [thumbnailUrl, setAccentColor])
+    }, [thumbnailUrl, setAccentColor, dynamicColors])
 }
