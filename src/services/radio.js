@@ -532,16 +532,17 @@ class RadioService extends EventEmitter {
 
                 const isYoutubeTrack = track.source === 'youtube' || /(?:youtube\.com|youtu\.be)/.test(track.url)
 
-                // ── Strategy 1: YouTube → yt-dlp extract CDN URL → fetchStream ──
+                // ── Strategy 1: YouTube → yt-dlp extract CDN URL → Direct to FFmpeg ──
                 if (isYoutubeTrack) {
                     try {
                         botLogger.info('radio', `[yt-dlp] Extracting audio URL: ${track.url}`)
                         const cdnUrl = await ytdlpGetAudioUrl(track.url)
                         botLogger.info('radio', `[yt-dlp] CDN URL obtained (${cdnUrl.slice(0, 60)}...)`)
 
-                        inputStream = await fetchStream(cdnUrl)
-                        streamType = 'yt-dlp+fetch'
-                        botLogger.info('radio', `[yt-dlp] fetchStream OK → piping to ffmpeg`)
+                        // Pass URL directly to FFmpeg instead of Node.js stream!
+                        inputStream = cdnUrl 
+                        streamType = 'yt-dlp-direct'
+                        botLogger.info('radio', `[yt-dlp] Direct URL ready → passing to ffmpeg`)
                     } catch (ytErr) {
                         botLogger.warn('radio', `[yt-dlp] Gagal: ${ytErr.message}`)
                         botLogger.info('radio', `[yt-dlp] Falling back to play-dl stream...`)
@@ -596,11 +597,19 @@ class RadioService extends EventEmitter {
 
                 this.#currentStream = inputStream
 
-                // ── 3. FFmpeg: stdin pipe → MP3 stdout ──
+                // ── 3. FFmpeg: stdin pipe / direct URL → MP3 stdout ──
                 const ffmpegBin = getFfmpegPath()
+                const isDirectUrl = typeof inputStream === 'string'
+                
                 const ffArgs = [
+                    // Jika direct URL, pakai fitur auto-reconnect dari FFmpeg (sangat kebal putus)
+                    ...(isDirectUrl ? [
+                        '-reconnect', '1',
+                        '-reconnect_streamed', '1',
+                        '-reconnect_delay_max', '5'
+                    ] : []),
                     '-re',
-                    '-i', 'pipe:0',
+                    '-i', isDirectUrl ? inputStream : 'pipe:0',
                     '-vn',
                     '-acodec', 'libmp3lame',
                     '-ab', '128k',
@@ -615,12 +624,14 @@ class RadioService extends EventEmitter {
                 const ffProc = spawn(ffmpegBin, ffArgs)
                 this.#ffmpeg = ffProc
 
-                // Pipe input stream ke ffmpeg stdin
-                inputStream.pipe(ffProc.stdin)
-                inputStream.on('error', e => {
-                    botLogger.err('radio', e, 'input stream error')
-                    ffProc.kill()
-                })
+                // Pipe input stream ke ffmpeg stdin (HANYA JIKA BUKAN DIRECT URL)
+                if (!isDirectUrl) {
+                    inputStream.pipe(ffProc.stdin)
+                    inputStream.on('error', e => {
+                        botLogger.err('radio', e, 'input stream error')
+                        ffProc.kill()
+                    })
+                }
                 
                 ffProc.stdin.on('error', () => { /* normal saat skip */ })
 
