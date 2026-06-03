@@ -1,26 +1,347 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ─────────────────────────────────────────────
+   GOOGLE FONTS
+   ───────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ─────────────────────────────────────────────
+   CSS VARIABLES — BOTWA DARK THEME
+   ───────────────────────────────────────────── */
+@layer base {
+    :root {
+        /* Base colors */
+        --background: 220 20% 4%;
+        --foreground: 210 40% 95%;
+
+        /* Card / surface layers */
+        --card: 220 20% 7%;
+        --card-foreground: 210 40% 95%;
+
+        /* Muted */
+        --muted: 220 15% 12%;
+        --muted-foreground: 215 20% 55%;
+
+        /* Primary — BOTWA Cyan */
+        --primary: 195 100% 50%;
+        --primary-foreground: 220 20% 4%;
+
+        /* Secondary — BOTWA Purple */
+        --secondary: 271 80% 56%;
+        --secondary-foreground: 210 40% 95%;
+
+        /* Border */
+        --border: 220 15% 14%;
+        --input: 220 15% 12%;
+        --ring: 195 100% 50%;
+
+        /* Status */
+        --success: 160 84% 39%;
+        --warning: 38 92% 50%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 210 40% 95%;
+
+        /* Border radius */
+        --radius: 0.75rem;
+
+        /* Accent (dynamic — controlled via JS) */
+        --accent-color: #00D4FF;
+    }
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ─────────────────────────────────────────────
+   BASE RESET
+   ───────────────────────────────────────────── */
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    html {
+        @apply scroll-smooth h-full;
+    }
+
+    body {
+        @apply bg-background text-foreground antialiased h-full overflow-hidden;
+        font-family: 'Inter', system-ui, sans-serif;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+        @apply bg-transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        @apply bg-muted rounded-full;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        @apply bg-muted-foreground;
+    }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─────────────────────────────────────────────
+   UTILITY COMPONENTS
+   ───────────────────────────────────────────── */
+@layer components {
+
+    /* Glassmorphism card */
+    .glass-card {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: var(--radius);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    /* Glow text */
+    .text-glow-cyan {
+        text-shadow: 0 0 20px rgba(0, 212, 255, 0.6);
+    }
+
+    .text-glow-purple {
+        text-shadow: 0 0 20px rgba(139, 92, 246, 0.6);
+    }
+
+    /* Status dot */
+    .status-dot {
+        @apply w-2 h-2 rounded-full inline-block;
+    }
+
+    /* Pipeline node */
+    .pipeline-node {
+        @apply glass-card p-3 flex flex-col items-center gap-1.5 relative overflow-hidden;
+        transition: box-shadow 0.3s ease, border-color 0.3s ease;
+        min-width: 80px;
+    }
+
+    .pipeline-node.active {
+        border-color: rgba(0, 212, 255, 0.4);
+        box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+    }
+
+    .pipeline-node.processing {
+        border-color: rgba(139, 92, 246, 0.4);
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+    }
+
+    .pipeline-node.error {
+        border-color: rgba(239, 68, 68, 0.4);
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+    }
+
+    /* Event badge */
+    .event-badge {
+        @apply text-[10px] font-mono font-medium px-1.5 py-0.5 rounded uppercase tracking-wider;
+    }
+
+    /* Nav item */
+    .nav-item {
+        @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground
+               hover:text-foreground hover:bg-white/[0.04] transition-all duration-200 cursor-pointer;
+    }
+
+    .nav-item.active {
+        @apply text-foreground bg-white/[0.06];
+        border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    /* Metric card */
+    .metric-card {
+        @apply glass-card p-4 flex flex-col gap-1;
+    }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ─────────────────────────────────────────────
+   PIPELINE CONNECTOR
+   ───────────────────────────────────────────── */
+.pipeline-connector {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    flex-shrink: 0;
+}
+
+.pipeline-connector::before {
+    content: '';
+    position: absolute;
+    width: 1px;
+    height: 100%;
+    background: linear-gradient(180deg,
+            rgba(0, 212, 255, 0.15),
+            rgba(139, 92, 246, 0.15));
+}
+
+.pipeline-connector.active::before {
+    background: linear-gradient(180deg,
+            rgba(0, 212, 255, 0.5),
+            rgba(139, 92, 246, 0.5));
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+}
+
+/* ─────────────────────────────────────────────
+   DYNAMIC AMBIENT BACKGROUND
+   ───────────────────────────────────────────── */
+.dynamic-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    transition: background 3s ease;
+    pointer-events: none;
+}
+
+/* ─────────────────────────────────────────────
+   VISUALIZER CANVAS
+   ───────────────────────────────────────────── */
+.visualizer-canvas {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+}
+
+/* ─────────────────────────────────────────────
+   GLOW KEYFRAMES
+   ───────────────────────────────────────────── */
+@keyframes glow-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+@keyframes breathe {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.05); }
+}
+
+@keyframes slide-in-top {
+    from { transform: translateY(-12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes packet-travel {
+    0% { stroke-dashoffset: 1000; opacity: 0; }
+    5% { opacity: 1; }
+    95% { opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+@keyframes reactor-pulse {
+    0%, 100% { transform: scale(1); filter: blur(20px); opacity: 0.5; }
+    50% { transform: scale(1.15); filter: blur(30px); opacity: 0.8; }
+}
+
+@keyframes node-appear {
+    from { transform: scale(0); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes node-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 212, 255, 0.4); }
+    50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(0, 212, 255, 0); }
+}
+
+/* ─────────────────────────────────────────────
+   COMMAND PALETTE OVERLAY
+   ───────────────────────────────────────────── */
+.command-overlay {
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+
+.command-panel {
+    background: rgba(13, 15, 22, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(0, 212, 255, 0.1);
+}
+
+/* ─────────────────────────────────────────────
+   LISTENER NODE NETWORK
+   ───────────────────────────────────────────── */
+.listener-node {
+    animation: node-appear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.listener-node.pulsing {
+    animation: node-pulse 2s ease-in-out infinite;
+}
+
+/* ─────────────────────────────────────────────
+   QUEUE TIMELINE
+   ───────────────────────────────────────────── */
+.queue-item-current {
+    background: linear-gradient(90deg, rgba(0, 212, 255, 0.08) 0%, transparent 100%);
+    border-left: 2px solid rgba(0, 212, 255, 0.6);
+}
+
+.queue-item-next {
+    background: linear-gradient(90deg, rgba(139, 92, 246, 0.05) 0%, transparent 100%);
+    border-left: 2px solid rgba(139, 92, 246, 0.3);
+}
+
+/* ─────────────────────────────────────────────
+   FFMPEG REACTOR
+   ───────────────────────────────────────────── */
+.reactor-core {
+    position: relative;
+    border-radius: 50%;
+}
+
+.reactor-core::before {
+    content: '';
+    position: absolute;
+    inset: -20px;
+    border-radius: 50%;
+    animation: reactor-pulse 3s ease-in-out infinite;
+    pointer-events: none;
+}
+
+.reactor-core.active::before {
+    background: radial-gradient(circle, rgba(0, 212, 255, 0.3) 0%, transparent 70%);
+}
+
+.reactor-core.idle::before {
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+}
+
+.reactor-core.error::before {
+    background: radial-gradient(circle, rgba(239, 68, 68, 0.3) 0%, transparent 70%);
+    animation: reactor-pulse 0.8s ease-in-out infinite;
+}
+
+/* ─────────────────────────────────────────────
+   ALBUM ART CIRCULAR RING
+   ───────────────────────────────────────────── */
+.album-ring {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background: linear-gradient(135deg, var(--accent-color), transparent 60%) border-box;
+    -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: destination-out;
+    mask-composite: exclude;
+}
+
+/* Waveform line for FFmpeg */
+.waveform-bar {
+    background: linear-gradient(180deg, rgba(0, 212, 255, 0.8) 0%, rgba(139, 92, 246, 0.4) 100%);
+    border-radius: 2px;
+    transition: height 80ms ease;
+}
+
+/* Scrollable event feed */
+.event-feed {
+    overflow-y: auto;
+    mask-image: linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%);
 }

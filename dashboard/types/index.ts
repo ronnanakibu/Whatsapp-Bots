@@ -75,6 +75,14 @@ export interface AnalyticsData {
     commandsDistribution: Record<string, number>
     messagesTimeline: Array<{ time: string; count: number }>
     topUsers: Array<{ jid: string; name: string; count: number }>
+    // Extended stats
+    commandsToday: number
+    downloadsToday: number
+    mediaProcessed: number
+    streamsStarted: number
+    peakListeners: number
+    avgStreamDuration: string
+    topCommands: Array<{ name: string; count: number }>
 }
 
 export interface ListenerNode {
