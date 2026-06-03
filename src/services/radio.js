@@ -548,7 +548,34 @@ class RadioService extends EventEmitter {
                     }
                 }
 
-                // ── Strategy 2: play-dl stream (SoundCloud / YouTube fallback) ──
+                // ── Strategy 2: SoundCloud fallback (untuk YouTube yang gagal) ──
+                if (!inputStream && isYoutubeTrack) {
+                    try {
+                        const playdl = await getPlayDl()
+                        botLogger.info('radio', `[SC-fallback] YouTube gagal, cari "${track.title}" di SoundCloud...`)
+                        
+                        // Setup SC client ID
+                        try {
+                            const clientId = await playdl.getFreeClientID()
+                            await playdl.setToken({ soundcloud: { client_id: clientId } })
+                        } catch (_) { }
+
+                        const scResults = await playdl.search(track.title, { source: { soundcloud: 'tracks' }, limit: 1 })
+                        if (scResults?.length > 0) {
+                            const scUrl = scResults[0].url
+                            botLogger.info('radio', `[SC-fallback] Found: ${scResults[0].name} → streaming dari SC`)
+                            const streamData = await playdl.stream(scUrl)
+                            if (streamData?.stream) {
+                                inputStream = streamData.stream
+                                streamType = `sc-fallback(${streamData.type})`
+                            }
+                        }
+                    } catch (scErr) {
+                        botLogger.warn('radio', `[SC-fallback] Gagal: ${scErr.message}`)
+                    }
+                }
+
+                // ── Strategy 3: play-dl stream langsung (untuk SoundCloud tracks / non-YT URLs) ──
                 if (!inputStream) {
                     try {
                         const playdl = await getPlayDl()
@@ -561,7 +588,7 @@ class RadioService extends EventEmitter {
                         streamType = `play-dl(${streamData.type})`
                         botLogger.info('radio', `[play-dl] Stream OK: ${streamData.type}`)
                     } catch (pdErr) {
-                        return reject(new Error(`Semua metode stream gagal.\nyt-dlp: ${isYoutubeTrack ? 'tried' : 'skipped'}\nplay-dl: ${pdErr.message}`))
+                        return reject(new Error(`Semua metode stream gagal.\nyt-dlp: ${isYoutubeTrack ? 'tried' : 'skipped'}\nSC-fallback: tried\nplay-dl: ${pdErr.message}`))
                     }
                 }
 
