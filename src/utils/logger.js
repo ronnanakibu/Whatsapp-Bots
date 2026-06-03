@@ -21,7 +21,7 @@ for (const dir of requiredDirs) {
 }
 
 const isProduction = process.env.NODE_ENV === 'production'
-const LOG_LEVEL = process.env.LOG_LEVEL ?? 'debug'
+const LOG_LEVEL = process.env.LOG_LEVEL ?? 'trace'
 
 // ─────────────────────────────────────────────
 // ANSI COLOR CODES — untuk terminal raw logging
@@ -163,9 +163,9 @@ export const botLogger = {
     /** Incoming message */
     message: ({ sender, type, body, isGroup, chatId }) => {
         const from = isGroup
-            ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId?.slice(0, 20)}${C.reset}`
-            : `${C.green}[DM]${C.reset}   ${C.dim}${sender?.slice(0, 20)}${C.reset}`
-        const bodyPreview = body?.slice(0, 60) + (body?.length > 60 ? '…' : '')
+            ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId}${C.reset}`
+            : `${C.green}[DM]${C.reset}   ${C.dim}${sender}${C.reset}`
+        const bodyPreview = body || ''
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} 📩 ${C.bold}MSG${C.reset}   ${from} ${C.dim}type=${type}${C.reset} ${C.white}"${bodyPreview}"${C.reset}\n`
         )
@@ -173,9 +173,9 @@ export const botLogger = {
 
     /** Command execution */
     command: (name, sender, args = []) => {
-        const argsStr = args.length ? `${C.dim}[${args.slice(0, 3).join(', ')}]${C.reset}` : ''
+        const argsStr = args.length ? `${C.dim}[${args.join(', ')}]${C.reset}` : ''
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} 🚀 ${C.bold}${C.green}CMD${C.reset}    ${C.bold}${name}${C.reset} ${C.dim}← ${sender?.slice(0, 20)}${C.reset} ${argsStr}\n`
+            `${C.gray}${ts()}${C.reset} 🚀 ${C.bold}${C.green}CMD${C.reset}    ${C.bold}${name}${C.reset} ${C.dim}← ${sender}${C.reset} ${argsStr}\n`
         )
     },
 
@@ -191,7 +191,7 @@ export const botLogger = {
     ai: (provider, model, chatId, ms = null) => {
         const msStr = ms !== null ? ` ${C.dim}${ms}ms${C.reset}` : ''
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} 🤖 ${C.bold}${C.magenta}AI${C.reset}     ${C.bold}${provider}/${model}${C.reset} → ${C.dim}${chatId?.slice(0, 25)}${C.reset}${msStr}\n`
+            `${C.gray}${ts()}${C.reset} 🤖 ${C.bold}${C.magenta}AI${C.reset}     ${C.bold}${provider}/${model}${C.reset} → ${C.dim}${chatId}${C.reset}${msStr}\n`
         )
     },
 
@@ -200,21 +200,21 @@ export const botLogger = {
         const routeColors = { seamless: C.cyan, mention: C.yellow, dm: C.green }
         const color = routeColors[route] ?? C.white
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} 💬 ${color}${C.bold}[${route.toUpperCase()}]${C.reset} "${preview?.slice(0, 60)}"\n`
+            `${C.gray}${ts()}${C.reset} 💬 ${color}${C.bold}[${route.toUpperCase()}]${C.reset} "${preview}"\n`
         )
     },
 
     /** Admin/group action */
     admin: (action, target, by) => {
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} 👑 ${C.bold}${C.red}ADMIN${C.reset}  ${C.bold}${action}${C.reset} → ${C.dim}${target}${C.reset} ${C.gray}by ${by?.slice(0, 20)}${C.reset}\n`
+            `${C.gray}${ts()}${C.reset} 👑 ${C.bold}${C.red}ADMIN${C.reset}  ${C.bold}${action}${C.reset} → ${C.dim}${target}${C.reset} ${C.gray}by ${by}${C.reset}\n`
         )
     },
 
     /** Reminder fired */
     reminder: (id, chatId) => {
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} ⏰ ${C.bold}${C.yellow}REMIND${C.reset} #${id} → ${C.dim}${chatId?.slice(0, 25)}${C.reset}\n`
+            `${C.gray}${ts()}${C.reset} ⏰ ${C.bold}${C.yellow}REMIND${C.reset} #${id} → ${C.dim}${chatId}${C.reset}\n`
         )
     },
 
@@ -238,7 +238,7 @@ export const botLogger = {
     err: (module, err, context = '') => {
         const errMsg = err instanceof Error ? err.message : String(err)
         const stack = err instanceof Error && err.stack
-            ? `\n${C.dim}${err.stack.split('\n').slice(1, 4).join('\n')}${C.reset}`
+            ? `\n${C.dim}${err.stack}${C.reset}`
             : ''
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} ❌ ${C.bold}${C.red}ERROR${C.reset}  ${C.red}[${module}]${C.reset} ${context ? C.dim + context + ' ' + C.reset : ''}${errMsg}${stack}\n`
