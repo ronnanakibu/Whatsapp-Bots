@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef, useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { useDashboardStore } from '@/lib/store'
 
 type VisualizerMode = 'spectrum' | 'circular' | 'waveform'

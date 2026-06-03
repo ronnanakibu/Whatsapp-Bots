@@ -1,8 +1,8 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  // Output standalone untuk di-serve Express dari bot
-  output: 'standalone',
+  // Output export untuk di-serve static dari bot
+  output: 'export',
 
   // Base path kalau mau serve di subdirectory: /dashboard
   // Uncomment kalau pakai port yang sama dengan radio
