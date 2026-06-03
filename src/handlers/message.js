@@ -18,8 +18,8 @@ export async function handleIncomingMessage(sock, { messages }) {
         const from = msg.key.remoteJid
         const isGroup = from.endsWith('@g.us')
         const isDM = !isGroup && from.endsWith('@s.whatsapp.net')
-        const sender = isGroup ? msg.key.participant : from
-        const pushName = msg.pushName || sender.split(':')[0].split('@')[0]
+        const sender = isGroup ? (msg.key.participant || from) : from
+        const pushName = msg.pushName || (sender ? sender.split(':')[0].split('@')[0] : 'System')
 
         // Unwrap ephemeral / viewonce / documentWithCaption
         let messageContent = msg.message
