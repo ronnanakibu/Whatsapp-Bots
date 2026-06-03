@@ -209,3 +209,32 @@ export function ytdlpGetAudioUrl(youtubeUrl) {
         }, 20_000)
     })
 }
+
+// ─────────────────────────────────────────────
+// STREAM AUDIO LANGSUNG (PIPE)
+// Memanfaatkan yt-dlp python untuk stream dan DNS resolve
+// ─────────────────────────────────────────────
+
+export function ytdlpStream(youtubeUrl) {
+    const ytdlpPath = getYtdlpPath()
+    if (!ytdlpPath) throw new Error('yt-dlp tidak ditemukan.')
+
+    const args = [
+        '--no-playlist',
+        '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+        '--output', '-', // stream ke stdout
+        '--no-warnings',
+        '--quiet',
+        youtubeUrl
+    ]
+
+    botLogger.info('ytdlp', `Membuka stream yt-dlp: ${youtubeUrl}`)
+    const proc = spawn(ytdlpPath, args)
+
+    proc.stderr.on('data', d => {
+        const msg = d.toString().trim()
+        if (msg) botLogger.debug('ytdlp', msg)
+    })
+
+    return proc
+}
