@@ -33,6 +33,7 @@ export function useSSE() {
         setPipelineStatus,
         metrics,
         setMetrics,
+        setAnalytics,
     } = useDashboardStore()
 
     const connect = useCallback(() => {
@@ -67,6 +68,12 @@ export function useSSE() {
                 }
                 if (data.listeners !== undefined) {
                     setMetrics({ connectedUsers: data.listeners, queueSize: data.queueLength ?? 0 })
+                }
+                if (data.metrics) {
+                    setMetrics(data.metrics)
+                }
+                if (data.analytics) {
+                    setAnalytics(data.analytics)
                 }
             } catch { /* ignore parse errors */ }
         })
@@ -157,6 +164,22 @@ export function useSSE() {
             } catch { /* ignore */ }
         })
 
+        // Metrics update
+        es.addEventListener('metrics', (e: MessageEvent) => {
+            try {
+                const metricsData = JSON.parse(e.data)
+                setMetrics(metricsData)
+            } catch { /* ignore */ }
+        })
+
+        // Analytics update
+        es.addEventListener('analytics', (e: MessageEvent) => {
+            try {
+                const analyticsData = JSON.parse(e.data)
+                setAnalytics(analyticsData)
+            } catch { /* ignore */ }
+        })
+
         es.onerror = () => {
             setConnected(false)
             es.close()
@@ -167,7 +190,7 @@ export function useSSE() {
             retryDelay.current = delay * 2
             retryTimeout.current = setTimeout(connect, delay)
         }
-    }, [setConnected, setNowPlaying, setQueue, addEvent, setPipelineStatus, setMetrics])
+    }, [setConnected, setNowPlaying, setQueue, addEvent, setPipelineStatus, setMetrics, setAnalytics])
 
     useEffect(() => {
         connect()
