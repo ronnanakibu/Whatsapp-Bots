@@ -79,11 +79,11 @@ export default {
         if (isAudioCommand) {
             format = 'audio'
             await processDownload(ctx, url, platform, format)
-        } else if (isVideoCommand) {
+        } else if (isVideoCommand || platform !== 'youtube') {
             format = 'video'
             await processDownload(ctx, url, platform, format)
         } else {
-            // Interactive Prompt
+            // Interactive Prompt hanya untuk YouTube jika tidak spesifik
             const promptMsg = await reply(
                 `📥 *Downloader*\n\n` +
                 `Pilih format untuk diunduh:\n` +
