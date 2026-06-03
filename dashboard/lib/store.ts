@@ -19,6 +19,40 @@ import type {
 // DEFAULT STATES
 // ─────────────────────────────────────────────
 
+export interface DashboardSettings {
+    dynamicColors: boolean
+    particles: boolean
+    blur: boolean
+    vignette: boolean
+    particleCount: string
+    fpsLimit: string
+    audioQuality: string
+    audioLatency: string
+    vizMode: string
+    vizQuality: string
+    showWaveReflection: boolean
+    pipelineAnimations: boolean
+    autoReconnect: boolean
+    eventHistory: string
+}
+
+const defaultSettings: DashboardSettings = {
+    dynamicColors: true,
+    particles: true,
+    blur: true,
+    vignette: true,
+    particleCount: '60',
+    fpsLimit: 'Unlimited',
+    audioQuality: '128kbps',
+    audioLatency: 'Low',
+    vizMode: 'Spectrum',
+    vizQuality: 'High',
+    showWaveReflection: true,
+    pipelineAnimations: true,
+    autoReconnect: true,
+    eventHistory: '100',
+}
+
 const defaultMetrics: SystemMetrics = {
     status: 'offline',
     uptime: 0,
@@ -110,6 +144,11 @@ interface DashboardStore {
     setActiveSection: (s: string) => void
     sidebarExpanded: boolean
     setSidebarExpanded: (v: boolean) => void
+
+    // Settings
+    settings: DashboardSettings
+    setSetting: (key: keyof DashboardSettings, val: boolean | string) => void
+    loadSettings: (s: Partial<DashboardSettings>) => void
 }
 
 // ─────────────────────────────────────────────
@@ -128,7 +167,12 @@ export const useDashboardStore = create<DashboardStore>()(
 
         // Accent color
         accentColor: '#00D4FF',
-        setAccentColor: (c) => set({ accentColor: c }),
+        setAccentColor: (c) => set(() => {
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('botwa_accent_color', c)
+            }
+            return { accentColor: c }
+        }),
 
         // Now playing
         nowPlaying: defaultNowPlaying,
@@ -181,5 +225,16 @@ export const useDashboardStore = create<DashboardStore>()(
         setActiveSection: (s) => set({ activeSection: s }),
         sidebarExpanded: true,
         setSidebarExpanded: (v) => set({ sidebarExpanded: v }),
+
+        // Settings
+        settings: defaultSettings,
+        setSetting: (key, val) => set((s) => {
+            const nextSettings = { ...s.settings, [key]: val }
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('botwa_settings', JSON.stringify(nextSettings))
+            }
+            return { settings: nextSettings }
+        }),
+        loadSettings: (loaded) => set((s) => ({ settings: { ...s.settings, ...loaded } })),
     }))
 )

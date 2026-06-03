@@ -51,26 +51,10 @@ function Select({ value, options, onChange }: { value: string; options: string[]
 const CATEGORIES = ['Appearance', 'Audio', 'Visualizer', 'Performance', 'Pipeline', 'About']
 
 export default function SettingsPage() {
-    const { accentColor, setAccentColor } = useDashboardStore()
+    const { accentColor, setAccentColor, settings, setSetting } = useDashboardStore()
     const [activeCategory, setActiveCategory] = useState('Appearance')
-    const [settings, setSettings] = useState({
-        dynamicColors: true,
-        particles: true,
-        blur: true,
-        vignette: true,
-        particleCount: '60',
-        fpsLimit: 'Unlimited',
-        audioQuality: '128kbps',
-        audioLatency: 'Low',
-        vizMode: 'Spectrum',
-        vizQuality: 'High',
-        showWaveReflection: true,
-        pipelineAnimations: true,
-        autoReconnect: true,
-        eventHistory: '100',
-    })
 
-    const set = (key: string, val: string | boolean) => setSettings(s => ({ ...s, [key]: val }))
+    const set = (key: keyof typeof settings, val: boolean | string) => setSetting(key, val)
 
     return (
         <div className="h-full flex overflow-hidden">

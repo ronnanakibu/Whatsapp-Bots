@@ -6,6 +6,7 @@ import { useDashboardStore } from '@/lib/store'
 export default function DynamicBackground() {
     const accentColor = useDashboardStore((s) => s.accentColor)
     const isPlaying = useDashboardStore((s) => s.nowPlaying.isPlaying)
+    const settings = useDashboardStore((s) => s.settings)
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const animRef = useRef<number>(0)
     const timeRef = useRef(0)
@@ -31,7 +32,8 @@ export default function DynamicBackground() {
         }> = []
 
         const colors = ['#00D4FF', '#8B5CF6', '#10B981']
-        for (let i = 0; i < 60; i++) {
+        const pCount = settings.particles ? (parseInt(settings.particleCount) || 60) : 0
+        for (let i = 0; i < pCount; i++) {
             particles.push({
                 x: Math.random() * canvas.width,
                 y: Math.random() * canvas.height,
@@ -72,7 +74,7 @@ export default function DynamicBackground() {
             cancelAnimationFrame(animRef.current)
             window.removeEventListener('resize', resize)
         }
-    }, [isPlaying])
+    }, [isPlaying, settings.particles, settings.particleCount])
 
     // Parse accent color for gradients
     const accent = accentColor ?? '#00D4FF'
@@ -110,12 +112,14 @@ export default function DynamicBackground() {
             />
 
             {/* Vignette */}
-            <div
-                className="fixed inset-0 z-0 pointer-events-none"
-                style={{
-                    background: 'radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,0.6) 100%)',
-                }}
-            />
+            {settings.vignette && (
+                <div
+                    className="fixed inset-0 z-0 pointer-events-none"
+                    style={{
+                        background: 'radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,0.6) 100%)',
+                    }}
+                />
+            )}
         </>
     )
 }
