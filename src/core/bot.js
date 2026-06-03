@@ -13,6 +13,7 @@ import { loadCommands } from './loader.js'
 import { handleIncomingMessage } from '../handlers/message.js'
 import { logger, botLogger } from '../utils/logger.js'
 import { initReminderScheduler } from '../commands/general/remindme.js'
+import { initWeatherScheduler } from '../commands/utility/cuaca.js'
 import { startRadioServer } from '../server/radio.js'
 import { metricsService } from '../services/metrics.js'
 
@@ -127,6 +128,10 @@ async function startBot() {
             // Start reminder scheduler setelah connected
             initReminderScheduler(sock)
             botLogger.system('Reminder scheduler started ✓')
+
+            // Start weather scheduler setelah connected
+            initWeatherScheduler(sock)
+            botLogger.system('Weather scheduler started ✓')
         }
 
         if (connection === 'close') {
