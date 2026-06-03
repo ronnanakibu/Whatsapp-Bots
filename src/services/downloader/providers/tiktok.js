@@ -133,7 +133,7 @@ export async function downloadTikTok(rawUrl, options = {}) {
                     'User-Agent': 'Mozilla/5.0 (Linux; Android 11)',
                     'Referer': 'https://www.tiktok.com/',
                 },
-                timeout: 60_000,
+                timeout: 300_000, // 5 menit
                 maxSizeMB: 50,
             })
 
