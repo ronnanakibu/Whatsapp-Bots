@@ -23,7 +23,8 @@ const ignoreList = [
     'pull.js',
     'AGENTS.md',
     'CLAUDE.md',
-    'memory'
+    'memory',
+    '.next'
 ];
 
 function runGitCommand(command) {
