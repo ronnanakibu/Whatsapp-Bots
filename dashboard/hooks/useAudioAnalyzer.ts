@@ -2,7 +2,18 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 
-const STREAM_URL = process.env.NEXT_PUBLIC_STREAM_URL ?? 'http://localhost:8080/stream'
+const getStreamUrl = () => {
+    if (process.env.NEXT_PUBLIC_STREAM_URL) return process.env.NEXT_PUBLIC_STREAM_URL
+    if (typeof window !== 'undefined') {
+        if (window.location.port === '3001') {
+            return `http://${window.location.hostname}:25637/stream`
+        }
+        return '/stream'
+    }
+    return 'http://localhost:8080/stream'
+}
+
+const STREAM_URL = getStreamUrl()
 
 export interface AudioAnalyzerState {
     analyser: AnalyserNode | null
