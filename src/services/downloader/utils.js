@@ -32,6 +32,7 @@ export function fetchJson(url, options = {}) {
             port: parsed.port || (isHttps ? 443 : 80),
             path: parsed.pathname + parsed.search,
             method,
+            family: 4, // Bypass IPv6 timeout
             headers: {
                 'User-Agent': DEFAULT_UA,
                 'Accept': 'application/json, text/html, */*',
@@ -105,6 +106,7 @@ export function fetchBuffer(url, options = {}) {
                 port: parsed.port || (isHttps ? 443 : 80),
                 path: parsed.pathname + parsed.search,
                 method: 'GET',
+                family: 4, // Bypass IPv6 timeout
                 headers: {
                     'User-Agent': DEFAULT_UA,
                     'Accept': '*/*',
@@ -184,6 +186,7 @@ export function resolveShortUrl(url, maxRedirects = 5) {
                 port: parsed.port || (isHttps ? 443 : 80),
                 path: parsed.pathname + parsed.search,
                 method: 'HEAD',
+                family: 4, // Bypass IPv6 timeout
                 headers: { 'User-Agent': DEFAULT_UA },
             }, (res) => {
                 req.destroy()
