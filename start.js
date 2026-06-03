@@ -302,7 +302,7 @@ function validateEnv() {
 function printSummary() {
     const fonts = fs.readdirSync(FONT_DIR).filter(f => f.endsWith('.ttf') || f.endsWith('.otf'))
     const hasFfmpeg = commandExists('ffmpeg') || fs.existsSync(FFMPEG_PATH)
-    const hasYtdlp = fs.existsSync(YTDLP_PATH)
+    const hasYtdlp = fs.existsSync(YTDLP_SCRIPT_PATH)
 
     console.log('\n' + '─'.repeat(50))
     console.log('  🤖 RonnBot v2.0 — Bootstrap Summary')
