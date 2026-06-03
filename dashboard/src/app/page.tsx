@@ -6,6 +6,7 @@ import { useDashboardStore } from '@/lib/store'
 
 import SSEProvider from '@/components/core/SSEProvider'
 import DynamicBackground from '@/components/core/DynamicBackground'
+import { AudioPlayerProvider } from '@/hooks/useAudioAnalyzer'
 import Sidebar from '@/components/layout/Sidebar'
 import CommandPalette from '@/components/layout/CommandPalette'
 import PipelineView from '@/components/pipeline/PipelineView'
@@ -137,75 +138,77 @@ export default function DashboardPage() {
 
     return (
         <SSEProvider>
-            {/* Ambient background */}
-            <DynamicBackground />
+            <AudioPlayerProvider>
+                {/* Ambient background */}
+                <DynamicBackground />
 
-            {/* Command palette */}
-            <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
+                {/* Command palette */}
+                <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
 
-            {/* Main layout */}
-            <div className="relative z-10 flex flex-col md:flex-row h-screen w-screen overflow-hidden">
-                {/* Left — Sidebar (Hidden on Mobile) */}
-                <div className="hidden md:block h-full">
-                    <Sidebar />
-                </div>
-
-                {/* Mobile Header */}
-                <div className="md:hidden flex items-center justify-between p-4 border-b bg-black/40 backdrop-blur-md" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-                    <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 border border-white/20">
-                            <span className="text-white font-bold text-xs">V2</span>
-                        </div>
-                        <div>
-                            <p className="text-sm font-bold text-white leading-tight">BOTWA</p>
-                            <p className="text-[10px] text-muted-foreground leading-tight">Command Center</p>
-                        </div>
+                {/* Main layout */}
+                <div className="relative z-10 flex flex-col md:flex-row h-screen w-screen overflow-hidden">
+                    {/* Left — Sidebar (Hidden on Mobile) */}
+                    <div className="hidden md:block h-full">
+                        <Sidebar />
                     </div>
-                    <button
-                        onClick={() => setCmdOpen(true)}
-                        className="p-2 rounded-lg bg-white/5 border border-white/10 text-white/70"
-                    >
-                        <span className="text-xs">⌘K</span>
-                    </button>
-                </div>
 
-                {/* Main content area */}
-                <div className="flex-1 flex flex-col overflow-hidden pb-16 md:pb-0">
-                    {renderContent()}
-                </div>
-
-                {/* Mobile Bottom Nav */}
-                <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-black/80 backdrop-blur-xl border-t border-white/10 flex items-center justify-around px-2 z-50">
-                    {['home', 'stream', 'pipeline', 'queue', 'analytics'].map((id) => (
+                    {/* Mobile Header */}
+                    <div className="md:hidden flex items-center justify-between p-4 border-b bg-black/40 backdrop-blur-md" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+                        <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 border border-white/20">
+                                <span className="text-white font-bold text-xs">V2</span>
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-white leading-tight">BOTWA</p>
+                                <p className="text-[10px] text-muted-foreground leading-tight">Command Center</p>
+                            </div>
+                        </div>
                         <button
-                            key={id}
-                            onClick={() => setActiveSection(id)}
-                            className={`flex flex-col items-center justify-center w-14 h-full gap-1 transition-colors ${
-                                activeSection === id ? 'text-white' : 'text-white/40'
-                            }`}
+                            onClick={() => setCmdOpen(true)}
+                            className="p-2 rounded-lg bg-white/5 border border-white/10 text-white/70"
                         >
-                            <span className="text-[10px] capitalize font-medium">{id}</span>
-                            {activeSection === id && (
-                                <div className="w-1 h-1 rounded-full bg-white absolute bottom-2" />
-                            )}
+                            <span className="text-xs">⌘K</span>
                         </button>
-                    ))}
-                </div>
-            </div>
+                    </div>
 
-            {/* Ctrl+K hint (Desktop only) */}
-            <div
-                className="hidden md:flex fixed bottom-4 right-4 z-30 items-center gap-1.5 px-2.5 py-1.5 rounded-lg pointer-events-none"
-                style={{
-                    background: 'rgba(0,0,0,0.6)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    backdropFilter: 'blur(8px)',
-                }}
-            >
-                <kbd className="text-[10px] px-1 py-0.5 rounded bg-white/[0.08] font-mono text-white/60">⌘</kbd>
-                <kbd className="text-[10px] px-1 py-0.5 rounded bg-white/[0.08] font-mono text-white/60">K</kbd>
-                <span className="text-[10px] text-muted-foreground ml-0.5">Search</span>
-            </div>
+                    {/* Main content area */}
+                    <div className="flex-1 flex flex-col overflow-hidden pb-16 md:pb-0">
+                        {renderContent()}
+                    </div>
+
+                    {/* Mobile Bottom Nav */}
+                    <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-black/80 backdrop-blur-xl border-t border-white/10 flex items-center justify-around px-2 z-50">
+                        {['home', 'stream', 'pipeline', 'queue', 'analytics'].map((id) => (
+                            <button
+                                key={id}
+                                onClick={() => setActiveSection(id)}
+                                className={`flex flex-col items-center justify-center w-14 h-full gap-1 transition-colors ${
+                                    activeSection === id ? 'text-white' : 'text-white/40'
+                                }`}
+                            >
+                                <span className="text-[10px] capitalize font-medium">{id}</span>
+                                {activeSection === id && (
+                                    <div className="w-1 h-1 rounded-full bg-white absolute bottom-2" />
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Ctrl+K hint (Desktop only) */}
+                <div
+                    className="hidden md:flex fixed bottom-4 right-4 z-30 items-center gap-1.5 px-2.5 py-1.5 rounded-lg pointer-events-none"
+                    style={{
+                        background: 'rgba(0,0,0,0.6)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        backdropFilter: 'blur(8px)',
+                    }}
+                >
+                    <kbd className="text-[10px] px-1 py-0.5 rounded bg-white/[0.08] font-mono text-white/60">⌘</kbd>
+                    <kbd className="text-[10px] px-1 py-0.5 rounded bg-white/[0.08] font-mono text-white/60">K</kbd>
+                    <span className="text-[10px] text-muted-foreground ml-0.5">Search</span>
+                </div>
+            </AudioPlayerProvider>
         </SSEProvider>
     )
 }

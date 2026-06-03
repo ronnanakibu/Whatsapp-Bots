@@ -4,7 +4,8 @@ import { useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDashboardStore } from '@/lib/store'
 import { useAccentColor } from '@/hooks/useAccentColor'
-import { Users, Clock, Zap, Radio } from 'lucide-react'
+import { Users, Clock, Zap, Radio, Play, Pause, Volume2, VolumeX } from 'lucide-react'
+import { useAudioPlayer } from '@/hooks/useAudioAnalyzer'
 
 function formatDuration(sec: number): string {
     if (!sec) return '—'
@@ -16,6 +17,7 @@ function formatDuration(sec: number): string {
 export default function NowPlaying() {
     const { nowPlaying, accentColor } = useDashboardStore()
     const { track, isPlaying, listeners, fx, eq, bitrate, codec } = nowPlaying
+    const { isPlaying: localIsPlaying, isMuted, volume, togglePlay, toggleMute, setVolume } = useAudioPlayer()
     const progressRef = useRef<HTMLDivElement>(null)
     const startTimeRef = useRef(nowPlaying.startedAt)
 
@@ -58,7 +60,7 @@ export default function NowPlaying() {
 
             <div className="p-5 flex gap-5">
                 {/* Album Art */}
-                <div className="flex-shrink-0 relative">
+                <div className="flex-shrink-0 relative group cursor-pointer" onClick={togglePlay}>
                     <motion.div
                         className="w-28 h-28 rounded-xl overflow-hidden relative"
                         style={{
@@ -66,8 +68,8 @@ export default function NowPlaying() {
                             border: `1px solid ${accentColor}30`,
                             boxShadow: `0 0 30px ${accentColor}25`,
                         }}
-                        animate={{ scale: isPlaying ? [1, 1.02, 1] : 1 }}
-                        transition={{ duration: 4, repeat: isPlaying ? Infinity : 0, ease: 'easeInOut' }}
+                        animate={{ scale: (isPlaying && localIsPlaying) ? [1, 1.02, 1] : 1 }}
+                        transition={{ duration: 4, repeat: (isPlaying && localIsPlaying) ? Infinity : 0, ease: 'easeInOut' }}
                     >
                         <AnimatePresence mode="wait">
                             {track?.thumbnail ? (
@@ -92,32 +94,26 @@ export default function NowPlaying() {
                                 </motion.div>
                             )}
                         </AnimatePresence>
+
+                        {/* Hover Overlay with Play/Pause Icon */}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-[2px] z-10">
+                            {localIsPlaying ? (
+                                <Pause size={28} className="text-white drop-shadow-md" />
+                            ) : (
+                                <Play size={28} className="text-white drop-shadow-md fill-white" />
+                            )}
+                        </div>
                     </motion.div>
 
-                    {/* Playing indicator */}
-                    <AnimatePresence>
-                        {isPlaying && (
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0 }}
-                                className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center"
-                                style={{ background: accentColor }}
-                            >
-                                <div className="flex gap-0.5 items-center">
-                                    {[0, 1, 2].map((i) => (
-                                        <motion.div
-                                            key={i}
-                                            className="w-0.5 rounded-full"
-                                            style={{ background: '#000' }}
-                                            animate={{ height: ['4px', '8px', '4px'] }}
-                                            transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
-                                        />
-                                    ))}
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                    {/* Pulse overlay if server is playing but user hasn't connected to stream yet */}
+                    {!localIsPlaying && isPlaying && (
+                        <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-20">
+                            <div className="w-8 h-8 rounded-full bg-white/20 animate-ping absolute" />
+                            <div className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+                                <Play size={12} className="text-white fill-white ml-0.5" />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Info */}
@@ -166,12 +162,41 @@ export default function NowPlaying() {
                     )}
 
                     {/* Meta chips */}
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1.5 items-center w-full">
                         <MetaChip icon={<Users size={10} />} value={`${listeners}`} label="listeners" color={accentColor} />
                         <MetaChip icon={<Zap size={10} />} value={`${bitrate}k`} label="bitrate" />
                         <MetaChip icon={<span className="text-[10px]">🎛</span>} value={fx.toUpperCase()} label="fx" />
                         <MetaChip icon={<span className="text-[10px]">🎚</span>} value={eq.toUpperCase()} label="eq" />
                         <MetaChip icon={<Clock size={10} />} value={codec.toUpperCase()} label="codec" />
+
+                        {/* Volume / Mute controls */}
+                        <div className="flex items-center gap-1.5 ml-auto bg-white/5 px-2 py-1 rounded-lg border border-white/5">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleMute()
+                                }}
+                                className="p-0.5 rounded transition-colors hover:text-white"
+                                style={{ color: isMuted ? '#EF4444' : `${accentColor}CC` }}
+                                title={isMuted ? 'Unmute' : 'Mute'}
+                            >
+                                {isMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+                            </button>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                value={isMuted ? 0 : volume}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                    e.stopPropagation()
+                                    setVolume(parseFloat(e.target.value))
+                                }}
+                                className="w-14 h-1 rounded-lg appearance-none cursor-pointer bg-white/15 accent-current hover:bg-white/20 transition-colors"
+                                style={{ color: accentColor }}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
