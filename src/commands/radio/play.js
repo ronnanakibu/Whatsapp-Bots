@@ -3,6 +3,8 @@
 
 import { radioService } from '../../services/radio.js'
 
+const notifiedUsers = new Set()
+
 export default {
     name: 'play',
     aliases: ['request', 'req', 'putar'],
@@ -36,7 +38,7 @@ export default {
 
         if (isBatch) {
             await reply(`_Mencari ${queries.length} lagu..._`)
-            const results = await radioService.searchBatch(queries, sender)
+            const results = await radioService.searchBatch(queries, ctx.pushName)
 
             let successCount = 0
             let text = `🎵 *Batch Request Result:*\n\n`
@@ -56,6 +58,13 @@ export default {
             }
 
             text += `\n📋 Queue: ${radioService.queue.length} lagu`
+            
+            if (!notifiedUsers.has(sender)) {
+                notifiedUsers.add(sender)
+                const port = process.env.RADIO_PORT ?? '8080'
+                text += `\n\n🎧 *Dengarkan radio di sini:*\nhttp://ap2.nzb.zelpstore.id:${port}`
+            }
+
             await reply(text)
 
             if (successCount > 0 && !radioService.isPlaying) {
@@ -65,14 +74,21 @@ export default {
         } else {
             // Single request
             try {
-                const track = await radioService.search(queries[0], sender)
+                const track = await radioService.search(queries[0], ctx.pushName)
                 radioService.addToQueue(track)
+
+                let linkMsg = ''
+                if (!notifiedUsers.has(sender)) {
+                    notifiedUsers.add(sender)
+                    const port = process.env.RADIO_PORT ?? '8080'
+                    linkMsg = `\n\n🎧 *Dengarkan radio di sini:*\nhttp://ap2.nzb.zelpstore.id:${port}`
+                }
 
                 await reply(
                     `✅ *Ditambahkan ke queue!*\n\n` +
                     `🎵 *${track.title}*\n` +
                     `⏱️ Durasi: ${track.durationFormatted}\n` +
-                    `📋 Posisi: #${radioService.queue.length}`
+                    `📋 Posisi: #${radioService.queue.length}${linkMsg}`
                 )
                 await react('✅')
 

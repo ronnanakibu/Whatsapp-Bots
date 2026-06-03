@@ -7,6 +7,7 @@ import { download, detectPlatform } from '../../services/downloader/index.js'
 import { extractUrl } from '../../services/downloader/detector.js'
 import { formatBytes } from '../../services/downloader/utils.js'
 import { downloadQueue } from '../../services/downloader/index.js'
+import { interactiveService } from '../../services/interactive.js'
 
 // Platform emoji map untuk display
 const PLATFORM_EMOJI = {
@@ -69,43 +70,70 @@ export default {
             return reply(`⏳ Antrian penuh (${qStats.pending} job). Coba lagi sebentar.`)
         }
 
-        // ── 4. Determine format untuk YouTube ─────
-        const options = {}
-        if (platform === 'youtube') {
-            // !ytmp3 atau !ytaudio → force audio
-            options.format = ['ytmp3', 'ytaudio', 'mp3'].includes(commandName) ? 'audio' : 'audio'
-            // Default YouTube ke audio karena video bisa sangat besar
+        // ── 4. Determine format atau Prompt Interaktif ─────
+        const isAudioCommand = ['ytmp3', 'ytaudio', 'mp3'].includes(commandName)
+        const isVideoCommand = ['ytmp4', 'ytvideo', 'mp4'].includes(commandName)
+        
+        let format = 'video' // default
+
+        if (isAudioCommand) {
+            format = 'audio'
+            await processDownload(ctx, url, platform, format)
+        } else if (isVideoCommand) {
+            format = 'video'
+            await processDownload(ctx, url, platform, format)
+        } else {
+            // Interactive Prompt
+            const promptMsg = await reply(
+                `📥 *Downloader*\n\n` +
+                `Pilih format untuk diunduh:\n` +
+                `1️⃣ Video (MP4)\n` +
+                `2️⃣ Audio (MP3)\n\n` +
+                `_Balas pesan ini dengan angka 1 atau 2_`
+            )
+
+            interactiveService.createSession(
+                promptMsg.key.id,
+                chatId,
+                ctx.sender,
+                async (replyCtx, answer) => {
+                    if (answer === '1') {
+                        await processDownload(replyCtx, url, platform, 'video')
+                    } else if (answer === '2') {
+                        await processDownload(replyCtx, url, platform, 'audio')
+                    } else {
+                        await replyCtx.reply('❌ Pilihan tidak valid. Silakan ulangi perintah !dl')
+                    }
+                }
+            )
         }
+    }
+}
 
-        // ── 5. Loading indicator ───────────────────
-        await react('⏳')
-        const emoji = PLATFORM_EMOJI[platform]
-        const platformName = PLATFORM_NAME[platform]
+// ─────────────────────────────────────────────
+// PROSES DOWNLOAD (Pisah Fungsi biar rapi)
+// ─────────────────────────────────────────────
 
-        const loadingMsg = await reply(
-            `${emoji} *Sedang download dari ${platformName}...*\n` +
-            `_Mohon tunggu sebentar_`
-        )
+async function processDownload(ctx, url, platform, format) {
+    const { reply, react, sock, chatId, msg } = ctx
+    
+    await react('⏳')
+    const emoji = PLATFORM_EMOJI[platform] || '📥'
+    const platformName = PLATFORM_NAME[platform] || 'Downloader'
 
-        // ── 6. Execute download ────────────────────
-        try {
-            const result = await download(url, options)
+    await reply(
+        `${emoji} *Sedang download ${format === 'audio' ? 'Audio' : 'Video'}...*\n` +
+        `_Mohon tunggu sebentar_`
+    )
 
-            // ── 7. Send media ──────────────────────
-            await sendMedia(sock, chatId, msg, result)
-            await react('✅')
-
-            // Edit loading message jadi selesai
-            // (Baileys tidak support edit, jadi kita delete dan kirim baru)
-            // Note: delete loading msg kalau mau — opsional
-
-        } catch (err) {
-            await react('❌')
-
-            // User-friendly error messages
-            const errMsg = formatError(err.message, platform)
-            await reply(`❌ *Gagal download*\n\n${errMsg}`)
-        }
+    try {
+        const result = await download(url, { format })
+        await sendMedia(sock, chatId, msg, result)
+        await react('✅')
+    } catch (err) {
+        await react('❌')
+        const errMsg = formatError(err.message, platform)
+        await reply(`❌ *Gagal download*\n\n${errMsg}`)
     }
 }
 

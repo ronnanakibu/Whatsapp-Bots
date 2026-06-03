@@ -198,6 +198,8 @@ export async function getDetailedWeatherReport(city) {
 let _sock = null
 let _schedulerStarted = false
 
+let _lastTriggerDay = -1
+
 export function initWeatherScheduler(sock) {
     if (_schedulerStarted) return
     _schedulerStarted = true
@@ -205,21 +207,23 @@ export function initWeatherScheduler(sock) {
 
     logger.info('Weather scheduler initialized')
 
-    // Cek setiap menit apakah waktu sudah 00:00 (tengah malam)
+    // Cek setiap 30 detik untuk memastikan kita tidak kelewatan menit 00
     setInterval(async () => {
         try {
-            const TZ = process.env.BOT_TIMEZONE ?? 'Asia/Jakarta'
-            const now = new Date()
+            // Gunakan manual offset (GMT+7) untuk menghindari masalah Intl di Alpine Linux
+            const offsetMs = 7 * 60 * 60 * 1000
+            const nowJakarta = new Date(Date.now() + offsetMs)
             
-            // Format waktu ke format jam lokal (misal: "00:00")
-            const timeStr = now.toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false,
-                timeZone: TZ
-            })
+            const hours = nowJakarta.getUTCHours()
+            const minutes = nowJakarta.getUTCMinutes()
+            const day = nowJakarta.getUTCDate()
             
-            if (timeStr === '00:00') {
+            // Jam 00:00
+            if (hours === 0 && minutes === 0) {
+                // Pastikan hanya trigger 1x per hari
+                if (_lastTriggerDay === day) return
+                _lastTriggerDay = day
+
                 const db = getDb()
                 const subs = db.prepare('SELECT * FROM weather_subscriptions').all()
                 if (subs.length === 0) return
@@ -248,7 +252,7 @@ export function initWeatherScheduler(sock) {
         } catch (err) {
             logger.error('[Weather Scheduler] Error in tick:', err.message)
         }
-    }, 60_000)
+    }, 30_000)
 }
 
 // ─────────────────────────────────────────────
