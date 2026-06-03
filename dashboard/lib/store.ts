@@ -117,7 +117,7 @@ interface DashboardStore {
 // ─────────────────────────────────────────────
 
 export const useDashboardStore = create<DashboardStore>()(
-    subscribeWithSelector((set, get) => ({
+    subscribeWithSelector((set) => ({
         // Connection
         connected: false,
         setConnected: (v) => set({ connected: v }),
