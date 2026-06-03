@@ -189,43 +189,72 @@ async function setupFfmpeg() {
 }
 
 // ─────────────────────────────────────────────
-// STEP 4: YT-DLP BINARY DOWNLOAD
-// Standalone binary — tidak butuh Python sama sekali
+// STEP 4: YT-DLP & PYTHON STANDALONE
+// Alpine/musl Linux tidak bisa jalankan yt-dlp_linux (glibc ELF).
+// Solusi: Gunakan yt-dlp versi python script + install Python standalone jika perlu.
 // ─────────────────────────────────────────────
 
-const YTDLP_PATH = path.resolve('./storage/bin/yt-dlp_linux')
-const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux'
+const YTDLP_SCRIPT_PATH = path.resolve('./storage/bin/yt-dlp')
+const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp'
+const PYTHON_DIR = path.resolve('./storage/bin/python')
+const PYTHON_BIN = path.resolve('./storage/bin/python/bin/python3')
+const PYTHON_URL = 'https://github.com/indygreg/python-build-standalone/releases/download/20240415/cpython-3.12.3+20240415-x86_64-unknown-linux-musl-install_only.tar.gz'
+const PYTHON_TAR = path.resolve('./storage/bin/python.tar.gz')
 
 async function setupYtDlp() {
-    if (fs.existsSync(YTDLP_PATH)) {
-        const size = fs.statSync(YTDLP_PATH).size
-        if (size > 20_000_000) {
-            ok(`yt-dlp_linux exists: ${(size / 1024 / 1024).toFixed(1)} MB`)
-            try { fs.chmodSync(YTDLP_PATH, '755') } catch (_) { }
-            process.env.YTDLP_PATH = YTDLP_PATH
+    // 1. Cek Python di sistem
+    let hasPython = false
+    try {
+        execSync('python3 --version', { stdio: 'ignore' })
+        hasPython = true
+        ok('Python3 system detected.')
+    } catch (_) { }
+
+    // 2. Jika tidak ada Python, download Python standalone
+    if (!hasPython && !fs.existsSync(PYTHON_BIN)) {
+        inf('Python3 tidak ditemukan. Downloading Python standalone (~35MB)...')
+        try {
+            await downloadFile(PYTHON_URL, PYTHON_TAR)
+            inf('Extracting Python...')
+            if (!fs.existsSync(PYTHON_DIR)) fs.mkdirSync(PYTHON_DIR, { recursive: true })
+            execSync(`tar -xzf "${PYTHON_TAR}" -C "${PYTHON_DIR}" --strip-components=1`, { stdio: 'pipe' })
+            fs.unlinkSync(PYTHON_TAR)
+            ok('Python standalone installed.')
+        } catch (e) {
+            wrn(`Gagal install Python: ${e.message}`)
+            try { fs.unlinkSync(PYTHON_TAR) } catch (_) { }
+        }
+    } else if (!hasPython && fs.existsSync(PYTHON_BIN)) {
+        ok('Python standalone exists.')
+    }
+
+    // Tambahkan Python standalone ke PATH
+    if (fs.existsSync(PYTHON_BIN)) {
+        process.env.PATH = path.dirname(PYTHON_BIN) + ':' + process.env.PATH
+    }
+
+    // 3. Download yt-dlp (Python script version, cuma 3MB)
+    if (fs.existsSync(YTDLP_SCRIPT_PATH)) {
+        const size = fs.statSync(YTDLP_SCRIPT_PATH).size
+        if (size > 2_000_000 && size < 5_000_000) { // ~3MB
+            ok(`yt-dlp script exists: ${(size / 1024 / 1024).toFixed(1)} MB`)
+            try { fs.chmodSync(YTDLP_SCRIPT_PATH, '755') } catch (_) { }
             return
         }
-        wrn(`yt-dlp_linux terlalu kecil (${(size / 1024 / 1024).toFixed(1)}MB) — bukan ELF binary, re-downloading...`)
-        fs.unlinkSync(YTDLP_PATH)
+        fs.unlinkSync(YTDLP_SCRIPT_PATH)
     }
 
-    // Hapus juga yt-dlp lama kalau ada (Python script 3MB)
-    const oldPath = path.resolve('./storage/bin/yt-dlp')
-    if (fs.existsSync(oldPath) && fs.statSync(oldPath).size < 20_000_000) {
-        wrn('Hapus yt-dlp lama (Python script)...')
-        fs.unlinkSync(oldPath)
-    }
+    // Hapus binary ELF lama yg gagal jalan (30MB)
+    const oldElf = path.resolve('./storage/bin/yt-dlp_linux')
+    if (fs.existsSync(oldElf)) fs.unlinkSync(oldElf)
 
-    inf('Downloading yt-dlp_linux ELF binary (~30MB, hanya sekali)...')
+    inf('Downloading yt-dlp python script (~3MB)...')
     try {
-        await downloadFile(YTDLP_URL, YTDLP_PATH)
-        fs.chmodSync(YTDLP_PATH, '755')
-        const size = fs.statSync(YTDLP_PATH).size
-        ok(`yt-dlp_linux downloaded: ${(size / 1024 / 1024).toFixed(1)} MB`)
-        process.env.YTDLP_PATH = YTDLP_PATH
+        await downloadFile(YTDLP_URL, YTDLP_SCRIPT_PATH)
+        fs.chmodSync(YTDLP_SCRIPT_PATH, '755')
+        ok('yt-dlp script downloaded.')
     } catch (e) {
         wrn(`Gagal download yt-dlp: ${e.message}`)
-        wrn('Fitur radio tidak akan berfungsi.')
     }
 }
 

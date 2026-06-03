@@ -10,7 +10,7 @@ import { botLogger } from '../utils/logger.js'
 
 const BIN_DIR = path.resolve('./storage/bin')
 const BIN_PATH = path.resolve('./storage/bin/yt-dlp')  // tanpa _linux suffix
-const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux'
+const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp'
 
 // ─────────────────────────────────────────────
 // CEK BINARY VALID
