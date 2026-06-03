@@ -1,7 +1,7 @@
 // src/services/radio.js
 // RadioService — Live Radio Streaming Engine
-// Architecture: play-dl (search + stream) → FFmpeg stdin pipe → HTTP broadcast
-// NO yt-dlp dependency — pure Node.js
+// Architecture: yt-dlp (YouTube extract) → FFmpeg stdin pipe → HTTP broadcast
+// Fallback: SoundCloud via play-dl jika YouTube/yt-dlp gagal
 
 import { spawn } from 'child_process'
 import { EventEmitter } from 'events'
@@ -10,6 +10,7 @@ import path from 'path'
 import https from 'https'
 import http from 'http'
 import { botLogger } from '../utils/logger.js'
+import { getYtdlpPath, ytdlpGetAudioUrl } from './ytdlp.js'
 
 // ─────────────────────────────────────────────
 // PLAY-DL — search + stream (no yt-dlp needed)
@@ -292,12 +293,13 @@ const EQ_PRESETS = {
 // ─────────────────────────────────────────────
 
 class Track {
-    constructor({ title, url, duration, thumbnail, requestedBy }) {
+    constructor({ title, url, duration, thumbnail, requestedBy, source }) {
         this.title = title
         this.url = url
         this.duration = duration
         this.thumbnail = thumbnail
         this.requestedBy = requestedBy
+        this.source = source || 'unknown' // 'youtube' | 'soundcloud' | 'unknown'
         this.addedAt = Date.now()
     }
 
@@ -339,15 +341,53 @@ class RadioService extends EventEmitter {
     get isFfmpegActive() { return this.#ffmpeg !== null }
 
     // ─────────────────────────────────────────────
-    // SEARCH & EXTRACTION (Powered by SoundCloud)
+    // SEARCH & EXTRACTION (YouTube via yt-dlp + SoundCloud fallback)
     // ─────────────────────────────────────────────
-    // Menggunakan SoundCloud karena YouTube memblokir IP Datacenter (Pterodactyl) dengan 403 Forbidden.
-    // SoundCloud tidak memiliki IP block, cipher, atau limit se-strict YouTube, 100% reliable untuk music bot!
+    // Priority: YouTube (yt-dlp binary) → SoundCloud (play-dl) fallback
+    // yt-dlp punya anti-throttle & cipher solver yang lebih canggih dari play-dl
 
     async search(query, requestedBy) {
         const playdl = await getPlayDl()
-        
-        // 1. Pastikan SoundCloud Client ID tersedia
+        const isUrl = /^https?:\/\//.test(query)
+        const isYoutubeUrl = /(?:youtube\.com|youtu\.be)/.test(query)
+
+        // ── Strategy 1: YouTube URL langsung → yt-dlp ──
+        if (isYoutubeUrl) {
+            botLogger.info('radio', `YouTube URL detected, using yt-dlp: ${query}`)
+            try {
+                const info = await this.#ytdlpGetInfo(query)
+                return new Track({ ...info, requestedBy, source: 'youtube' })
+            } catch (e) {
+                botLogger.warn('radio', `yt-dlp gagal untuk URL: ${e.message}`)
+                // Fallback ke SoundCloud search via judul
+            }
+        }
+
+        // ── Strategy 2: Text query → YouTube search (play-dl) + yt-dlp extract ──
+        if (!isUrl) {
+            try {
+                botLogger.info('radio', `Searching YouTube: ${query}`)
+                const ytResults = await playdl.search(query, { limit: 1, source: { youtube: 'video' } })
+                if (ytResults?.length > 0) {
+                    const v = ytResults[0]
+                    const ytUrl = `https://www.youtube.com/watch?v=${v.id}`
+                    botLogger.info('radio', `YouTube found: ${v.title} → ${ytUrl}`)
+                    return new Track({
+                        title: v.title || 'Unknown',
+                        url: ytUrl,
+                        duration: v.durationInSec || 0,
+                        thumbnail: v.thumbnails?.[0]?.url || null,
+                        requestedBy,
+                        source: 'youtube'
+                    })
+                }
+            } catch (e) {
+                botLogger.warn('radio', `YouTube search gagal: ${e.message}`)
+            }
+        }
+
+        // ── Strategy 3: SoundCloud fallback ──
+        botLogger.info('radio', `Fallback ke SoundCloud: ${query}`)
         try {
             const clientId = await playdl.getFreeClientID()
             await playdl.setToken({ soundcloud: { client_id: clientId } })
@@ -356,43 +396,62 @@ class RadioService extends EventEmitter {
         }
 
         let searchQuery = query
-        const isUrl = /^https?:\/\//.test(query)
-
-        // 2. Jika input adalah YouTube URL, kita fetch judulnya, lalu cari di SoundCloud
-        if (isUrl) {
-            const ytType = await playdl.validate(query)
-            if (ytType === 'video') {
-                try {
-                    botLogger.info('radio', `Mengambil judul YouTube untuk dialihkan ke SC: ${query}`)
-                    const info = await playdl.video_info(query)
-                    searchQuery = info.video_details?.title || query
-                    botLogger.info('radio', `Judul YouTube: ${searchQuery}`)
-                } catch (e) {
-                    botLogger.warn('radio', `Gagal fetch judul YT: ${e.message}`)
-                }
-            }
+        // Kalau YouTube URL tapi yt-dlp gagal, coba ambil judul untuk SC search
+        if (isYoutubeUrl) {
+            try {
+                const info = await playdl.video_info(query)
+                searchQuery = info.video_details?.title || query
+                botLogger.info('radio', `YT title untuk SC search: ${searchQuery}`)
+            } catch (_) { }
         }
 
-        // 3. Cari di SoundCloud
-        botLogger.info('radio', `Searching SoundCloud: ${searchQuery}`)
         const scResults = await playdl.search(searchQuery, { source: { soundcloud: 'tracks' }, limit: 1 })
-        
         if (!scResults || scResults.length === 0) {
-            throw new Error(`Tidak ditemukan di SoundCloud: ${searchQuery}`)
+            throw new Error(`Tidak ditemukan di YouTube maupun SoundCloud: ${query}`)
         }
 
         const sc = scResults[0]
-        
-        const trackData = {
-            id: sc.id,
+        return new Track({
             url: sc.url,
-            title: sc.name + (isUrl ? ' (SC Version)' : ''), // Tandai jika ini versi SC dari YT URL
+            title: sc.name + ' (SC)',
             duration: sc.durationInSec,
             thumbnail: sc.thumbnail || null,
-            requestedBy
-        }
+            requestedBy,
+            source: 'soundcloud'
+        })
+    }
 
-        return new Track(trackData)
+    /**
+     * Get track info via yt-dlp --dump-json (judul, durasi, thumbnail)
+     */
+    async #ytdlpGetInfo(url) {
+        const ytdlpPath = getYtdlpPath()
+        if (!ytdlpPath) throw new Error('yt-dlp binary tidak tersedia')
+
+        return new Promise((resolve, reject) => {
+            const proc = spawn(ytdlpPath, [
+                '--no-playlist', '--dump-json', '--no-warnings', '--quiet', url
+            ])
+            let output = '', errOutput = ''
+            proc.stdout.on('data', d => output += d.toString())
+            proc.stderr.on('data', d => errOutput += d.toString())
+            proc.on('close', code => {
+                if (code !== 0) return reject(new Error(`yt-dlp info gagal: ${errOutput.slice(0, 200)}`))
+                try {
+                    const data = JSON.parse(output)
+                    resolve({
+                        title: data.title || data.fulltitle || 'Unknown',
+                        url: url,
+                        duration: data.duration ? Math.round(data.duration) : 0,
+                        thumbnail: data.thumbnail || data.thumbnails?.[0]?.url || null,
+                    })
+                } catch (e) {
+                    reject(new Error(`yt-dlp JSON parse error: ${e.message}`))
+                }
+            })
+            proc.on('error', e => reject(new Error(`yt-dlp spawn error: ${e.message}`)))
+            setTimeout(() => { proc.kill(); reject(new Error('yt-dlp info timeout (15s)')) }, 15_000)
+        })
     }
 
     async searchBatch(queries, requestedBy) {
@@ -457,7 +516,8 @@ class RadioService extends EventEmitter {
 
     /**
      * Stream pipeline:
-     * play-dl.stream → Readable → ffmpeg stdin → ffmpeg stdout → broadcast
+     * YouTube tracks:    yt-dlp --get-url → fetchStream(CDN URL) → ffmpeg stdin → broadcast
+     * SoundCloud tracks: play-dl.stream → ffmpeg stdin → broadcast
      */
     async #streamTrack(track) {
         return new Promise(async (resolve, reject) => {
@@ -465,33 +525,55 @@ class RadioService extends EventEmitter {
                 const filters = [FX_PRESETS[this.#activeFx], EQ_PRESETS[this.#activeEq]].filter(Boolean)
                 const filterStr = filters.join(',')
 
-                botLogger.info('radio', `Memulai streaming untuk: ${track.title}`)
-                const playdl = await getPlayDl()
-                
-                let streamData
-                try {
-                    botLogger.info('radio', `Trying play-dl stream for URL...`)
-                    streamData = await playdl.stream(track.url)
-                    botLogger.info('radio', `play-dl stream OK: ${streamData.type}`)
-                } catch (err) {
-                    return reject(new Error(`Gagal membuka stream: ${err.message}`))
+                botLogger.info('radio', `Memulai streaming untuk: ${track.title} [source: ${track.source || 'unknown'}]`)
+
+                let inputStream = null
+                let streamType = 'unknown'
+
+                const isYoutubeTrack = track.source === 'youtube' || /(?:youtube\.com|youtu\.be)/.test(track.url)
+
+                // ── Strategy 1: YouTube → yt-dlp extract CDN URL → fetchStream ──
+                if (isYoutubeTrack) {
+                    try {
+                        botLogger.info('radio', `[yt-dlp] Extracting audio URL: ${track.url}`)
+                        const cdnUrl = await ytdlpGetAudioUrl(track.url)
+                        botLogger.info('radio', `[yt-dlp] CDN URL obtained (${cdnUrl.slice(0, 60)}...)`)
+
+                        inputStream = await fetchStream(cdnUrl)
+                        streamType = 'yt-dlp+fetch'
+                        botLogger.info('radio', `[yt-dlp] fetchStream OK → piping to ffmpeg`)
+                    } catch (ytErr) {
+                        botLogger.warn('radio', `[yt-dlp] Gagal: ${ytErr.message}`)
+                        botLogger.info('radio', `[yt-dlp] Falling back to play-dl stream...`)
+                    }
                 }
 
-                if (!streamData.stream) {
-                    return reject(new Error('play-dl stream tidak mengembalikan readable stream.'))
+                // ── Strategy 2: play-dl stream (SoundCloud / YouTube fallback) ──
+                if (!inputStream) {
+                    try {
+                        const playdl = await getPlayDl()
+                        botLogger.info('radio', `[play-dl] Trying stream: ${track.url}`)
+                        const streamData = await playdl.stream(track.url)
+                        if (!streamData?.stream) {
+                            throw new Error('play-dl stream tidak mengembalikan readable stream.')
+                        }
+                        inputStream = streamData.stream
+                        streamType = `play-dl(${streamData.type})`
+                        botLogger.info('radio', `[play-dl] Stream OK: ${streamData.type}`)
+                    } catch (pdErr) {
+                        return reject(new Error(`Semua metode stream gagal.\nyt-dlp: ${isYoutubeTrack ? 'tried' : 'skipped'}\nplay-dl: ${pdErr.message}`))
+                    }
                 }
 
                 if (this.#skipRequested) return resolve()
 
-                this.#currentStream = streamData.stream
+                this.#currentStream = inputStream
 
-                const ffmpegInput = 'pipe:0'
-
-                // ── 3. FFmpeg: input → MP3 stdout ──
+                // ── 3. FFmpeg: stdin pipe → MP3 stdout ──
                 const ffmpegBin = getFfmpegPath()
                 const ffArgs = [
                     '-re',
-                    '-i', ffmpegInput,
+                    '-i', 'pipe:0',
                     '-vn',
                     '-acodec', 'libmp3lame',
                     '-ab', '128k',
@@ -502,17 +584,16 @@ class RadioService extends EventEmitter {
                 if (filterStr) ffArgs.push('-af', filterStr)
                 ffArgs.push('-f', 'mp3', '-loglevel', 'error', 'pipe:1')
 
-                botLogger.info('radio', `FFmpeg starting [${streamData.type}] → ${ffmpegBin}`)
+                botLogger.info('radio', `FFmpeg starting [${streamType}] → ${ffmpegBin}`)
                 const ffProc = spawn(ffmpegBin, ffArgs)
                 this.#ffmpeg = ffProc
 
-                if (streamData.stream) {
-                    streamData.stream.pipe(ffProc.stdin)
-                    streamData.stream.on('error', e => {
-                        botLogger.err('radio', e, 'stream error')
-                        ffProc.kill()
-                    })
-                }
+                // Pipe input stream ke ffmpeg stdin
+                inputStream.pipe(ffProc.stdin)
+                inputStream.on('error', e => {
+                    botLogger.err('radio', e, 'input stream error')
+                    ffProc.kill()
+                })
                 
                 ffProc.stdin.on('error', () => { /* normal saat skip */ })
 
