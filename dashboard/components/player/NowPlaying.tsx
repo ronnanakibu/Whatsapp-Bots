@@ -189,6 +189,7 @@ function MetaChip({ icon, value, label, color }: {
                 background: color ? `${color}12` : 'rgba(255,255,255,0.05)',
                 border: `1px solid ${color ? `${color}25` : 'rgba(255,255,255,0.06)'}`,
             }}
+            title={label}
         >
             <span style={{ color: color ?? 'rgba(148,163,184,0.8)' }}>{icon}</span>
             <span className="text-[10px] font-mono" style={{ color: color ?? 'rgba(255,255,255,0.7)' }}>

@@ -3,7 +3,6 @@
 import { useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDashboardStore } from '@/lib/store'
-import type { ListenerNode as ListenerNodeType } from '@/types'
 
 function formatTime(ts: number): string {
     return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
