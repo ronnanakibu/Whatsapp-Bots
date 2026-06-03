@@ -21,7 +21,10 @@ const ignoreList = [
     'package-lock.json',
     'deploy.js',
     'pull.js',
-    '.next'
+    '.next',
+    'AGENTS.md',
+    'CLAUDE.md',
+    'memory'
 ];
 
 function runGitCommand(command) {

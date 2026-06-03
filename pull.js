@@ -12,18 +12,18 @@ const config = {
 
 // Folder/file yang TIDAK BOLEH disentuh (Biar ga tumpang tindih)
 const ignoreList = [
+    'node_modules',
+    'storage',
+    '.env',
     '.git',
     '.vscode',
-    'node_modules',
-    'storage',        // Proteksi mutlak session server
-    '.env',
+    'package-lock.json',
     'deploy.js',
     'pull.js',
-    'package-lock.json',
-    '.yarn',
-    '.npm',
-    'cache',
-    '.trash'
+    '.next',
+    'AGENTS.md',
+    'CLAUDE.md',
+    'memory'
 ];
 
 async function downloadRemoteDir(sftp, remoteDir, localDir) {

@@ -1,6 +1,7 @@
 // src/commands/media/sticker.js
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import mediaService from '../../services/media.js'
+import { logger } from '../../utils/logger.js'
 
 export default {
     name: 'sticker',
@@ -32,7 +33,7 @@ export default {
             return reply('⚠️ Mana stiker nya, cuy? 😭\n\nKirim gambar dengan caption atau balas gambar lama dengan perintah */s Teks Atas | Teks Bawah* !')
         }
 
-        await reply('⏳ Sedang di-masak Dik, stiker teks meme lu lagi diproses...')
+        logger.info('⏳ Sedang di-masak Dik, stiker teks meme lu lagi diproses...')
 
         try {
             const targetMessage = isImage ? msg : { message: quotedMsg, key: msg.key }
