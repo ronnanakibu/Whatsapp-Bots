@@ -35,8 +35,12 @@ export async function download(url, options = {}) {
         platform = 'unknown'
     }
 
-    const provider = PROVIDERS[platform] || downloadYtdlp
+    let provider = PROVIDERS[platform] || downloadYtdlp
 
+    // Override: Jika HF API aktif, paksa SEMUA platform pakai HF (melalui ytdlp)
+    if (process.env.HF_API_URL) {
+        provider = downloadYtdlp
+    }
 
     logger.info(`[Downloader] Platform: ${platform} | URL: ${url.slice(0, 60)}`)
 
