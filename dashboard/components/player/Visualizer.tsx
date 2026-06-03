@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState } from 'react'
 import { useDashboardStore } from '@/lib/store'
+import { useAudioPlayer } from '@/hooks/useAudioAnalyzer'
 
 type VisualizerMode = 'spectrum' | 'circular' | 'waveform'
 
@@ -28,6 +29,7 @@ export default function Visualizer() {
     const timeRef = useRef(0)
     const [mode, setMode] = useState<VisualizerMode>('spectrum')
     const { accentColor, nowPlaying } = useDashboardStore()
+    const { analyser, isPlaying: localIsPlaying } = useAudioPlayer()
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -47,13 +49,23 @@ export default function Visualizer() {
         const W = () => canvas.offsetWidth
         const H = () => canvas.offsetHeight
 
+        const dataArray = analyser ? new Uint8Array(analyser.frequencyBinCount) : null
+
         const draw = (timestamp: number) => {
             timeRef.current = timestamp
             const w = W(), h = H()
             ctx.clearRect(0, 0, w, h)
 
-            const data = getDemoData(64, timestamp)
-            const isPlaying = nowPlaying.isPlaying
+            const isPlayingServer = nowPlaying.isPlaying
+            const isPlaying = isPlayingServer && localIsPlaying
+
+            let data: Uint8Array
+            if (analyser && dataArray && isPlaying) {
+                analyser.getByteFrequencyData(dataArray)
+                data = dataArray
+            } else {
+                data = getDemoData(64, timestamp)
+            }
 
             if (mode === 'spectrum') {
                 drawSpectrum(ctx, data, w, h, accentColor, isPlaying)
@@ -71,7 +83,7 @@ export default function Visualizer() {
             cancelAnimationFrame(animRef.current)
             ro.disconnect()
         }
-    }, [mode, accentColor, nowPlaying.isPlaying])
+    }, [mode, accentColor, nowPlaying.isPlaying, analyser, localIsPlaying])
 
     return (
         <div className="flex flex-col h-full rounded-2xl overflow-hidden"
