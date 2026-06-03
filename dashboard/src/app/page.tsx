@@ -84,7 +84,7 @@ export default function DashboardPage() {
                 <DynamicBackground />
                 <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
 
-                <div className="relative z-10 flex h-screen w-screen overflow-hidden">
+                <div className="relative z-10 flex h-[100dvh] w-full overflow-hidden">
                     {/* Sidebar */}
                     <div className="hidden md:block h-full flex-shrink-0">
                         <Sidebar onOpenSearch={() => { setActiveSection('search'); setCmdOpen(false) }} />
