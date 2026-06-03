@@ -155,7 +155,7 @@ function setCorsHeaders(res) {
 // HTTP SERVER & STATIC FILES
 // ─────────────────────────────────────────────
 
-const dashboardDir = path.join(__dirname, '../dashboard/out')
+const dashboardDir = path.join(__dirname, '../../dashboard/out')
 const mimeTypes = {
     '.html': 'text/html',
     '.js': 'text/javascript',
