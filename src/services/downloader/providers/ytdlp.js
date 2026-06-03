@@ -149,6 +149,8 @@ function cleanupTempFiles(sessionId) {
             try {
                 fs.unlinkSync(path.join(TEMP_DIR, f))
             } catch (_) {}
+        }
+    }
 }
 
 // ─────────────────────────────────────────────
