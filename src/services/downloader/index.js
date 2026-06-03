@@ -28,7 +28,7 @@ const PROVIDERS = {
  * Returns { buffer, filename, caption, mimeType, ext, platform }
  */
 export async function download(url, options = {}) {
-    const platform = detectPlatform(url)
+    let platform = detectPlatform(url)
 
     if (!platform) {
         // Fallback ke ytdlp meskipun platform tidak terdeteksi secara eksplisit (seperti twitter, dll)
@@ -36,9 +36,8 @@ export async function download(url, options = {}) {
     }
 
     let provider = PROVIDERS[platform] || downloadYtdlp
-
-    // Override: Jika HF API aktif, paksa SEMUA platform pakai HF (melalui ytdlp)
-    if (process.env.HF_API_URL) {
+    // Karena IG/TikTok memblokir cookies dari datacenter HF
+    if (process.env.HF_API_URL && platform === 'youtube') {
         provider = downloadYtdlp
     }
 
