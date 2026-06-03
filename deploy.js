@@ -21,7 +21,6 @@ const ignoreList = [
     'package-lock.json',
     'deploy.js',
     'pull.js',
-    '.next',
     'AGENTS.md',
     'CLAUDE.md',
     'memory'
