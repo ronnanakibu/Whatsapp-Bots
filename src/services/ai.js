@@ -200,11 +200,33 @@ async function analyzeImage(imageBuffer, mimeType = 'image/jpeg', prompt = 'Desk
 // IMAGE GENERATION — via Gemini Imagen / fallback prompt
 // ─────────────────────────────────────────────
 
-async function generateImage(prompt) {
+async function generateImage(rawPrompt) {
+    // 1. ENHANCE PROMPT WITH GEMINI (Biar hasilnya sekelas Midjourney/DALL-E)
+    let prompt = rawPrompt
+    try {
+        logger.info(`[AI] Enhancing prompt via Gemini...`)
+        const enhancerModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+        const instructions = `
+            You are an expert AI image prompt engineer. 
+            The user wants an image based on this input: "${rawPrompt}"
+            Write a highly detailed, descriptive, and visually rich prompt in English for a text-to-image model.
+            Focus on subject details, lighting, camera angles, art style, and atmosphere.
+            IMPORTANT: Return ONLY the prompt text, no intro, no explanation, no quotes.
+        `
+        const enhanceRes = await enhancerModel.generateContent(instructions)
+        const enhanced = enhanceRes.response.text()?.trim()
+        if (enhanced && enhanced.length > 10) {
+            prompt = enhanced
+            logger.info(`[AI] Enhanced Prompt: ${prompt.slice(0, 100)}...`)
+        }
+    } catch (e) {
+        logger.warn(`[AI] Gagal enhance prompt: ${e.message}`)
+    }
+
     // Mode 1: Hugging Face (jika ada HF_TOKEN di .env)
     if (process.env.HF_TOKEN) {
         try {
-            logger.info(`[AI] Generating image via Hugging Face (FLUX.1-schnell) for: ${prompt}`)
+            logger.info(`[AI] Generating image via Hugging Face (FLUX.1-schnell)...`)
             const res = await fetch(
                 "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
                 {
@@ -214,6 +236,7 @@ async function generateImage(prompt) {
                     },
                     method: "POST",
                     body: JSON.stringify({ inputs: prompt }),
+
                 }
             )
             if (res.ok) {
