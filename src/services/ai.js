@@ -206,7 +206,7 @@ async function generateImage(prompt) {
         try {
             logger.info(`[AI] Generating image via Hugging Face (FLUX.1-schnell) for: ${prompt}`)
             const res = await fetch(
-                "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+                "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
                 {
                     headers: {
                         Authorization: `Bearer ${process.env.HF_TOKEN}`,
