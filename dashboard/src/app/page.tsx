@@ -1,65 +1,114 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
+
+import SSEProvider from '@/components/core/SSEProvider'
+import DynamicBackground from '@/components/core/DynamicBackground'
+import Sidebar from '@/components/layout/Sidebar'
+import CommandPalette from '@/components/layout/CommandPalette'
+import PipelineView from '@/components/pipeline/PipelineView'
+import EventStream from '@/components/pipeline/EventStream'
+import NowPlaying from '@/components/player/NowPlaying'
+import ListenerNetwork from '@/components/network/ListenerNetwork'
+import QueueTimeline from '@/components/queue/QueueTimeline'
+import AnalyticsPanel from '@/components/analytics/AnalyticsPanel'
+
+// Visualizer uses canvas — dynamic import avoids SSR issues
+const Visualizer = dynamic(() => import('@/components/player/Visualizer'), { ssr: false })
+
+export default function DashboardPage() {
+    const [cmdOpen, setCmdOpen] = useState(false)
+
+    // Ctrl+K to open command palette
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault()
+                setCmdOpen((v) => !v)
+            }
+        }
+        window.addEventListener('keydown', handler)
+        return () => window.removeEventListener('keydown', handler)
+    }, [])
+
+    return (
+        <SSEProvider>
+            {/* Ambient background */}
+            <DynamicBackground />
+
+            {/* Command palette */}
+            <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
+
+            {/* Main layout */}
+            <div className="relative z-10 flex h-screen w-screen overflow-hidden">
+                {/* Left — Sidebar */}
+                <Sidebar />
+
+                {/* Center + Right content area */}
+                <div className="flex-1 flex overflow-hidden">
+
+                    {/* CENTER — Hero zone */}
+                    <div className="flex-1 flex flex-col gap-4 p-4 overflow-y-auto min-w-0">
+                        {/* Now Playing — top hero */}
+                        <NowPlaying />
+
+                        {/* Pipeline + Visualizer row */}
+                        <div className="flex gap-4 flex-1 min-h-0" style={{ minHeight: 420 }}>
+                            {/* Pipeline hero */}
+                            <div className="flex-1 min-w-0">
+                                <PipelineView />
+                            </div>
+
+                            {/* Visualizer */}
+                            <div className="w-56 flex-shrink-0">
+                                <Visualizer />
+                            </div>
+                        </div>
+
+                        {/* Bottom row: Queue + Analytics */}
+                        <div className="flex gap-4" style={{ height: 280 }}>
+                            <div className="flex-1 min-w-0">
+                                <QueueTimeline />
+                            </div>
+                            <div className="w-64 flex-shrink-0">
+                                <AnalyticsPanel />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* RIGHT column — Events + Network */}
+                    <div
+                        className="w-72 flex-shrink-0 flex flex-col gap-4 p-4 overflow-hidden border-l"
+                        style={{ borderColor: 'rgba(255,255,255,0.05)' }}
+                    >
+                        {/* Event stream */}
+                        <div className="flex-1 min-h-0">
+                            <EventStream />
+                        </div>
+
+                        {/* Listener network */}
+                        <div style={{ height: 340, flexShrink: 0 }}>
+                            <ListenerNetwork />
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            {/* Ctrl+K hint */}
+            <div
+                className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg pointer-events-none"
+                style={{
+                    background: 'rgba(0,0,0,0.6)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    backdropFilter: 'blur(8px)',
+                }}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+                <kbd className="text-[10px] px-1 py-0.5 rounded bg-white/[0.08] font-mono text-white/60">⌘</kbd>
+                <kbd className="text-[10px] px-1 py-0.5 rounded bg-white/[0.08] font-mono text-white/60">K</kbd>
+                <span className="text-[10px] text-muted-foreground ml-0.5">Search</span>
+            </div>
+        </SSEProvider>
+    )
 }
