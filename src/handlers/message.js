@@ -8,6 +8,7 @@ import { checkPermission } from '../middleware/permission.js'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { normalizeNumber } from '../utils/permissions.js'
 import { metricsService } from '../services/metrics.js'
+import { interactiveService } from '../services/interactive.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
     try {
@@ -18,6 +19,7 @@ export async function handleIncomingMessage(sock, { messages }) {
         const isGroup = from.endsWith('@g.us')
         const isDM = !isGroup && from.endsWith('@s.whatsapp.net')
         const sender = isGroup ? msg.key.participant : from
+        const pushName = msg.pushName || sender.split(':')[0].split('@')[0]
 
         // Unwrap ephemeral / viewonce / documentWithCaption
         let messageContent = msg.message
@@ -103,6 +105,7 @@ export async function handleIncomingMessage(sock, { messages }) {
             from,
             chatId: from,
             sender,
+            pushName,
             isGroup,
             isDM,
             body,
@@ -210,6 +213,15 @@ export async function handleIncomingMessage(sock, { messages }) {
                 botLogger.err('mention', err)
             }
             return
+        }
+
+        // ─────────────────────────────────────────────
+        // ROUTE 5: INTERACTIVE SESSIONS
+        // ─────────────────────────────────────────────
+
+        if (quotedMsgId && !isCommand) {
+            const isInteractive = await interactiveService.handleReply(ctx)
+            if (isInteractive) return
         }
 
         // ─────────────────────────────────────────────

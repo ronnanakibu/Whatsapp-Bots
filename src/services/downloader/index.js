@@ -3,10 +3,7 @@
 // Provider priority: Instagram → TikTok → YouTube → Facebook → Auto-detect
 
 import { detectPlatform } from './detector.js'
-import { downloadInstagram } from './providers/instagram.js'
-import { downloadTikTok } from './providers/tiktok.js'
-import { downloadYouTube } from './providers/youtube.js'
-import { downloadFacebook } from './providers/facebook.js'
+import { downloadYtdlp } from './providers/ytdlp.js'
 import { DownloadQueue } from './queue.js'
 import { logger } from '../../utils/logger.js'
 import { metricsService } from '../metrics.js'
@@ -14,12 +11,12 @@ import { metricsService } from '../metrics.js'
 // Singleton queue — shared across all providers
 export const downloadQueue = new DownloadQueue({ concurrency: 3, timeout: 90_000 })
 
-// Provider registry
 const PROVIDERS = {
-    instagram: downloadInstagram,
-    tiktok: downloadTikTok,
-    youtube: downloadYouTube,
-    facebook: downloadFacebook,
+    instagram: downloadYtdlp,
+    tiktok: downloadYtdlp,
+    youtube: downloadYtdlp,
+    facebook: downloadYtdlp,
+    twitter: downloadYtdlp,
 }
 
 /**
@@ -31,13 +28,12 @@ export async function download(url, options = {}) {
     const platform = detectPlatform(url)
 
     if (!platform) {
-        throw new Error('URL tidak dikenali. Paste link dari Instagram, TikTok, YouTube, atau Facebook.')
+        // Fallback ke ytdlp meskipun platform tidak terdeteksi secara eksplisit (seperti twitter, dll)
+        platform = 'unknown'
     }
 
-    const provider = PROVIDERS[platform]
-    if (!provider) {
-        throw new Error(`Platform "${platform}" belum didukung.`)
-    }
+    const provider = PROVIDERS[platform] || downloadYtdlp
+
 
     logger.info(`[Downloader] Platform: ${platform} | URL: ${url.slice(0, 60)}`)
 
