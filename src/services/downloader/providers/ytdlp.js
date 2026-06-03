@@ -6,10 +6,19 @@ import { randomBytes } from 'crypto'
 import { getYtdlpPath } from '../../ytdlp.js'
 import { logger } from '../../../utils/logger.js'
 
+import { fetchBuffer, fetchJson } from '../utils.js'
+
 const TEMP_DIR = path.resolve('./storage/media/temp')
 
 export async function downloadYtdlp(url, options = {}) {
     const format = options.format || 'video' // 'audio' | 'video'
+    
+    // Jika user mengaktifkan HF_API_URL di .env, tembak ke server Hugging Face
+    if (process.env.HF_API_URL) {
+        return downloadViaHF(url, format)
+    }
+
+    // --- FALLBACK KE LOCAL YT-DLP ---
     const ytdlpPath = getYtdlpPath()
 
     if (!ytdlpPath) {
@@ -140,6 +149,50 @@ function cleanupTempFiles(sessionId) {
             try {
                 fs.unlinkSync(path.join(TEMP_DIR, f))
             } catch (_) {}
+}
+
+// ─────────────────────────────────────────────
+// HUGGING FACE BACKEND HANDLER
+// ─────────────────────────────────────────────
+
+async function downloadViaHF(url, format) {
+    const apiUrl = process.env.HF_API_URL.replace(/\/$/, '') // hapus slash di akhir
+    logger.info(`[yt-dlp HF] Requesting ${format} dari ${apiUrl}...`)
+    
+    try {
+        // Kita nge-POST ke HF API yang mereturn FileResponse
+        const res = await fetchBuffer(`${apiUrl}/download`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ url, format }),
+            timeout: 120_000,
+            maxSizeMB: 80
+        })
+
+        const ext = format === 'audio' ? 'mp3' : 'mp4'
+        const mimeType = format === 'audio' ? 'audio/mpeg' : 'video/mp4'
+        
+        // Coba ambil judul dari custom header
+        const rawTitle = res.headers?.['x-title'] || 'Media'
+        const title = decodeURIComponent(escape(rawTitle)) // fix latin-1 ke utf8 jika perlu
+        
+        let caption = format === 'video' ? `🎬 *${title}*` : `🎵 *${title}*`
+        caption += `\n_via HF Space_`
+
+        return {
+            buffer: res.buffer,
+            filename: `hf_${Date.now()}.${ext}`,
+            caption,
+            mimeType,
+            ext,
+            platform: 'ytdlp-hf',
+            type: format,
+            thumbnail: null
         }
+    } catch (err) {
+        logger.warn(`[yt-dlp HF] Gagal: ${err.message}`)
+        throw new Error(`Gagal download dari server HF: ${err.message}`)
     }
 }

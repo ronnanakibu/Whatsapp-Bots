@@ -87,7 +87,9 @@ export function fetchJson(url, options = {}) {
 export function fetchBuffer(url, options = {}) {
     return new Promise((resolve, reject) => {
         const {
+            method = 'GET',
             headers = {},
+            body = null,
             timeout = 60_000,
             maxSizeMB = 50,
         } = options
@@ -105,12 +107,13 @@ export function fetchBuffer(url, options = {}) {
                 hostname: parsed.hostname,
                 port: parsed.port || (isHttps ? 443 : 80),
                 path: parsed.pathname + parsed.search,
-                method: 'GET',
+                method: method,
                 family: 4, // Bypass IPv6 timeout
                 headers: {
                     'User-Agent': DEFAULT_UA,
                     'Accept': '*/*',
                     ...headers,
+                    ...(body ? { 'Content-Length': Buffer.byteLength(body).toString() } : {}),
                 },
             }
 
@@ -160,6 +163,8 @@ export function fetchBuffer(url, options = {}) {
             })
 
             req.on('error', reject)
+            
+            if (body) req.write(body)
             req.end()
         }
 
