@@ -116,10 +116,10 @@ export async function downloadInstagram(url, options = {}) {
             // Download the actual media buffer
             const { buffer, mimeType } = await fetchBuffer(parsed.downloadUrl, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 10)',
+                    'User-Agent': 'Instagram 219.0.0.12.117 Android',
                     'Referer': 'https://www.instagram.com/',
                 },
-                timeout: 60_000,
+                timeout: 300_000, // 5 menit karena server sering dilimit ~30kbps oleh IG
                 maxSizeMB: 50,
             })
 
