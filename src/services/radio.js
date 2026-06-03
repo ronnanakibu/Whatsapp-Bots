@@ -10,7 +10,7 @@ import path from 'path'
 import https from 'https'
 import http from 'http'
 import { botLogger } from '../utils/logger.js'
-import { getYtdlpPath, ytdlpGetAudioUrl } from './ytdlp.js'
+import { getYtdlpPath, ytdlpGetAudioUrl, ytdlpStream } from './ytdlp.js'
 
 // ─────────────────────────────────────────────
 // PLAY-DL — search + stream (no yt-dlp needed)
@@ -532,17 +532,16 @@ class RadioService extends EventEmitter {
 
                 const isYoutubeTrack = track.source === 'youtube' || /(?:youtube\.com|youtu\.be)/.test(track.url)
 
-                // ── Strategy 1: YouTube → yt-dlp extract CDN URL → Direct to FFmpeg ──
+                // ── Strategy 1: YouTube → yt-dlp pipe stdout → FFmpeg (Solusi DNS Pterodactyl) ──
+                let ytProc = null
                 if (isYoutubeTrack) {
                     try {
-                        botLogger.info('radio', `[yt-dlp] Extracting audio URL: ${track.url}`)
-                        const cdnUrl = await ytdlpGetAudioUrl(track.url)
-                        botLogger.info('radio', `[yt-dlp] CDN URL obtained (${cdnUrl.slice(0, 60)}...)`)
+                        botLogger.info('radio', `[yt-dlp] Membuka stdout pipe untuk: ${track.url}`)
+                        ytProc = ytdlpStream(track.url)
 
-                        // Pass URL directly to FFmpeg instead of Node.js stream!
-                        inputStream = cdnUrl 
-                        streamType = 'yt-dlp-direct'
-                        botLogger.info('radio', `[yt-dlp] Direct URL ready → passing to ffmpeg`)
+                        inputStream = ytProc.stdout
+                        streamType = 'yt-dlp-pipe'
+                        botLogger.info('radio', `[yt-dlp] Pipe siap → passing to ffmpeg stdin`)
                     } catch (ytErr) {
                         botLogger.warn('radio', `[yt-dlp] Gagal: ${ytErr.message}`)
                         botLogger.info('radio', `[yt-dlp] Falling back to play-dl stream...`)
@@ -593,7 +592,10 @@ class RadioService extends EventEmitter {
                     }
                 }
 
-                if (this.#skipRequested) return resolve()
+                if (this.#skipRequested) {
+                    if (ytProc) ytProc.kill()
+                    return resolve()
+                }
 
                 this.#currentStream = inputStream
 
@@ -645,6 +647,10 @@ class RadioService extends EventEmitter {
 
                 ffProc.on('close', code => {
                     this.#ffmpeg = null
+                    if (ytProc) {
+                        botLogger.debug('ytdlp', 'Membersihkan proses yt-dlp setelah ffmpeg close.')
+                        ytProc.kill()
+                    }
                     if (code === 0 || this.#skipRequested) resolve()
                     else reject(new Error(`FFmpeg exit code ${code}`))
                 })
