@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "allowUnreachableCode": true,
     "lib": [
       "dom",
@@ -25,6 +26,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@/components/pages/*": [
+        "./components/pages/*"
       ],
       "@/components/*": [
         "./components/*"
