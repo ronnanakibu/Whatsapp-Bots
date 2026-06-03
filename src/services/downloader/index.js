@@ -3,6 +3,9 @@
 // Provider priority: Instagram → TikTok → YouTube → Facebook → Auto-detect
 
 import { detectPlatform } from './detector.js'
+import { downloadInstagram } from './providers/instagram.js'
+import { downloadTikTok } from './providers/tiktok.js'
+import { downloadFacebook } from './providers/facebook.js'
 import { downloadYtdlp } from './providers/ytdlp.js'
 import { DownloadQueue } from './queue.js'
 import { logger } from '../../utils/logger.js'
@@ -12,10 +15,10 @@ import { metricsService } from '../metrics.js'
 export const downloadQueue = new DownloadQueue({ concurrency: 3, timeout: 90_000 })
 
 const PROVIDERS = {
-    instagram: downloadYtdlp,
-    tiktok: downloadYtdlp,
+    instagram: downloadInstagram,
+    tiktok: downloadTikTok,
     youtube: downloadYtdlp,
-    facebook: downloadYtdlp,
+    facebook: downloadFacebook,
     twitter: downloadYtdlp,
 }
 
