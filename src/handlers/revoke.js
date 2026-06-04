@@ -36,17 +36,24 @@ async function processRevokedKey(sock, key) {
         processedRevokes.add(key.id)
         setTimeout(() => processedRevokes.delete(key.id), 60000) // Hapus dari cache setelah 1 menit
 
-        if (key.fromMe) return // Ignore if bot deletes its own message
-
         const originalMsg = await store.loadMessage(key.remoteJid, key.id)
         if (!originalMsg) {
             botLogger.warn('revoke', `Message ${key.id} revoked but not found in store.`)
             return
         }
 
+        // Pastikan tidak mendeteksi pesan yang dihapus oleh bot/user itu sendiri
         const isGroup = key.remoteJid.endsWith('@g.us')
         const sender = isGroup ? (originalMsg.key.participant || key.remoteJid) : key.remoteJid
-        const pushName = originalMsg.pushName || sender.split('@')[0]
+        const botNumber = sock.user.id.split(':')[0]
+        const senderNumber = sender.split('@')[0]
+
+        if (key.fromMe || originalMsg.key.fromMe || senderNumber === botNumber) {
+            botLogger.info('revoke', 'Ignored revoked message from self/bot.')
+            return
+        }
+
+        const pushName = originalMsg.pushName || senderNumber
         const isLid = sender.endsWith('@lid')
 
         botLogger.info('revoke', `Caught deleted message from ${sender}`)
