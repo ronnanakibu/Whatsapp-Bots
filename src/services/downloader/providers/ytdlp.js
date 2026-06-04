@@ -13,12 +13,7 @@ const TEMP_DIR = path.resolve('./storage/media/temp')
 export async function downloadYtdlp(url, options = {}) {
     const format = options.format || 'video' // 'audio' | 'video'
     
-    // Jika user mengaktifkan HF_API_URL di .env, tembak ke server Hugging Face
-    if (process.env.HF_API_URL) {
-        return downloadViaHF(url, format)
-    }
-
-    // --- FALLBACK KE LOCAL YT-DLP ---
+    // --- LOKAL YT-DLP ---
     const ytdlpPath = getYtdlpPath()
 
     if (!ytdlpPath) {
