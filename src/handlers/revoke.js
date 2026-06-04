@@ -143,9 +143,13 @@ async function processRevokedKey(sock, key) {
                     }
                 })
             } catch (err) {
-                botLogger.err('revoke', err, 'Failed to download deleted media')
-                const eOpts = { text: `[ANTI-SNITCH]\nGagal mengunduh media yang dihapus oleh @${sender.split('@')[0]}.` }
-                if (validMentions) eOpts.mentions = validMentions
+                const errMsg = err instanceof Error ? err.message : String(err)
+                if (errMsg.includes('fetch failed') || errMsg.includes('buffer kosong')) {
+                    botLogger.warn('revoke', `WhatsApp CDN menolak akses media yang dihapus (fetch failed) untuk pesan dari ${pushName}`)
+                } else {
+                    botLogger.err('revoke', err, 'Failed to download deleted media')
+                }
+                const eOpts = { text: `[ANTI-SNITCH]\nMedia dihapus oleh *${pushName}* di ${isGroup ? 'Grup' : 'Private'}, tapi gagal dipulihkan karena WhatsApp sudah memusnahkan file tersebut dari server.` }
                 await sock.sendMessage(devJid, eOpts)
             }
         }
