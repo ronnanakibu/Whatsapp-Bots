@@ -14,8 +14,8 @@ export default {
     async execute(ctx) {
         const { msg, messageContent, type, args, reply, replyMedia } = ctx
 
-        // Cek Apakah pesan berupa gambar/video langsung atau meng-quote gambar/video
-        let isMedia = type === 'imageMessage' || type === 'videoMessage'
+        // Cek Apakah pesan berupa gambar/video/stiker langsung atau meng-quote gambar/video/stiker
+        let isMedia = type === 'imageMessage' || type === 'videoMessage' || type === 'stickerMessage'
         const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
 
         let finalQuotedMsg = quotedMsg
@@ -28,10 +28,10 @@ export default {
         }
 
         const finalQuotedType = finalQuotedMsg ? Object.keys(finalQuotedMsg)[0] : null
-        let isQuotedMedia = finalQuotedType === 'imageMessage' || finalQuotedType === 'videoMessage'
+        let isQuotedMedia = finalQuotedType === 'imageMessage' || finalQuotedType === 'videoMessage' || finalQuotedType === 'stickerMessage'
 
         if (!isMedia && !isQuotedMedia) {
-            return reply('⚠️ Mana gambarnya, cuy? 😭\n\nKirim gambar/video dengan caption atau balas media lama dengan perintah *.s Teks Atas | Teks Bawah* !')
+            return reply('⚠️ Mana gambarnya, cuy? 😭\n\nKirim gambar/video/stiker dengan caption atau balas media lama dengan perintah *.s Teks Atas | Teks Bawah* !')
         }
 
         logger.info('⏳ Sedang di-masak Dik, stiker teks meme lu lagi diproses...')
@@ -63,10 +63,10 @@ export default {
 
             let isAnimated = false
             if (isMedia) {
-                isAnimated = type === 'videoMessage' || msg.message?.videoMessage?.gifPlayback
+                isAnimated = type === 'videoMessage' || msg.message?.videoMessage?.gifPlayback || (type === 'stickerMessage' && msg.message?.stickerMessage?.isAnimated)
             } else if (quotedMsg) {
                 const qType = Object.keys(quotedMsg)[0]
-                isAnimated = qType === 'videoMessage' || quotedMsg.videoMessage?.gifPlayback
+                isAnimated = qType === 'videoMessage' || quotedMsg.videoMessage?.gifPlayback || (qType === 'stickerMessage' && quotedMsg.stickerMessage?.isAnimated)
             }
 
             let stickerBuffer
