@@ -361,9 +361,12 @@ async function chat(chatId, userMessage) {
 
 async function geminiFactCheck(query) {
     const modelName = getAvailableModel(GEMINI_MODELS)
-    const model = genAI.getGenerativeModel({ model: modelName })
+    const model = genAI.getGenerativeModel({ 
+        model: modelName,
+        systemInstruction: "Anda adalah sistem verifikasi fakta otomatis. Anda BUKAN asisten obrolan santai. JANGAN menggunakan kata sapaan, basa-basi, atau intro seperti 'Baiklah', 'Siap', 'Mari kita bedah'. Output Anda HARUS murni berupa laporan faktual yang objektif, analitis, rinci, dan langsung pada intinya."
+    })
     
-    const prompt = `Anda adalah mesin pencari fakta otomatis. JANGAN MENGGUNAKAN BASA-BASI, JANGAN MENYAPA, DAN JANGAN MEMBUKA PERCAKAPAN. Langsung berikan hasil verifikasi fakta dari kueri berikut menggunakan sumber internet terpercaya:\n\n"${query}"\n\nBerikan laporan ringkas dengan struktur persis seperti ini:\n1. Status: [Fakta / Hoax / Konteks Keliru]\n2. Kesimpulan Singkat:\n3. Penjelasan Lengkap:\n4. Referensi Web Terpercaya: (Wajib link)`
+    const prompt = `Lakukan riset di internet untuk memverifikasi kebenaran informasi/berita berikut:\n\n"${query}"\n\nJawab LANGSUNG tanpa basa-basi menggunakan format persis seperti di bawah ini:\n\n*1. STATUS:* [Fakta / Hoax / Konteks Keliru / Disinformasi]\n\n*2. RINGKASAN SUMBER & KLAIM:* [Jelaskan secara detail apa inti dari informasi/klaim tersebut dan dari mana asalnya]\n\n*3. ANALISIS FAKTA:* [Berikan penjelasan mendalam, uraikan fakta sebenarnya yang terjadi di lapangan berdasarkan sumber kredibel yang Anda temukan]\n\n*4. DAFTAR REFERENSI:* [Berikan daftar bullet point berisi link/URL sumber berita terpercaya yang memvalidasi analisis Anda]`
 
     try {
         const result = await model.generateContent(prompt)
