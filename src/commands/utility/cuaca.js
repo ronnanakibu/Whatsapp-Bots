@@ -56,7 +56,7 @@ function findClosestHourlyIndex(hourlyTimes, currentTimeStr) {
     return closestIndex
 }
 
-export async function getDetailedWeatherReport(city) {
+export async function getDetailedWeatherReportOpenMeteo(city) {
     // Step 1: Geocoding — nama kota → koordinat (Open-Meteo Geocoding API, free)
     const geoRes = await fetch(
         `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=id&format=json`
@@ -276,6 +276,325 @@ export async function getDetailedWeatherReport(city) {
     }
 
     return text.trim()
+}
+
+const weatherApiDescMap = {
+    1000: ['☀️', 'Cerah'],
+    1003: ['⛅', 'Berawan Sebagian'],
+    1006: ['☁️', 'Berawan'],
+    1009: ['☁️', 'Mendung'],
+    1030: ['🌫️', 'Kabut Tipis'],
+    1063: ['🌦️', 'Kemungkinan Hujan'],
+    1066: ['🌨️', 'Kemungkinan Salju'],
+    1069: ['🌨️', 'Kemungkinan Hujan Es'],
+    1072: ['🌦️', 'Kemungkinan Gerimis Beku'],
+    1087: ['⛈️', 'Kemungkinan Badai Petir'],
+    1114: ['🌨️', 'Badai Salju Tiup'],
+    1117: ['🌨️', 'Badai Salju Lebat'],
+    1135: ['🌫️', 'Berkabut'],
+    1147: ['🌫️', 'Kabut Membeku'],
+    1150: ['🌦️', 'Gerimis Ringan Tidak Merata'],
+    1153: ['🌦️', 'Gerimis Ringan'],
+    1168: ['🌦️', 'Gerimis Beku Ringan'],
+    1171: ['🌦️', 'Gerimis Beku Lebat'],
+    1180: ['🌧️', 'Hujan Ringan Tidak Merata'],
+    1183: ['🌧️', 'Hujan Ringan'],
+    1186: ['🌧️', 'Hujan Sedang Kadang-kadang'],
+    1189: ['🌧️', 'Hujan Sedang'],
+    1192: ['🌧️', 'Hujan Lebat Kadang-kadang'],
+    1195: ['🌧️', 'Hujan Lebat'],
+    1198: ['🌧️', 'Hujan Beku Ringan'],
+    1201: ['🌧️', 'Hujan Beku Sedang/Lebat'],
+    1204: ['🌨️', 'Sleet Ringan'],
+    1207: ['🌨️', 'Sleet Sedang/Lebat'],
+    1210: ['🌨️', 'Salju Ringan Tidak Merata'],
+    1213: ['🌨️', 'Salju Ringan'],
+    1216: ['🌨️', 'Salju Sedang Tidak Merata'],
+    1219: ['🌨️', 'Salju Sedang'],
+    1222: ['🌨️', 'Salju Lebat Tidak Merata'],
+    1225: ['🌨️', 'Salju Lebat'],
+    1237: ['🌨️', 'Pelet Es'],
+    1240: ['🌧️', 'Hujan Rintik Ringan'],
+    1243: ['🌧️', 'Hujan Rintik Sedang/Lebat'],
+    1246: ['🌧️', 'Hujan Rintik Sangat Lebat'],
+    1249: ['🌨️', 'Sleet Ringan Rintik'],
+    1252: ['🌨️', 'Sleet Sedang/Lebat Rintik'],
+    1255: ['🌨️', 'Salju Ringan Rintik'],
+    1258: ['🌨️', 'Salju Sedang/Lebat Rintik'],
+    1261: ['🌨️', 'Pelet Es Ringan Rintik'],
+    1264: ['🌨️', 'Pelet Es Sedang/Lebat Rintik'],
+    1273: ['⛈️', 'Hujan Ringan Disertai Petir'],
+    1276: ['⛈️', 'Hujan Lebat Disertai Petir'],
+    1279: ['⛈️', 'Salju Ringan Disertai Petir'],
+    1282: ['⛈️', 'Salju Lebat Disertai Petir']
+}
+
+function getWeatherApiDesc(code) {
+    return weatherApiDescMap[code] ?? ['🌡️', 'Tidak Diketahui']
+}
+
+function translateWindDir(dir) {
+    if (!dir) return 'U'
+    dir = dir.toUpperCase()
+    if (dir.includes('N') && dir.includes('E')) return 'TL'
+    if (dir.includes('S') && dir.includes('E')) return 'TG'
+    if (dir.includes('S') && dir.includes('W')) return 'BD'
+    if (dir.includes('N') && dir.includes('W')) return 'BL'
+    if (dir === 'N') return 'U'
+    if (dir === 'E') return 'T'
+    if (dir === 'S') return 'S'
+    if (dir === 'W') return 'B'
+    return dir
+}
+
+function convertTo24h(timeStr) {
+    if (!timeStr) return '-'
+    const match = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)$/i)
+    if (!match) return timeStr
+    let hours = parseInt(match[1], 10)
+    const minutes = match[2]
+    const ampm = match[3].toUpperCase()
+    if (ampm === 'PM' && hours < 12) hours += 12
+    if (ampm === 'AM' && hours === 12) hours = 0
+    return `${String(hours).padStart(2, '0')}:${minutes}`
+}
+
+export async function getDetailedWeatherReportFallback(city) {
+    const apiKey = process.env.WEATHER_API_KEY
+    if (!apiKey) {
+        throw new Error('WEATHER_API_KEY tidak dikonfigurasi di file .env')
+    }
+
+    const isMedan = city.toLowerCase() === 'medan'
+
+    const url = `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${encodeURIComponent(city)}&days=3&aqi=yes`
+    const res = await fetch(url)
+    if (!res.ok) {
+        throw new Error(`WeatherAPI returning error status ${res.status}`)
+    }
+    const data = await res.json()
+
+    const { name, region, country } = data.location
+    const c = data.current
+    
+    const [emoji, desc] = getWeatherApiDesc(c.condition.code)
+    const locationStr = [name, region, country].filter(Boolean).join(', ')
+
+    const fday0 = data.forecast.forecastday[0]
+    const sunrise = convertTo24h(fday0.astro.sunrise)
+    const sunset = convertTo24h(fday0.astro.sunset)
+
+    const uv = fday0.day.uv ?? 0
+    let uvDesc = 'Rendah'
+    let uvEmoji = '🟢'
+    if (uv <= 2) { uvDesc = 'Rendah'; uvEmoji = '🟢' }
+    else if (uv <= 5) { uvDesc = 'Sedang'; uvEmoji = '🟡' }
+    else if (uv <= 7) { uvDesc = 'Tinggi'; uvEmoji = '🟠' }
+    else if (uv <= 10) { uvDesc = 'Sangat Tinggi'; uvEmoji = '🔴' }
+    else { uvDesc = 'Ekstrem'; uvEmoji = '🟣' }
+
+    let aqiText = ''
+    if (c.air_quality) {
+        const aq = c.air_quality
+        const epaIndex = aq['us-epa-index'] ?? 1
+        let aqiDesc = 'Baik'
+        let aqiEmoji = '🟢'
+        if (epaIndex === 1) { aqiDesc = 'Baik'; aqiEmoji = '🟢' }
+        else if (epaIndex === 2) { aqiDesc = 'Sedang'; aqiEmoji = '🟡' }
+        else if (epaIndex === 3) { aqiDesc = 'Tidak Sehat (Sensitif)'; aqiEmoji = '🟠' }
+        else if (epaIndex === 4) { aqiDesc = 'Tidak Sehat'; aqiEmoji = '🔴' }
+        else if (epaIndex === 5) { aqiDesc = 'Sangat Tidak Sehat'; aqiEmoji = '🟣' }
+        else if (epaIndex >= 6) { aqiDesc = 'Berbahaya'; aqiEmoji = '🟤' }
+
+        aqiText = `\n🍃 *Kualitas Udara (EPA Index):* Level ${epaIndex} (${aqiDesc}) ${aqiEmoji}\n` +
+                  `   - PM2.5: ${aq.pm2_5 ? aq.pm2_5.toFixed(1) : '-'} µg/m³\n` +
+                  `   - PM10: ${aq.pm10 ? aq.pm10.toFixed(1) : '-'} µg/m³`
+    }
+
+    let text = ''
+    if (isMedan) {
+        text += `🌤️ *Laporan Cuaca Detail Kota ${name} & Sekitarnya*\n`
+        text += `${region ? region + ', ' : ''}${country}\n\n`
+        text += `🌡️ Suhu Pusat Kota: *${c.temp_c}°C* (terasa seperti ${c.feelslike_c}°C)\n`
+        text += `📋 Kondisi: ${emoji} ${desc}\n`
+        text += `☁️ Tutupan Awan: ${c.cloud}%\n`
+        text += `💧 Kelembaban: ${c.humidity}%\n`
+        text += `💨 Angin: ${c.wind_kph} km/h arah ${translateWindDir(c.wind_dir)}\n`
+        text += `👁️ Jarak Pandang: ${c.vis_km.toFixed(1)} km\n`
+        text += `🎈 Tekanan Udara: ${c.pressure_mb} hPa\n`
+        text += `☀️ Indeks UV Maks: ${uv} (${uvDesc}) ${uvEmoji}\n`
+        text += `🌅 Sunrise: ${sunrise} | 🌇 Sunset: ${sunset}\n`
+        text += `${aqiText}\n\n`
+
+        const allHours = []
+        for (const day of data.forecast.forecastday) {
+            if (day.hour) allHours.push(...day.hour)
+        }
+
+        const currentEpoch = data.location.localtime_epoch * 1000
+        let currentIndex = -1
+        let minDiff = Infinity
+        for (let i = 0; i < allHours.length; i++) {
+            const t = allHours[i].time_epoch * 1000
+            const diff = Math.abs(t - currentEpoch)
+            if (diff < minDiff) {
+                minDiff = diff
+                currentIndex = i
+            }
+        }
+
+        if (currentIndex !== -1) {
+            const nextHours = []
+            for (let offset = 1; offset <= 4; offset++) {
+                const idx = currentIndex + offset * 2
+                if (idx < allHours.length) {
+                    const hourData = allHours[idx]
+                    const timeVal = hourData.time
+                    const tempVal = hourData.temp_c
+                    const codeVal = hourData.condition.code
+                    const probVal = hourData.chance_of_rain
+                    const uvHourVal = hourData.uv
+
+                    const timeFormatted = timeVal.split(' ')[1]
+                    const [emo, dsc] = getWeatherApiDesc(codeVal)
+
+                    let item = `• *${timeFormatted}:* ${tempVal}°C | ${emo} ${dsc}`
+                    if (probVal > 0) {
+                        item += ` (🌧️ ${probVal}%)`
+                    }
+                    if (uvHourVal > 0) {
+                        item += ` (UV: ${uvHourVal})`
+                    }
+                    nextHours.push(item)
+                }
+            }
+            if (nextHours.length > 0) {
+                text += `⏰ *Prakiraan Waktu Terdekat (Pusat Kota):*\n` + nextHours.join('\n') + `\n\n`
+            }
+        }
+
+        const subDistricts = [
+            { name: 'Padang Bulan', latitude: 3.5518, longitude: 98.6473, icon: '🏢' },
+            { name: 'Medan Johor', latitude: 3.5323, longitude: 98.6749, icon: '🏡' },
+            { name: 'Medan Menteng', latitude: 3.5658, longitude: 98.7176, icon: '🏬' },
+            { name: 'Medan Baru', latitude: 3.5701, longitude: 98.6593, icon: '🎓' },
+            { name: 'Medan Petisah', latitude: 3.5932, longitude: 98.6653, icon: '🛍️' },
+            { name: 'Medan Belawan', latitude: 3.7845, longitude: 98.6795, icon: '🚢' },
+            { name: 'Medan Helvetia', latitude: 3.6062, longitude: 98.6417, icon: '🍃' }
+        ]
+
+        const subPromises = subDistricts.map(async dist => {
+            try {
+                const sres = await fetch(`https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${dist.latitude},${dist.longitude}`)
+                if (!sres.ok) return null
+                return await sres.json()
+            } catch {
+                return null
+            }
+        })
+        const subResults = await Promise.all(subPromises)
+
+        text += `📍 *Kondisi Wilayah Medan:*\n`
+        for (let i = 0; i < subDistricts.length; i++) {
+            const dist = subDistricts[i]
+            const curData = subResults[i]
+            if (curData?.current) {
+                const cur = curData.current
+                const [emo, dsc] = getWeatherApiDesc(cur.condition.code)
+                text += `• ${dist.icon} *${dist.name}:* ${cur.temp_c}°C | ${emo} ${dsc}\n`
+            }
+        }
+
+        text += `\n📅 *Prakiraan 3 Hari (Medan):*\n`
+    } else {
+        text += `${emoji} *Laporan Cuaca Detail: ${locationStr}*\n\n`
+        text += `🌡️ Suhu: *${c.temp_c}°C* (terasa seperti ${c.feelslike_c}°C)\n`
+        text += `📋 Kondisi: ${desc}\n`
+        text += `☁️ Tutupan Awan: ${c.cloud}%\n`
+        text += `💧 Kelembaban: ${c.humidity}%\n`
+        text += `💨 Angin: ${c.wind_kph} km/h arah ${translateWindDir(c.wind_dir)}\n`
+        text += `👁️ Jarak Pandang: ${c.vis_km.toFixed(1)} km\n`
+        text += `🎈 Tekanan Udara: ${c.pressure_mb} hPa\n`
+        text += `☀️ Indeks UV Maks: ${uv} (${uvDesc}) ${uvEmoji}\n`
+        text += `🌅 Sunrise: ${sunrise} | 🌇 Sunset: ${sunset}\n`
+        text += `${aqiText}\n\n`
+
+        const allHours = []
+        for (const day of data.forecast.forecastday) {
+            if (day.hour) allHours.push(...day.hour)
+        }
+
+        const currentEpoch = data.location.localtime_epoch * 1000
+        let currentIndex = -1
+        let minDiff = Infinity
+        for (let i = 0; i < allHours.length; i++) {
+            const t = allHours[i].time_epoch * 1000
+            const diff = Math.abs(t - currentEpoch)
+            if (diff < minDiff) {
+                minDiff = diff
+                currentIndex = i
+            }
+        }
+
+        if (currentIndex !== -1) {
+            const nextHours = []
+            for (let offset = 1; offset <= 4; offset++) {
+                const idx = currentIndex + offset * 2
+                if (idx < allHours.length) {
+                    const hourData = allHours[idx]
+                    const timeVal = hourData.time
+                    const tempVal = hourData.temp_c
+                    const codeVal = hourData.condition.code
+                    const probVal = hourData.chance_of_rain
+                    const uvHourVal = hourData.uv
+
+                    const timeFormatted = timeVal.split(' ')[1]
+                    const [emo, dsc] = getWeatherApiDesc(codeVal)
+
+                    let item = `• *${timeFormatted}:* ${tempVal}°C | ${emo} ${dsc}`
+                    if (probVal > 0) {
+                        item += ` (🌧️ ${probVal}%)`
+                    }
+                    if (uvHourVal > 0) {
+                        item += ` (UV: ${uvHourVal})`
+                    }
+                    nextHours.push(item)
+                }
+            }
+            if (nextHours.length > 0) {
+                text += `⏰ *Prakiraan Waktu Terdekat:*\n` + nextHours.join('\n') + `\n\n`
+            }
+        }
+
+        text += `📅 *Prakiraan 3 Hari:*\n`
+    }
+
+    const days = ['Hari ini', 'Besok', 'Lusa']
+    for (let i = 0; i < Math.min(3, data.forecast.forecastday.length); i++) {
+        const fday = data.forecast.forecastday[i]
+        const [de, dd] = getWeatherApiDesc(fday.day.condition.code)
+        text += `${de} *${days[i]}:* ${fday.day.mintemp_c.toFixed(0)}°–${fday.day.maxtemp_c.toFixed(0)}°C, ${dd}`
+        if (fday.day.totalprecip_mm > 0) text += `, hujan ${fday.day.totalprecip_mm}mm`
+        text += '\n'
+    }
+
+    return text.trim()
+}
+
+export async function getDetailedWeatherReport(city) {
+    try {
+        const report = await getDetailedWeatherReportOpenMeteo(city)
+        return report + `\n\n⚡ *Sumber:* Open-Meteo API`
+    } catch (err) {
+        logger.warn(`[Weather] Open-Meteo error: ${err.message}. Trying WeatherAPI fallback...`)
+        try {
+            const report = await getDetailedWeatherReportFallback(city)
+            return report + `\n\n⚡ *Sumber:* WeatherAPI.com (Fallback)`
+        } catch (fallbackErr) {
+            logger.error(`[Weather] Both Open-Meteo and WeatherAPI failed.`)
+            throw new Error(`Semua server cuaca sedang bermasalah.\n- Open-Meteo: ${err.message}\n- WeatherAPI: ${fallbackErr.message}`)
+        }
+    }
 }
 
 // ─────────────────────────────────────────────
