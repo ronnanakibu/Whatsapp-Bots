@@ -50,8 +50,8 @@ export default {
     aliases: ['note', 'catatan', 'memo', 'n'],
     category: 'general',
     description: 'Simpan & ambil catatan personal.',
-    usage: '!notes add <judul> | <isi> | !notes list | !notes get <id> | !notes delete <id>',
-    example: '!notes add Ide Project | Bikin bot WA dengan Baileys',
+    usage: '.notes add <judul> | <isi> | .notes list | !notes get <id> | !notes delete <id>',
+    example: '.notes add Ide Project | Bikin bot WA dengan Baileys',
     cooldown: 2,
     permissions: ['user'],
 

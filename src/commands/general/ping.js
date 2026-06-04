@@ -4,7 +4,7 @@ export default {
     aliases: ['p', 'test'],
     category: 'general',
     description: 'Check bot latency',
-    usage: '!ping',
+    usage: '.ping',
     cooldown: 3,          // seconds
     permissions: ['user'], // 'user' | 'admin' | 'owner'
     async execute(ctx) {

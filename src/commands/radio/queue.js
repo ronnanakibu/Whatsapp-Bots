@@ -6,7 +6,7 @@ export default {
     aliases: ['rq', 'antrian', 'daftar'],
     category: 'radio',
     description: 'Lihat antrian lagu radio',
-    usage: '!queue',
+    usage: '.queue',
     cooldown: 3,
     permissions: ['user'],
 

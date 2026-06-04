@@ -10,7 +10,9 @@ import qrcode from 'qrcode'
 import 'dotenv/config'
 
 import { loadCommands } from './loader.js'
+import { store } from '../services/store.js'
 import { handleIncomingMessage } from '../handlers/message.js'
+import { handleRevokeMessage } from '../handlers/revoke.js'
 import { logger, botLogger } from '../utils/logger.js'
 import { initReminderScheduler } from '../commands/general/remindme.js'
 import { initWeatherScheduler } from '../commands/utility/cuaca.js'
@@ -92,6 +94,10 @@ async function startBot() {
         printQRInTerminal: false, // kita handle manual
     })
 
+    // Bind In-Memory Store
+    store.bind(sock.ev)
+    botLogger.system('Store bonded ✓')
+
     // 5. Pairing code (kalau ada BOT_NUMBER)
     const phoneNumber = process.env.BOT_NUMBER?.replace(/[^0-9]/g, '') ?? null
     if (phoneNumber && !state.creds?.registered) {
@@ -165,6 +171,11 @@ async function startBot() {
     // 7. Message handler
     sock.ev.on('messages.upsert', async (m) => {
         await handleIncomingMessage(sock, m)
+    })
+
+    // 8. Revoke handler (Anti-Delete)
+    sock.ev.on('messages.update', async (m) => {
+        await handleRevokeMessage(sock, m)
     })
 }
 

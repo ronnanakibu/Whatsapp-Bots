@@ -264,8 +264,8 @@ export default {
     aliases: ['weather'],
     category: 'utility',
     description: 'Cek cuaca realtime kota manapun, atau langganan laporan cuaca harian otomatis setiap 12 malam',
-    usage: '!cuaca [kota] | subscribe [kota] | unsubscribe',
-    example: '!cuaca Medan\n!cuaca subscribe Medan\n!cuaca unsubscribe',
+    usage: '.cuaca [kota] | subscribe [kota] | unsubscribe',
+    example: '.cuaca Medan\n!cuaca subscribe Medan\n!cuaca unsubscribe',
     cooldown: 5,
     permissions: ['user'],
 

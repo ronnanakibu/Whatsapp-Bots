@@ -29,8 +29,8 @@ export default {
     aliases: ['download', 'unduh', 'reels', 'tiktok', 'tt', 'ytmp3', 'ig', 'fb'],
     category: 'media',
     description: 'Download video dari Instagram, TikTok, YouTube, Facebook.',
-    usage: '!dl [link] | !ytmp3 [link] untuk audio',
-    example: '!dl https://www.instagram.com/reel/xxx',
+    usage: '.dl [link] | .ytmp3 [link] untuk audio',
+    example: '.dl https://www.instagram.com/reel/xxx',
     cooldown: 10,
     permissions: ['user'],
 

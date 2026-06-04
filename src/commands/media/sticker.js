@@ -8,7 +8,7 @@ export default {
     aliases: ['s', 'stiker'],
     category: 'media',
     description: 'Convert image to a clean square-cropped meme sticker with text overlay',
-    usage: '/sticker Teks Atas | Teks Bawah',
+    usage: '.sticker Teks Atas | Teks Bawah',
     cooldown: 5,
     permissions: ['user'],
     async execute(ctx) {

@@ -8,8 +8,8 @@ export default {
     aliases: ['sum', 'ringkas', 'tldr'],
     category: 'utility',
     description: 'Ringkas artikel dari URL menggunakan AI',
-    usage: '!summarize [URL]',
-    example: '!summarize https://tekno.kompas.com/artikel-panjang',
+    usage: '.summarize [URL]',
+    example: '.summarize https://tekno.kompas.com/artikel-panjang',
     cooldown: 10,
     permissions: ['user'],
 

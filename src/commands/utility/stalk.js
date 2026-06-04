@@ -6,8 +6,8 @@ export default {
     aliases: ['github', 'ghprofile'],
     category: 'utility',
     description: 'Cek profil publik GitHub seseorang',
-    usage: '!stalk [username]',
-    example: '!stalk torvalds',
+    usage: '.stalk [username]',
+    example: '.stalk torvalds',
     cooldown: 5,
     permissions: ['user'],
 

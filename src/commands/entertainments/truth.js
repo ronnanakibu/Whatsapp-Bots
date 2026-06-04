@@ -29,7 +29,7 @@ export default {
     aliases: ['truths', 'tohtruth', 'jujur'],
     category: 'entertainment',
     description: 'Random truth question untuk game Truth or Dare',
-    usage: '!truth',
+    usage: '.truth',
     cooldown: 3,
     permissions: ['user'],
 

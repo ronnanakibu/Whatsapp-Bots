@@ -8,7 +8,7 @@ export default {
     aliases: ['remove'],
     category: 'admin',
     description: 'Keluarkan anggota dari grup.',
-    usage: '!kick @user',
+    usage: '.kick @user',
     cooldown: 3,
     permissions: ['admin'],
 

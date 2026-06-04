@@ -7,7 +7,7 @@ export default {
     aliases: ['link', 'invitelink'],
     category: 'admin',
     description: 'Ambil link undangan grup.',
-    usage: '!grouplink',
+    usage: '.grouplink',
     cooldown: 3,
     permissions: ['admin'],
 

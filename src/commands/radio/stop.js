@@ -6,7 +6,7 @@ export default {
     aliases: ['radiooff', 'matiin'],
     category: 'radio',
     description: 'Stop radio dan bersihkan queue',
-    usage: '!stop',
+    usage: '.stop',
     cooldown: 5,
     permissions: ['admin'],
 

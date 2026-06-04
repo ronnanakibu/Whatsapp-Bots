@@ -9,8 +9,8 @@ export default {
     aliases: ['imagine', 'generate', 'gen'],
     category: 'ai',
     description: 'Generate gambar dari deskripsi teks menggunakan AI.',
-    usage: '!buat [deskripsi gambar]',
-    example: '!buat kucing astronot di bulan, digital art',
+    usage: '.buat [deskripsi gambar]',
+    example: '.buat kucing astronot di bulan, digital art',
     cooldown: 15,
     permissions: ['user'],
 

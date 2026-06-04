@@ -11,8 +11,8 @@ export default {
     aliases: ['ai', 'tanya', 'ronnbot'],
     category: 'ai',
     description: 'Chat dengan AI. Bot ingat konteks percakapan.',
-    usage: '!q [pertanyaan]',
-    example: '!q siapa penemu listrik?',
+    usage: '.q [pertanyaan]',
+    example: '.q siapa penemu listrik?',
     cooldown: 3,
     permissions: ['user'],
 

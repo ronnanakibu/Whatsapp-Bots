@@ -6,7 +6,7 @@ export default {
     aliases: ['listeners', 'pendengar'],
     category: 'radio',
     description: 'Jumlah pendengar radio aktif',
-    usage: '!listener',
+    usage: '.listener',
     cooldown: 3,
     permissions: ['user'],
 

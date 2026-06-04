@@ -6,7 +6,7 @@ export default {
     aliases: ['sk', 'next'],
     category: 'radio',
     description: 'Skip lagu yang sedang diputar',
-    usage: '!skip',
+    usage: '.skip',
     cooldown: 5,
     permissions: ['user'],
 

@@ -6,7 +6,7 @@ export default {
     name: 'add',
     category: 'admin',
     description: 'Tambah anggota ke grup.',
-    usage: '!add 628xxx / @user',
+    usage: '.add 628xxx . @user',
     cooldown: 3,
     permissions: ['admin'],
 

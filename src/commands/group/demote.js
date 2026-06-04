@@ -7,7 +7,7 @@ export default {
     name: 'demote',
     category: 'admin',
     description: 'Copot jabatan admin dari anggota.',
-    usage: '!demote @user',
+    usage: '.demote @user',
     cooldown: 3,
     permissions: ['admin'],
 

@@ -337,8 +337,8 @@ export default {
     aliases: ['remind', 'ingatkan', 'alarm', 'r', 'rme'],
     category: 'general',
     description: 'Set reminder — bot akan ping kamu tepat waktu.',
-    usage: '!remindme <waktu> <pesan>',
-    example: '!remindme 30m Minum obat | !remindme besok jam 9 Meeting',
+    usage: '.remindme <waktu> <pesan>',
+    example: '.remindme 30m Minum obat | .remindme besok jam 9 Meeting',
     cooldown: 2,
     permissions: ['user'],
 

@@ -6,8 +6,8 @@ export default {
     aliases: ['safebrowse', 'phishing', 'cekurl'],
     category: 'utility',
     description: 'Cek apakah sebuah URL aman atau berbahaya (phishing/malware)',
-    usage: '!ceklink [URL]',
-    example: '!ceklink https://suspicious-site.com',
+    usage: '.ceklink [URL]',
+    example: '.ceklink https://suspicious-site.com',
     cooldown: 5,
     permissions: ['user'],
 

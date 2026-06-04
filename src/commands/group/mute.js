@@ -7,7 +7,7 @@ export default {
     aliases: ['closechat'],
     category: 'admin',
     description: 'Kunci grup (hanya admin yang bisa kirim pesan).',
-    usage: '!mute',
+    usage: '.mute',
     cooldown: 3,
     permissions: ['admin'],
 

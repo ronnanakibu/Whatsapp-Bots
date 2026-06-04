@@ -6,7 +6,7 @@ export default {
     aliases: ['qs', 'qc', 'quote', 'brat'],
     category: 'media',
     description: 'Mengubah teks menjadi stiker anomali kurus tipis ala brat generator',
-    usage: '/anomali <teks kamu>',
+    usage: '.anomali <teks kamu>',
     cooldown: 3,
     permissions: ['user'],
     async execute(ctx) {

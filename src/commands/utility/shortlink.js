@@ -6,8 +6,8 @@ export default {
     aliases: ['short', 'shorten', 'tinyurl'],
     category: 'utility',
     description: 'Perpendek URL panjang',
-    usage: '!shortlink [URL]',
-    example: '!shortlink https://github.com/ronnanakibu/BOTWA2.0',
+    usage: '.shortlink [URL]',
+    example: '.shortlink https://github.com/ronnanakibu/BOTWA2.0',
     cooldown: 5,
     permissions: ['user'],
 

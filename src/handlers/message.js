@@ -38,6 +38,12 @@ export async function handleIncomingMessage(sock, { messages }) {
             || messageContent?.videoMessage?.caption
             || ''
 
+        // Hook Anti-Delete
+        if (type === 'protocolMessage') {
+            const { checkRevokeUpsert } = await import('./revoke.js')
+            await checkRevokeUpsert(sock, msg)
+        }
+
         // Filter: abaikan pesan dari bot sendiri
         if (msg.key.fromMe) return
 

@@ -1,0 +1,85 @@
+import { downloadContentFromMessage } from '@whiskeysockets/baileys'
+import { logger } from '../../utils/logger.js'
+import sharp from 'sharp'
+import { exec } from 'child_process'
+import util from 'util'
+import fs from 'fs'
+import path from 'path'
+import crypto from 'crypto'
+
+const execPromise = util.promisify(exec)
+
+export default {
+    name: 'bongkar',
+    aliases: ['toimg', 'tomp4'],
+    category: 'media',
+    description: 'Bongkar stiker (ubah kembali menjadi gambar/video)',
+    usage: 'Balas stiker dengan .bongkar',
+    cooldown: 5,
+    permissions: ['user'],
+    async execute(ctx) {
+        const { msg, messageContent, type, reply, react, sock, from } = ctx
+
+        // Cari quoted message
+        const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
+        if (!quotedMsg) {
+            return reply('⚠️ Balas stikernya dong pakai perintah !bongkar')
+        }
+
+        const quotedType = Object.keys(quotedMsg)[0]
+        if (quotedType !== 'stickerMessage') {
+            return reply('⚠️ Yang dibalas harus berupa stiker, bukan teks atau gambar/video langsung.')
+        }
+
+        await react('⏳')
+        const stickerMsg = quotedMsg.stickerMessage
+
+        try {
+            // Download sticker
+            const stream = await downloadContentFromMessage(stickerMsg, 'sticker')
+            let buffer = Buffer.from([])
+            for await(const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk])
+            }
+
+            const isAnimated = stickerMsg.isAnimated
+
+            if (isAnimated) {
+                // Sticker -> MP4 menggunakan FFmpeg
+                const tmpDir = path.resolve('./storage/media/tmp')
+                if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+                const id = crypto.randomBytes(4).toString('hex')
+                const inputPath = path.join(tmpDir, `${id}.webp`)
+                const outputPath = path.join(tmpDir, `${id}.mp4`)
+
+                fs.writeFileSync(inputPath, buffer)
+
+                // Convert webp to mp4
+                try {
+                    await execPromise(`ffmpeg -i ${inputPath} -vcodec libx264 -pix_fmt yuv420p -loop 0 -preset fast ${outputPath}`)
+                    const mp4Buffer = fs.readFileSync(outputPath)
+                    await sock.sendMessage(from, { video: mp4Buffer, caption: '✅ Stiker berhasil dibongkar menjadi video!' }, { quoted: msg })
+                } catch (ffmpegErr) {
+                    logger.error('❌ [Bongkar] FFmpeg error:', ffmpegErr)
+                    await reply('❌ Gagal mengonversi stiker gerak ke video. Pastikan ffmpeg terinstall di server.')
+                } finally {
+                    if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+                    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+                }
+
+            } else {
+                // Sticker -> PNG menggunakan Sharp
+                const pngBuffer = await sharp(buffer).png().toBuffer()
+                await sock.sendMessage(from, { image: pngBuffer, caption: '✅ Stiker berhasil dibongkar menjadi gambar!' }, { quoted: msg })
+            }
+
+            await react('✅')
+
+        } catch (err) {
+            logger.error('❌ [Bongkar] Error:', err.message)
+            await react('❌')
+            await reply('❌ Waduh, gagal membongkar stiker.')
+        }
+    }
+}

@@ -8,8 +8,8 @@ export default {
     aliases: ['qrcode', 'buatqr'],
     category: 'utility',
     description: 'Generate QR code dari teks atau URL',
-    usage: '!qr [teks/URL]',
-    example: '!qr https://github.com/ronnanakibu',
+    usage: '.qr [teks/URL]',
+    example: '.qr https://github.com/ronnanakibu',
     cooldown: 5,
     permissions: ['user'],
 
