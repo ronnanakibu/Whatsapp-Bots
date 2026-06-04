@@ -40,7 +40,10 @@ class InteractiveService {
         if (!session) return false
 
         // Pastikan hanya pengirim asli yang bisa merespon
-        if (session.chatId === chatId && session.sender === sender) {
+        const isChatMatch = Array.isArray(session.chatId) ? session.chatId.includes(chatId) : session.chatId === chatId;
+        const isSenderMatch = Array.isArray(session.sender) ? session.sender.includes(sender) : session.sender === sender;
+
+        if (isChatMatch && isSenderMatch) {
             this.sessions.delete(quotedMsgId)
             await session.handler(ctx, body.trim())
             return true

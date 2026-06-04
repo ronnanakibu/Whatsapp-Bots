@@ -52,9 +52,10 @@ async function processRevokedKey(sock, key) {
 
         let captionText = `🕵️‍♂️ *THE SNITCH* 🕵️‍♂️\n\nTerciduk kamu hapus pesan, @${sender.split('@')[0]}! 😏\n\n`
         
-        const ownerNumbers = (process.env.OWNER_NUMBER || '').split(',')
-        const devNumber = ownerNumbers[0].trim()
+        const ownerNumbers = (process.env.OWNER_NUMBER || '').split(',').map(n => n.trim())
+        const devNumber = ownerNumbers[0]
         const devJid = devNumber + '@s.whatsapp.net'
+        const allowedJids = ownerNumbers.map(n => n.includes('@') ? n : n + '@s.whatsapp.net')
         
         const validMentions = sender.endsWith('@lid') ? undefined : [sender]
         
@@ -67,7 +68,7 @@ async function processRevokedKey(sock, key) {
             const promptOptions = { text: promptText }
             const promptMsg = await sock.sendMessage(devJid, promptOptions)
             
-            interactiveService.createSession(promptMsg.key.id, devJid, devJid, async (ctx, answer) => {
+            interactiveService.createSession(promptMsg.key.id, allowedJids, allowedJids, async (ctx, answer) => {
                 if (answer === '1') {
                     const sendOptions = { text: captionText }
                     if (validMentions) sendOptions.mentions = validMentions
@@ -117,7 +118,7 @@ async function processRevokedKey(sock, key) {
                     promptMsg = await sock.sendMessage(devJid, mOpts)
                 }
 
-                interactiveService.createSession(promptMsg.key.id, devJid, devJid, async (ctx, answer) => {
+                interactiveService.createSession(promptMsg.key.id, allowedJids, allowedJids, async (ctx, answer) => {
                     if (answer === '1') {
                         if (messageType === 'stickerMessage') {
                             const sOpts = { text: captionText }
