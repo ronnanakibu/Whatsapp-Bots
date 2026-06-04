@@ -2,7 +2,7 @@
 // Alarm service untuk reminder
 // "Call" diganti react spam — HP bunyi 4x dalam 30 detik
 
-export async function triggerAlarm(sock, chatId, message, _useCall = false) {
+export async function triggerAlarm(sock, chatId, message, _useCall = false, quotedMsgStr = null) {
     const TZ = process.env.BOT_TIMEZONE ?? 'Asia/Jakarta'
     const timeStr = new Date().toLocaleTimeString('id-ID', {
         hour: '2-digit',
@@ -20,6 +20,16 @@ export async function triggerAlarm(sock, chatId, message, _useCall = false) {
                 `🕐 ${timeStr}\n` +
                 `_Set reminder baru: !remindme [waktu] [pesan]_`
         })
+
+        // Forward pesan jika ada quoted_msg
+        if (quotedMsgStr) {
+            try {
+                const quotedMsg = JSON.parse(quotedMsgStr)
+                await sock.sendMessage(chatId, { forward: { key: { remoteJid: chatId, fromMe: false, id: "fake" }, message: quotedMsg } })
+            } catch (e) {
+                console.error('[Alarm] Gagal forward quoted msg:', e)
+            }
+        }
     } catch (err) {
         console.error('[Alarm] Gagal kirim pesan:', err.message)
         return

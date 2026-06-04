@@ -30,9 +30,9 @@ function getDb() {
         );
     `)
 
-    // Step 2: migrate kolom use_call kalau ada dari versi lama (keep compat)
-    try { db.exec(`ALTER TABLE reminders ADD COLUMN use_call INTEGER NOT NULL DEFAULT 1`) }
-    catch (_) { }
+    // Step 2: migrate kolom
+    try { db.exec(`ALTER TABLE reminders ADD COLUMN use_call INTEGER NOT NULL DEFAULT 1`) } catch (_) { }
+    try { db.exec(`ALTER TABLE reminders ADD COLUMN quoted_msg TEXT`) } catch (_) { }
 
     // Step 3: index
     try { db.exec(`CREATE INDEX IF NOT EXISTS idx_reminders_fire ON reminders(fire_at, fired)`) }
@@ -105,6 +105,28 @@ function parseReminder(inputStr) {
     const leadingPrep = /^(?:in|dalam|selama)\s+/i
     if (leadingPrep.test(workStr)) {
         workStr = workStr.replace(leadingPrep, '')
+    }
+
+    // --- STRATEGY 0: Exact Date Time (e.g. 5/06/2026 15:00) ---
+    const exactDateRegex = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s+(\d{1,2})(?::|\.)(\d{2})\b\s*/i
+    const matchExact = workStr.match(exactDateRegex)
+    if (matchExact) {
+        const day = parseInt(matchExact[1])
+        const month = parseInt(matchExact[2]) - 1 // JS months are 0-11
+        const year = parseInt(matchExact[3])
+        const hour = parseInt(matchExact[4])
+        const minute = parseInt(matchExact[5])
+
+        const targetTs = targetTzToMs(year, month, day, hour, minute, 0)
+        const now = Date.now()
+        const diffMs = targetTs - now
+        
+        if (diffMs > 0) {
+            return {
+                timeMs: diffMs,
+                message: cleanMessage(workStr.replace(exactDateRegex, ''))
+            }
+        }
     }
 
     // --- STRATEGY 1: Relative Duration ---
@@ -280,6 +302,7 @@ function formatDate(unixTs) {
         weekday: 'short',
         day: '2-digit',
         month: 'short',
+        year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
         timeZone: TZ
@@ -315,7 +338,7 @@ export function initReminderScheduler(sock) {
                     logger.info(`[Reminder] Firing #${reminder.id} → ${reminder.chat_id}`)
 
                     // triggerAlarm sudah handle react spam sendiri
-                    await triggerAlarm(_sock, reminder.chat_id, reminder.message)
+                    await triggerAlarm(_sock, reminder.chat_id, reminder.message, false, reminder.quoted_msg)
 
                     db.prepare('UPDATE reminders SET fired = 1 WHERE id = ?').run(reminder.id)
                 } catch (e) {
@@ -338,12 +361,12 @@ export default {
     category: 'general',
     description: 'Set reminder — bot akan ping kamu tepat waktu.',
     usage: '.remindme <waktu> <pesan>',
-    example: '.remindme 30m Minum obat | .remindme besok jam 9 Meeting',
+    example: '.remindme 30m Minum obat | .remindme besok jam 9 Meeting | .remindme 5/06/2026 15:00',
     cooldown: 2,
     permissions: ['user'],
 
     async execute(ctx) {
-        const { args, reply, react, sender, chatId, sock } = ctx
+        const { args, reply, react, sender, chatId, sock, messageContent } = ctx
         initReminderScheduler(sock)
 
         const db = getDb()
@@ -364,7 +387,7 @@ export default {
                     `• *!remindme 30m minum obat*\n` +
                     `• *!remindme 2h meeting*\n` +
                     `• *!remindme besok jam 9 sidang*\n` +
-                    `• *!remindme jam 14:30 standup*`
+                    `• *!remindme 5/06/2026 15:00 bayar pajak*`
                 )
             }
 
@@ -400,23 +423,26 @@ export default {
             return reply(
                 `❌ Format waktu tidak dikenali.\n\n` +
                 `*Format yang didukung:*\n` +
-                `• \`!remindme 20 detik bangun\`\n` +
                 `• \`!remindme 30m minum obat\`\n` +
-                `• \`!remindme 2 jam 30 menit tidur\`\n` +
-                `• \`!remindme 19:30 masak\`\n` +
                 `• \`!remindme besok jam 9 pagi meeting\`\n` +
-                `• \`!remindme jam 14:30 untuk standup\``
+                `• \`!remindme 5/06/2026 15:00 bayar tagihan\``
             )
         }
 
-        const { timeMs, message: reminderMsg } = parsed
+        let { timeMs, message: reminderMsg } = parsed
+        
+        // Cek Quoted Message (pesan yang di-reply)
+        const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
+        const serializedQuoted = quotedMsg ? JSON.stringify(quotedMsg) : null
+
+        if (!reminderMsg && quotedMsg) reminderMsg = "(Membalas pesan)"
+        if (!reminderMsg) return reply(`❌ Pesan remindernya mana?\nContoh: !remindme 30m minum obat`)
 
         const MIN_MS = 10_000
-        const MAX_MS = 30 * 86_400_000
+        const MAX_MS = 1825 * 86_400_000 // up to 5 years
 
         if (timeMs < MIN_MS) return reply(`❌ Minimal 10 detik.`)
-        if (timeMs > MAX_MS) return reply(`❌ Maksimal 30 hari.`)
-        if (!reminderMsg) return reply(`❌ Pesan remindernya mana?\nContoh: !remindme 30m minum obat`)
+        if (timeMs > MAX_MS) return reply(`❌ Maksimal 5 tahun.`)
 
         const activeCount = db.prepare('SELECT COUNT(*) as n FROM reminders WHERE user_jid = ? AND fired = 0').get(sender)?.n ?? 0
         if (activeCount >= 10) return reply(`⚠️ Sudah ada 10 reminder aktif. Hapus dulu: !remindme delete <id>`)
@@ -424,9 +450,9 @@ export default {
         const fireAt = Math.floor((Date.now() + timeMs) / 1000)
 
         db.prepare(`
-            INSERT INTO reminders (user_jid, chat_id, message, fire_at)
-            VALUES (?, ?, ?, ?)
-        `).run(sender, chatId, reminderMsg, fireAt)
+            INSERT INTO reminders (user_jid, chat_id, message, fire_at, quoted_msg)
+            VALUES (?, ?, ?, ?, ?)
+        `).run(sender, chatId, reminderMsg, fireAt, serializedQuoted)
 
         await react('⏰')
         return reply(
