@@ -356,6 +356,27 @@ async function chat(chatId, userMessage) {
 }
 
 // ─────────────────────────────────────────────
+// FACT CHECKER — Standalone Gemini Tanpa Memori
+// ─────────────────────────────────────────────
+
+async function geminiFactCheck(query) {
+    const modelName = getAvailableModel(GEMINI_MODELS)
+    const model = genAI.getGenerativeModel({ model: modelName })
+    
+    const prompt = `Sebagai asisten pemeriksa fakta independen, tolong verifikasi kebenaran informasi atau tautan berita berikut ini dengan mengambil dan menyimpulkan dari berbagai sumber terpercaya di internet:\n\n"${query}"\n\nBuatlah laporan ringkas dengan struktur:\n1. Status (Fakta / Hoax / Konteks Keliru)\n2. Kesimpulan Singkat\n3. Penjelasan Lengkap\n4. Referensi Web Terpercaya (wajib sertakan link jika ada).`
+
+    try {
+        const result = await model.generateContent(prompt)
+        const reply = result.response.text()?.trim()
+        if (!reply) throw new Error('Empty response from Gemini')
+        return { text: reply, model: modelName, provider: 'gemini' }
+    } catch (err) {
+        if (err?.status === 429) setCooldown(modelName, 60_000)
+        throw err
+    }
+}
+
+// ─────────────────────────────────────────────
 // EXPORTS
 // ─────────────────────────────────────────────
 
@@ -367,4 +388,5 @@ export const aiService = {
     getDailyFact,
     groqChat,
     geminiChat,
+    geminiFactCheck,
 }

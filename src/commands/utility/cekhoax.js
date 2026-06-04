@@ -8,7 +8,7 @@ export default {
     category: 'utility',
     desc: 'Mencari kebenaran suatu berita di database TurnBackHoax (MAFINDO).',
     use: '<kata kunci berita>',
-    
+
     async execute(ctx) {
         const { sock, msg: m, args, reply } = ctx
 
@@ -17,7 +17,7 @@ export default {
         }
 
         let query = args.join(' ')
-        
+
         // Cerdas: Jika input berupa URL, ekstrak keyword dari path URL-nya
         if (query.startsWith('http://') || query.startsWith('https://')) {
             try {
@@ -47,13 +47,13 @@ export default {
 
             const articles = data?.data || []
             const isFallbackResult = data?.meta?.total_articles > 1000
-            
+
             if (!articles || articles.length === 0 || isFallbackResult) {
-                await reply(`⚠️ Data spesifik tidak ditemukan di TurnBackHoax. Mengalihkan ke Gemini AI untuk menganalisa fakta dari internet... ⏳`)
-                
+                botLogger(`⚠️ Data spesifik tidak ditemukan di TurnBackHoax. Mengalihkan ke Gemini AI untuk menganalisa fakta dari internet... ⏳`)
+
                 const originalQuery = args.join(' ')
                 const prompt = `Sebagai asisten pemeriksa fakta, tolong verifikasi kebenaran informasi atau tautan berita berikut ini dengan mengambil dan menyimpulkan dari berbagai sumber terpercaya di internet:\n\n"${originalQuery}"\n\nBuatlah laporan ringkas dengan struktur:\n1. Status (Fakta / Hoax / Konteks Keliru)\n2. Kesimpulan Singkat\n3. Penjelasan Lengkap\n4. Referensi Web Terpercaya (wajib sertakan link jika ada).`
-                
+
                 try {
                     const aiResponse = await aiService.geminiChat(m.key.remoteJid, prompt)
                     return reply(`🤖 *AI FACT-CHECK (Gemini)* 🤖\n\n${aiResponse.text}\n\n_Catatan: Hasil analisis ini dibuat oleh AI (Google Gemini), tetap verifikasi secara mandiri._`)
@@ -67,9 +67,9 @@ export default {
             let replyText = `📰 *HASIL CEK FAKTA (TurnBackHoax)* 📰\n\n`
 
             topResults.forEach((article, i) => {
-                const statusIkon = article.status?.toLowerCase().includes('salah') ? '❌' 
-                    : article.status?.toLowerCase().includes('benar') ? '✅' 
-                    : '⚠️'
+                const statusIkon = article.status?.toLowerCase().includes('salah') ? '❌'
+                    : article.status?.toLowerCase().includes('benar') ? '✅'
+                        : '⚠️'
 
                 replyText += `${i + 1}. *${article.title || 'Tanpa Judul'}*\n`
                 replyText += `   Status: ${statusIkon} *${article.status || 'Tidak diketahui'}*\n`
@@ -77,7 +77,7 @@ export default {
                 if (article.conclusion) {
                     replyText += `   Kesimpulan: ${article.conclusion}\n`
                 }
-                
+
                 // Parse dan sertakan sumber verifikasi jika ada
                 if (Array.isArray(article.references) && article.references.length > 0) {
                     // Beberapa data API dipisah dengan newline dalam satu string
@@ -90,12 +90,12 @@ export default {
                         if (cleanRefs.length > 3) replyText += `   - _(+${cleanRefs.length - 3} sumber lainnya)_\n`
                     }
                 }
-                
+
                 replyText += `   Tautan Resmi: https://turnbackhoax.id/artikel/${article.slug}\n\n`
             })
 
             replyText += `_Sumber: API TurnBackHoax.id / MAFINDO_`
-            
+
             // Coba kirim dengan thumbnail gambar pertama (jika ada)
             if (topResults[0].image) {
                 await sock.sendMessage(m.key.remoteJid, {
@@ -105,7 +105,7 @@ export default {
             } else {
                 await reply(replyText.trim())
             }
-            
+
             botLogger.commandDone('cekhoax', 0)
         } catch (err) {
             botLogger.err('command', err, 'cekhoax')
