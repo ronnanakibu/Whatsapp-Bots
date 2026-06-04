@@ -1,6 +1,7 @@
 import { logger } from '../../utils/logger.js'
 import fs from 'fs'
 import path from 'path'
+import { store } from '../../services/store.js'
 
 export default {
     name: 'setlogchannel',
@@ -13,15 +14,35 @@ export default {
     async execute(ctx) {
         const { msg, messageContent, type, reply } = ctx
 
-        // Cek contextInfo dari quoted message atau current message
+        // Cek contextInfo dari current message untuk mendapatkan quoted message id
         const contextInfo = messageContent?.extendedTextMessage?.contextInfo || msg.message?.extendedTextMessage?.contextInfo
 
-        if (!contextInfo || !contextInfo.forwardedNewsletterMessageInfo) {
+        if (!contextInfo || !contextInfo.stanzaId) {
             return reply('⚠️ Cara pakai: Forward salah satu pesan dari Channel yang mau dijadikan log ke chat ini, lalu balas pesan forward tersebut dengan perintah `.setlogchannel`')
         }
 
-        const newsletterJid = contextInfo.forwardedNewsletterMessageInfo.newsletterJid
-        const newsletterName = contextInfo.forwardedNewsletterMessageInfo.newsletterName || 'Unknown Channel'
+        // Ambil pesan asli dari database Baileys memory store
+        const originalMsg = await store.loadMessage(msg.key.remoteJid, contextInfo.stanzaId)
+        if (!originalMsg) {
+            return reply('❌ Gagal memuat pesan yang dibalas. Coba forward ulang pesannya ya cuy.')
+        }
+
+        // Cari forwardedNewsletterMessageInfo di pesan asli
+        const origContextInfo = originalMsg.message?.extendedTextMessage?.contextInfo || originalMsg.message?.videoMessage?.contextInfo || originalMsg.message?.imageMessage?.contextInfo || originalMsg.message?.documentMessage?.contextInfo || originalMsg.message?.audioMessage?.contextInfo || originalMsg.message?.conversation?.contextInfo
+        
+        let newsletterJid, newsletterName
+
+        if (origContextInfo?.forwardedNewsletterMessageInfo) {
+            newsletterJid = origContextInfo.forwardedNewsletterMessageInfo.newsletterJid
+            newsletterName = origContextInfo.forwardedNewsletterMessageInfo.newsletterName || 'Unknown Channel'
+        } else if (originalMsg.message?.newsletterAdminInviteMessage) {
+            newsletterJid = originalMsg.message.newsletterAdminInviteMessage.newsletterJid
+            newsletterName = originalMsg.message.newsletterAdminInviteMessage.newsletterName
+        }
+
+        if (!newsletterJid) {
+             return reply('⚠️ Pesan yang kamu balas bukan dari Channel/Newsletter! Pastikan kamu mem-forward pesan langsung dari Channel.')
+        }
 
         try {
             // Save to .env
