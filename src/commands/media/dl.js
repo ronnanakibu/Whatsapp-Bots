@@ -9,6 +9,7 @@ import { formatBytes } from '../../services/downloader/utils.js'
 import { downloadQueue } from '../../services/downloader/index.js'
 import { interactiveService } from '../../services/interactive.js'
 import mediaService from '../../services/media.js'
+import { logToChannel } from '../../utils/channelLogger.js'
 
 // Platform emoji map untuk display
 const PLATFORM_EMOJI = {
@@ -119,7 +120,7 @@ export default {
 // ─────────────────────────────────────────────
 
 async function processDownload(ctx, url, platform, format, isBoost = false) {
-    const { reply, react, sock, chatId, msg } = ctx
+    const { reply, react, sock, chatId, msg, pushName, sender } = ctx
     
     await react('⏳')
     const emoji = PLATFORM_EMOJI[platform] || '📥'
@@ -142,6 +143,7 @@ async function processDownload(ctx, url, platform, format, isBoost = false) {
         }
 
         await sendMedia(sock, chatId, msg, result)
+        await logMediaDL(sock, pushName, sender, result)
         await react('✅')
     } catch (err) {
         await react('❌')
@@ -222,4 +224,18 @@ function formatError(message = '', platform = '') {
     }
 
     return message
+}
+
+async function logMediaDL(sock, pushName, sender, result) {
+    if (!process.env.LOG_CHANNEL_JID) return
+    const { buffer, mimeType, type } = result
+    let caption = `[LOG DOWNLOAD]\nUser: ${pushName} (@${sender.split('@')[0]})\nPlatform: ${result.platform}\nFile: ${result.filename}`
+    
+    if (type === 'video' || mimeType?.startsWith('video/')) {
+        await logToChannel(sock, { video: buffer, caption })
+    } else if (type === 'audio' || mimeType?.startsWith('audio/')) {
+        await logToChannel(sock, { audio: buffer, mimetype: mimeType, caption })
+    } else if (type === 'image' || mimeType?.startsWith('image/')) {
+        await logToChannel(sock, { image: buffer, caption })
+    }
 }

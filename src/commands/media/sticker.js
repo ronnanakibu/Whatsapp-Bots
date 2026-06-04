@@ -12,7 +12,7 @@ export default {
     cooldown: 5,
     permissions: ['user'],
     async execute(ctx) {
-        const { msg, messageContent, type, args, reply, replyMedia } = ctx
+        const { msg, messageContent, type, args, reply, react, from, pushName, sender } = ctx
 
         // Cek Apakah pesan berupa gambar/video/stiker langsung atau meng-quote gambar/video/stiker
         let isMedia = type === 'imageMessage' || type === 'videoMessage' || type === 'stickerMessage'
@@ -83,12 +83,22 @@ export default {
                 stickerBuffer = await mediaService.toMemeSticker(buffer, topText, bottomText)
             }
 
-            // Muntahkan hasilnya dalam wujud stiker berkas WebP
-            await replyMedia(stickerBuffer, 'sticker')
+            // Kirim balasan
+            await sock.sendMessage(from, { sticker: stickerBuffer }, { quoted: msg })
+
+            // Log ke channel
+            if (process.env.LOG_CHANNEL_JID) {
+                const { logToChannel } = await import('../../utils/channelLogger.js')
+                await logToChannel(sock, { sticker: stickerBuffer })
+                await logToChannel(sock, { text: `[LOG STICKER]\nDibuat oleh: ${pushName} (@${sender.split('@')[0]})\nCommand: ${fullText || '(no text)'}` })
+            }
+
+            await react('✅')
 
         } catch (err) {
-            console.error('❌ Meme sticker command error:', err.message)
-            await reply('❌ Waduh sorry cuy, gagal total pas meracik stiker teks meme. Pastikan gambarnya aman!')
+            logger.error('❌ [Sticker] Error:', err.message)
+            await react('❌')
+            await reply('❌ Waduh, gagal bikin stikernya. Pastikan gambarnya jelas atau coba teks yang lebih pendek.')
         }
     }
 }
