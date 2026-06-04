@@ -5,8 +5,8 @@ import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 /**
  * Handle messages.update to catch revoked messages
  */
-export async function handleRevokeMessage(sock, { messages }) {
-    for (const update of messages) {
+export async function handleRevokeMessage(sock, updates) {
+    for (const update of updates) {
         // In some Baileys versions, revokes come as an update with message = null
         // or an update containing a protocolMessage
         if (update.update?.message?.protocolMessage?.type === 0 || update.update?.message === null) {
