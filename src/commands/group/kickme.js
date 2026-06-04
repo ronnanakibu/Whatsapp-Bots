@@ -1,6 +1,5 @@
 // src/commands/group/kickme.js
 import { botLogger } from '../../utils/logger.js'
-import { guardGroup } from '../../utils/group.js'
 import { isOwner } from '../../middleware/permission.js'
 
 export default {
@@ -11,13 +10,12 @@ export default {
     usage: '.kickme',
     cooldown: 3,
     permissions: ['admin'],
+    requireBotAdmin: true,
 
     async execute(ctx) {
         const { reply, chatId, sock, sender } = ctx
 
         botLogger.admin('kickme', chatId, sender)
-
-        if (!await guardGroup(ctx)) return
 
         if (isOwner(sender)) return reply(`😅 Owner ga perlu kickme, keluar manual aja cuy.`)
 

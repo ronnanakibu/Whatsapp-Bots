@@ -1,6 +1,6 @@
 // src/commands/group/demote.js
 import { botLogger } from '../../utils/logger.js'
-import { parseTargetJid, guardGroup } from '../../utils/group.js'
+import { parseTargetJid } from '../../utils/group.js'
 import { isOwner } from '../../middleware/permission.js'
 
 export default {
@@ -10,14 +10,13 @@ export default {
     usage: '.demote @user',
     cooldown: 3,
     permissions: ['admin'],
+    requireBotAdmin: true,
 
     async execute(ctx) {
         const { args, reply, react, chatId, sock, sender, messageContent } = ctx
         const mentionedJids = messageContent?.extendedTextMessage?.contextInfo?.mentionedJid ?? []
 
         botLogger.admin('demote', chatId, sender)
-
-        if (!await guardGroup(ctx)) return
 
         const targetJid = parseTargetJid(args, mentionedJids)
         if (!targetJid) return reply(`❌ Tag orang yang mau di-demote.\n*!demote @nomor*`)

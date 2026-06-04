@@ -1,6 +1,5 @@
 // src/commands/group/unmute.js
 import { botLogger } from '../../utils/logger.js'
-import { guardGroup } from '../../utils/group.js'
 
 export default {
     name: 'unmute',
@@ -10,13 +9,12 @@ export default {
     usage: '.unmute',
     cooldown: 3,
     permissions: ['admin'],
+    requireBotAdmin: true,
 
     async execute(ctx) {
         const { reply, react, chatId, sock, sender } = ctx
 
         botLogger.admin('unmute', chatId, sender)
-
-        if (!await guardGroup(ctx)) return
 
         try {
             botLogger.debug('admin', `Unmuting group ${chatId}`)

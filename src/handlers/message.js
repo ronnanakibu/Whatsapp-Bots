@@ -5,6 +5,10 @@ import { aiService } from '../services/ai.js'
 import { memoryService } from '../services/memory.js'
 import { seamlessTracker } from '../services/seamless.js'
 import { checkPermission } from '../middleware/permission.js'
+import { isSpamming } from '../middleware/antispam.js'
+import { checkCooldown } from '../middleware/cooldown.js'
+import { validateArgs } from '../middleware/validator.js'
+import { groupGuard } from '../middleware/groupGuard.js'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { normalizeNumber } from '../utils/permissions.js'
 import { metricsService } from '../services/metrics.js'
@@ -46,6 +50,12 @@ export async function handleIncomingMessage(sock, { messages }) {
 
         // Filter: abaikan pesan dari bot sendiri
         if (msg.key.fromMe) return
+
+        // ── ANTI-SPAM MIDDLEWARE ──
+        if (isSpamming(sender)) {
+            botLogger.warn('handler', `Anti-spam: blocked message from ${sender}`)
+            return
+        }
 
         // Log setiap incoming message
         botLogger.message({ sender, type, body, isGroup, chatId: from })
@@ -147,12 +157,40 @@ export async function handleIncomingMessage(sock, { messages }) {
                 return
             }
 
+            // ── VALIDATOR MIDDLEWARE ──
+            const valResult = validateArgs(rawArgs)
+            if (!valResult.valid) {
+                await react('⚠️')
+                await reply(`⚠️ *Gagal Validasi:* ${valResult.reason}`)
+                botLogger.warn('handler', `Validation failed for cmd "${commandName}" from ${sender}: ${valResult.reason}`)
+                return
+            }
+
             // ── PERMISSION CHECK ──
             const permResult = await checkPermission(ctx, command)
             if (!permResult.allowed) {
                 await react('🚫')
                 await reply(permResult.reason ?? '🚫 Akses ditolak.')
                 botLogger.warn('handler', `Permission denied: ${commandName} for ${sender}`)
+                return
+            }
+
+            // ── GROUP GUARD MIDDLEWARE ──
+            if (command.requireBotAdmin) {
+                const guardResult = await groupGuard(ctx, {
+                    requireBotAdmin: true,
+                    requireSenderAdmin: false // Already checked by permission middleware
+                })
+                if (!guardResult.ok) return
+            }
+
+            // ── COOLDOWN CHECK ──
+            const cooldownSecs = command.cooldown ?? 3
+            const cooldownRemaining = checkCooldown(sender, command.name, cooldownSecs)
+            if (cooldownRemaining !== null) {
+                await react('⏳')
+                await reply(`⏳ *Cooldown!* Mohon tunggu *${cooldownRemaining}* detik sebelum menggunakan command *${commandName}* kembali.`)
+                botLogger.warn('handler', `Cooldown active for cmd "${commandName}" from ${sender}`)
                 return
             }
 

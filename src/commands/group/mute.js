@@ -1,6 +1,5 @@
 // src/commands/group/mute.js
 import { botLogger } from '../../utils/logger.js'
-import { guardGroup } from '../../utils/group.js'
 
 export default {
     name: 'mute',
@@ -10,13 +9,12 @@ export default {
     usage: '.mute',
     cooldown: 3,
     permissions: ['admin'],
+    requireBotAdmin: true,
 
     async execute(ctx) {
         const { reply, react, chatId, sock, sender } = ctx
 
         botLogger.admin('mute', chatId, sender)
-
-        if (!await guardGroup(ctx)) return
 
         try {
             botLogger.debug('admin', `Muting group ${chatId}`)

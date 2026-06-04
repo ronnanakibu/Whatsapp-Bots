@@ -1,5 +1,6 @@
 // src/utils/group.js
-import { isBotAdmin, normalizeJid } from '../middleware/permission.js'
+import { normalizeJid } from '../middleware/permission.js'
+import { groupGuard } from '../middleware/groupGuard.js'
 
 export function parseTargetJid(args, mentionedJids = []) {
     if (mentionedJids.length) {
@@ -14,18 +15,6 @@ export function parseTargetJid(args, mentionedJids = []) {
 }
 
 export async function guardGroup(ctx) {
-    const { isGroup, chatId, sock, reply } = ctx
-
-    if (!isGroup) {
-        await reply('🚫 Command ini hanya untuk grup.')
-        return false
-    }
-
-    const botIsAdmin = await isBotAdmin(sock, chatId)
-    if (!botIsAdmin) {
-        await reply('🚫 Bot harus jadi *admin grup* dulu baru bisa jalanin command ini.\nMinta admin untuk promote bot.')
-        return false
-    }
-
-    return true
+    const result = await groupGuard(ctx, { requireBotAdmin: true, requireSenderAdmin: false })
+    return result.ok
 }

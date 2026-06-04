@@ -1,6 +1,6 @@
 // src/commands/group/add.js
 import { botLogger } from '../../utils/logger.js'
-import { parseTargetJid, guardGroup } from '../../utils/group.js'
+import { parseTargetJid } from '../../utils/group.js'
 
 export default {
     name: 'add',
@@ -9,14 +9,13 @@ export default {
     usage: '.add 628xxx . @user',
     cooldown: 3,
     permissions: ['admin'],
+    requireBotAdmin: true,
 
     async execute(ctx) {
         const { args, reply, react, chatId, sock, messageContent } = ctx
         const mentionedJids = messageContent?.extendedTextMessage?.contextInfo?.mentionedJid ?? []
 
         botLogger.admin('add', chatId, ctx.sender)
-
-        if (!await guardGroup(ctx)) return
 
         const targetJid = parseTargetJid(args, mentionedJids)
         if (!targetJid) {

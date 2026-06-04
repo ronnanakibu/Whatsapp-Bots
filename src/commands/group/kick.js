@@ -1,6 +1,6 @@
 // src/commands/group/kick.js
 import { botLogger } from '../../utils/logger.js'
-import { parseTargetJid, guardGroup } from '../../utils/group.js'
+import { parseTargetJid } from '../../utils/group.js'
 import { isOwner, isGroupAdmin, normalizeJid } from '../../middleware/permission.js'
 
 export default {
@@ -11,14 +11,13 @@ export default {
     usage: '.kick @user',
     cooldown: 3,
     permissions: ['admin'],
+    requireBotAdmin: true,
 
     async execute(ctx) {
         const { args, reply, react, chatId, sock, sender, messageContent } = ctx
         const mentionedJids = messageContent?.extendedTextMessage?.contextInfo?.mentionedJid ?? []
 
         botLogger.admin('kick', chatId, sender)
-
-        if (!await guardGroup(ctx)) return
 
         const targetJid = parseTargetJid(args, mentionedJids)
         if (!targetJid) {

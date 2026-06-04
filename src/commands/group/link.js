@@ -1,6 +1,5 @@
 // src/commands/group/link.js
 import { botLogger } from '../../utils/logger.js'
-import { isBotAdmin } from '../../middleware/permission.js'
 
 export default {
     name: 'grouplink',
@@ -10,17 +9,13 @@ export default {
     usage: '.grouplink',
     cooldown: 3,
     permissions: ['admin'],
+    requireBotAdmin: true,
 
     async execute(ctx) {
-        const { reply, react, chatId, sock, sender, isGroup } = ctx
+        const { reply, react, chatId, sock, sender } = ctx
         const commandName = ctx.commandName?.toLowerCase()
 
         botLogger.admin(commandName, chatId, sender)
-
-        if (!isGroup) return reply('🚫 Hanya untuk grup.')
-
-        const botIsAdmin = await isBotAdmin(sock, chatId)
-        if (!botIsAdmin) return reply('🚫 Bot harus jadi admin untuk ambil link grup.')
 
         try {
             botLogger.debug('admin', `Fetching group invite link for ${chatId}`)

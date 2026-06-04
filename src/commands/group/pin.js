@@ -1,5 +1,4 @@
 // src/commands/group/pin.js
-import { guardGroup } from '../../utils/group.js'
 
 export default {
     name: 'pin',
@@ -9,6 +8,7 @@ export default {
     example: '.pin 24h',
     cooldown: 3,
     permissions: ['admin'],
+    requireBotAdmin: true,
 
     async execute(ctx) {
         const { msg, args, reply, react, sock, chatId, isGroup } = ctx
@@ -31,11 +31,6 @@ export default {
             fromMe,
             id: quotedMsgId,
             participant: isGroup ? quotedParticipant : undefined
-        }
-
-        // Cek jika grup, pastikan bot adalah admin grup
-        if (isGroup) {
-            if (!await guardGroup(ctx)) return
         }
 
         const option = args[0]?.toLowerCase()

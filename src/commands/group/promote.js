@@ -1,6 +1,6 @@
 // src/commands/group/promote.js
 import { botLogger } from '../../utils/logger.js'
-import { parseTargetJid, guardGroup } from '../../utils/group.js'
+import { parseTargetJid } from '../../utils/group.js'
 
 export default {
     name: 'promote',
@@ -9,14 +9,13 @@ export default {
     usage: '.promote @user',
     cooldown: 3,
     permissions: ['admin'],
+    requireBotAdmin: true,
 
     async execute(ctx) {
         const { args, reply, react, chatId, sock, sender, messageContent } = ctx
         const mentionedJids = messageContent?.extendedTextMessage?.contextInfo?.mentionedJid ?? []
 
         botLogger.admin('promote', chatId, sender)
-
-        if (!await guardGroup(ctx)) return
 
         const targetJid = parseTargetJid(args, mentionedJids)
         if (!targetJid) return reply(`❌ Tag orang yang mau dipromote.\n*!promote @nomor*`)
