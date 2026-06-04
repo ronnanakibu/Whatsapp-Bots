@@ -107,8 +107,13 @@ export function startDiscordBot() {
             try {
                 // Tambahkan lagu ke antrean global WA
                 const msg = await message.reply(`🔍 Mencari \`${query}\`...`)
-                const track = await radioService.addTrack(query, message.author.username)
-
+                const track = await radioService.search(query, message.author.username)
+                radioService.addToQueue(track)
+                
+                if (!radioService.isPlaying) {
+                    radioService.start().catch(e => logger.error('[Radio] Start error: ' + e.message))
+                }
+                
                 msg.edit(`✅ **Ditambahkan ke antrean:** ${track.title}\nRequested by: ${track.requestedBy}`)
             } catch (err) {
                 message.reply(`❌ Gagal menambahkan lagu: ${err.message}`)
