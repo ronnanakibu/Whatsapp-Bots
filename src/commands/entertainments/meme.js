@@ -1,5 +1,4 @@
-// src/commands/entertainment/meme.js
-// !meme — Random meme dari Reddit
+import axios from 'axios'
 
 export default {
     name: 'meme',
@@ -15,62 +14,33 @@ export default {
         const { args, reply, react, sock, from, msg } = ctx
 
         const subreddits = ['memes', 'dankmemes', 'me_irl', 'ProgrammerHumor', 'indonesia']
-        const sub = args[0] ?? subreddits[Math.floor(Math.random() * subreddits.length)]
+        const sub = args[0] ? args[0].toLowerCase().trim() : subreddits[Math.floor(Math.random() * subreddits.length)]
 
         await react('⏳')
 
         try {
-            const res = await fetch(
-                `https://www.reddit.com/r/${sub}/random.json?limit=1`,
-                { headers: { 'User-Agent': 'WA-Bot/2.0' } }
-            )
+            const apiUrl = `https://meme-api.com/gimme/${sub}`
+            const response = await axios.get(apiUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WABOT2.0'
+                }
+            })
 
-            if (!res.ok) throw new Error(`Subreddit r/${sub} tidak ditemukan atau private.`)
-            const data = await res.json()
-
-            // Reddit random returns array of listings
-            const post = Array.isArray(data)
-                ? data[0]?.data?.children?.[0]?.data
-                : data?.data?.children?.[0]?.data
-
-            if (!post) throw new Error('Tidak ada post ditemukan.')
-
-            // Filter: hanya gambar
-            const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-            const isImage = imageExts.some(ext => post.url?.toLowerCase().endsWith(ext))
-                || post.url?.includes('i.redd.it')
-                || post.url?.includes('i.imgur.com')
-
-            if (!isImage) {
-                // Coba lagi — ambil top posts dan pilih yang ada gambarnya
-                const topRes = await fetch(
-                    `https://www.reddit.com/r/${sub}/hot.json?limit=20`,
-                    { headers: { 'User-Agent': 'WA-Bot/2.0' } }
-                )
-                const topData = await topRes.json()
-                const posts = topData?.data?.children?.map(c => c.data) ?? []
-                const imagePosts = posts.filter(p =>
-                    imageExts.some(ext => p.url?.toLowerCase().endsWith(ext)) ||
-                    p.url?.includes('i.redd.it') ||
-                    p.url?.includes('i.imgur.com')
-                )
-                if (!imagePosts.length) throw new Error('Tidak ada meme gambar ditemukan di r/' + sub)
-                const picked = imagePosts[Math.floor(Math.random() * Math.min(imagePosts.length, 10))]
-                await sock.sendMessage(from, {
-                    image: { url: picked.url },
-                    caption: `😂 *${picked.title}*\n\nr/${sub} • ⬆️ ${picked.ups?.toLocaleString()}`
-                }, { quoted: msg })
-            } else {
-                await sock.sendMessage(from, {
-                    image: { url: post.url },
-                    caption: `😂 *${post.title}*\n\nr/${sub} • ⬆️ ${post.ups?.toLocaleString()}`
-                }, { quoted: msg })
+            const data = response.data
+            if (!data || !data.url) {
+                throw new Error('Gagal mendapatkan gambar meme dari API.')
             }
+
+            // Kirim gambar meme ke WhatsApp
+            await sock.sendMessage(from, {
+                image: { url: data.url },
+                caption: `😂 *${data.title || 'Meme'}*\n\nr/${data.subreddit || sub} • ⬆️ ${data.ups?.toLocaleString() ?? 0}`
+            }, { quoted: msg })
 
             await react('✅')
         } catch (err) {
             await react('❌')
-            await reply(`❌ Gagal ambil meme: ${err.message}`)
+            await reply(`❌ Gagal ambil meme dari r/${sub}: ${err.message}`)
         }
     }
 }
