@@ -64,9 +64,8 @@ export default {
             let isAnimated = false
             if (isMedia) {
                 isAnimated = type === 'videoMessage' || msg.message?.videoMessage?.gifPlayback || (type === 'stickerMessage' && msg.message?.stickerMessage?.isAnimated)
-            } else if (quotedMsg) {
-                const qType = Object.keys(quotedMsg)[0]
-                isAnimated = qType === 'videoMessage' || quotedMsg.videoMessage?.gifPlayback || (qType === 'stickerMessage' && quotedMsg.stickerMessage?.isAnimated)
+            } else if (finalQuotedMsg) {
+                isAnimated = finalQuotedType === 'videoMessage' || finalQuotedMsg[finalQuotedType]?.gifPlayback || (finalQuotedType === 'stickerMessage' && finalQuotedMsg[finalQuotedType]?.isAnimated)
             }
 
             let stickerBuffer

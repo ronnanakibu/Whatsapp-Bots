@@ -486,7 +486,8 @@ class MediaService {
             if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
 
             const id = crypto.randomBytes(4).toString('hex')
-            const inputPath = path.join(tmpDir, `${id}_in.mp4`)
+            const isWebp = bufferVideo.slice(8, 12).toString('ascii') === 'WEBP'
+            const inputPath = path.join(tmpDir, `${id}_in.${isWebp ? 'webp' : 'mp4'}`)
             const overlayPath = path.join(tmpDir, `${id}_overlay.png`)
             const outputPath = path.join(tmpDir, `${id}_out.webp`)
 
