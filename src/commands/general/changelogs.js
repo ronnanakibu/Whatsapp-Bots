@@ -14,7 +14,7 @@ export default {
 
         // Sesuaikan dengan username dan nama repo GitHub lu
         const owner = 'ronnanakibu';
-        const repo = 'botwa2.0';
+        const repo = 'Whatsapp-Bots';
 
         try {
             await reply('⏳ Mengambil data rilis terbaru dari GitHub...');
