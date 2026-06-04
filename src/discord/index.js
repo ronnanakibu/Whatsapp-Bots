@@ -23,7 +23,7 @@ export function startDiscordBot() {
         ]
     })
 
-    discordClient.on('ready', () => {
+    discordClient.on('clientReady', () => {
         logger.info(`[Discord] Bot online sebagai ${discordClient.user.tag}`)
     })
 
@@ -35,6 +35,39 @@ export function startDiscordBot() {
 
         const args = message.content.slice(prefix.length).trim().split(/ +/)
         const command = args.shift().toLowerCase()
+
+        if (command === 'join') {
+            const voiceChannel = message.member?.voice?.channel
+            if (!voiceChannel) return message.reply('Kamu harus masuk ke Voice Channel dulu biar bot tau mau nyusul ke mana!')
+
+            if (!currentConnection || currentConnection.joinConfig.channelId !== voiceChannel.id) {
+                currentConnection = joinVoiceChannel({
+                    channelId: voiceChannel.id,
+                    guildId: message.guild.id,
+                    adapterCreator: message.guild.voiceAdapterCreator,
+                })
+
+                audioPlayer = createAudioPlayer()
+                currentConnection.subscribe(audioPlayer)
+
+                audioPlayer.on(AudioPlayerStatus.Idle, () => {
+                    logger.debug('[Discord] AudioPlayer Idle.')
+                })
+
+                audioPlayer.on('error', error => {
+                    logger.error(`[Discord] AudioPlayer Error: ${error.message}`)
+                })
+
+                const radioPort = process.env.RADIO_PORT || 8080
+                const resource = createAudioResource(`http://127.0.0.1:${radioPort}/stream`)
+                audioPlayer.play(resource)
+                
+                message.reply('Sudah mendarat di Voice Channel & standby muter siaran radio WA! 📻')
+            } else {
+                message.reply('Bot udah ada di Voice Channel kamu kok.')
+            }
+            return
+        }
 
         if (command === 'play') {
             const query = args.join(' ')
