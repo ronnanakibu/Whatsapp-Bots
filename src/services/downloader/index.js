@@ -37,11 +37,6 @@ export async function download(url, options = {}) {
 
     let provider = PROVIDERS[platform] || downloadYtdlp
 
-    // Override: Jika HF API aktif, paksa SEMUA platform pakai HF (melalui ytdlp)
-    if (process.env.HF_API_URL && platform === 'youtube') {
-        provider = downloadYtdlp
-    }
-
     logger.info(`[Downloader] Platform: ${platform} | URL: ${url.slice(0, 60)}`)
 
     // Queue-based execution — mencegah overload
