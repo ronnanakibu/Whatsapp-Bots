@@ -51,11 +51,9 @@ export default {
             if (!articles || articles.length === 0 || isFallbackResult) {
                 await reply(`⚠️ Data spesifik tidak ditemukan di TurnBackHoax. Mengalihkan ke Gemini AI untuk menganalisa fakta dari internet... ⏳`)
 
-                const originalQuery = args.join(' ')
-                const prompt = `Sebagai asisten pemeriksa fakta, tolong verifikasi kebenaran informasi atau tautan berita berikut ini dengan mengambil dan menyimpulkan dari berbagai sumber terpercaya di internet:\n\n"${originalQuery}"\n\nBuatlah laporan ringkas dengan struktur:\n1. Status (Fakta / Hoax / Konteks Keliru)\n2. Kesimpulan Singkat\n3. Penjelasan Lengkap\n4. Referensi Web Terpercaya (wajib sertakan link jika ada).`
-
                 try {
-                    const aiResponse = await aiService.geminiChat(m.key.remoteJid, prompt)
+                    const originalQuery = args.join(' ')
+                    const aiResponse = await aiService.geminiFactCheck(originalQuery)
                     return reply(`🤖 *AI FACT-CHECK (Gemini)* 🤖\n\n${aiResponse.text}\n\n_Catatan: Hasil analisis ini dibuat oleh AI (Google Gemini), tetap verifikasi secara mandiri._`)
                 } catch (e) {
                     return reply(`🕵️‍♂️ Tidak ditemukan artikel hoax/fakta dengan kata kunci tersebut di database, dan sistem AI sedang sibuk.`)
