@@ -7,6 +7,7 @@ import { exec } from 'child_process'
 import util from 'util'
 import crypto from 'crypto'
 import { logger } from '../utils/logger.js'
+import { addExif } from './exif.js'
 
 const execPromise = util.promisify(exec)
 
@@ -355,12 +356,14 @@ class MediaService {
                 ${svgContent}
             </svg>`)
 
-            return await sharp({
+            const rawWebp = await sharp({
                 create: { width: 512, height: 512, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } }
             })
                 .composite([{ input: svg, top: 0, left: 0 }])
                 .webp({ quality: 95 })
                 .toBuffer()
+
+            return await addExif(rawWebp)
 
         } catch (e) {
             logger.error('❌ toQuoteSticker error:', e.message)
@@ -412,11 +415,13 @@ class MediaService {
                 ${svgContent}
             </svg>`)
 
-            return await sharp(bufferImage)
+            const rawWebp = await sharp(bufferImage)
                 .resize(512, 512, { fit: 'cover', position: 'center' })
                 .composite([{ input: svg, top: 0, left: 0 }])
                 .webp({ quality: 85 })
                 .toBuffer()
+
+            return await addExif(rawWebp)
 
         } catch (e) {
             logger.error('❌ toMemeSticker error:', e.message)
@@ -495,7 +500,7 @@ class MediaService {
                 await execPromise(`ffmpeg -i ${inputPath} -i ${overlayPath} -filter_complex "[0:v]scale=512:512:force_original_aspect_ratio=decrease,fps=15,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0.0[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 40 -loop 0 -preset default -an -vsync 0 -t 00:00:08 ${outputPath}`)
                 
                 const finalWebpBuffer = fs.readFileSync(outputPath)
-                return finalWebpBuffer
+                return await addExif(finalWebpBuffer)
             } catch (ffmpegErr) {
                 logger.error('❌ [FFmpeg] Animated Meme Sticker Error:', ffmpegErr)
                 throw new Error('Gagal merender video menjadi stiker animasi.')
