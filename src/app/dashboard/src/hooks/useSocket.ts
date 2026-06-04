@@ -21,8 +21,8 @@ export function useSocket() {
   } = useDashboardStore()
 
   useEffect(() => {
-    // Tentukan URL WebSocket berdasarkan origin window
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
+    // Hardcode the remote Socket.IO host address
+    const socketUrl = 'http://ap2.nzb.zelpstore.id:25637'
     
     console.log(`Connecting to WebSocket: ${socketUrl}`)
     const socket = io(socketUrl, {

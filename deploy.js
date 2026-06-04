@@ -177,6 +177,34 @@ async function main() {
             }
         }
 
+        // Auto build & include src/app/dashboard/out if BotOS dashboard source files changed
+        const hasBotOSDashboardChanges = filesToUpload.some(file => {
+            const normalized = file.replace(/\\/g, '/');
+            return normalized.startsWith('src/app/dashboard/') &&
+                !normalized.startsWith('src/app/dashboard/out/') &&
+                !normalized.startsWith('src/app/dashboard/node_modules/');
+        });
+
+        if (hasBotOSDashboardChanges) {
+            // Remove any existing src/app/dashboard/out/ files from filesToUpload since they will be rebuilt
+            filesToUpload = filesToUpload.filter(file => {
+                const normalized = file.replace(/\\/g, '/');
+                return !normalized.startsWith('src/app/dashboard/out/');
+            });
+
+            console.log('\n⚙️ [BotOS Dashboard] Perubahan source code BotOS dashboard terdeteksi.');
+            console.log('⚙️ [BotOS Dashboard] Membangun ulang Next.js BotOS dashboard secara otomatis (npm run build)...');
+            try {
+                execSync('npm run build', { cwd: 'src/app/dashboard', stdio: 'inherit' });
+                console.log('✅ [BotOS Dashboard] Build sukses! Memasukkan file "src/app/dashboard/out" ke queue upload...');
+                const outFiles = await getDashboardOutFiles('src/app/dashboard/out');
+                filesToUpload = [...filesToUpload, ...outFiles];
+            } catch (buildErr) {
+                console.error('❌ [BotOS Dashboard] Gagal melakukan build BotOS dashboard:', buildErr.message);
+                console.log('⚠️ [BotOS Dashboard] Melanjutkan sftp upload tanpa update BotOS dashboard.');
+            }
+        }
+
         // Deduplicate files to upload
         filesToUpload = Array.from(new Set(filesToUpload));
 

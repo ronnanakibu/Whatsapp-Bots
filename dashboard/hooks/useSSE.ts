@@ -5,14 +5,7 @@ import { useDashboardStore } from '@/lib/store'
 import type { Track, BotEvent, PipelineStage } from '@/types'
 
 const getSseUrl = () => {
-    if (process.env.NEXT_PUBLIC_SSE_URL) return process.env.NEXT_PUBLIC_SSE_URL
-    if (typeof window !== 'undefined') {
-        if (window.location.port === '3001') {
-            return `http://${window.location.hostname}:25637/events`
-        }
-        return '/events'
-    }
-    return 'http://localhost:8080/events'
+    return 'http://ap2.nzb.zelpstore.id:25637/events'
 }
 
 const SSE_URL = getSseUrl()

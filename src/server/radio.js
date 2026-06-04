@@ -500,7 +500,7 @@ export function startRadioServer() {
         }
 
         // Serve index.html for BotOS dashboard fallback routes
-        if (url.startsWith('/dashboard')) {
+        if (url.startsWith('/dashboard') && !url.includes('/_next/') && !path.extname(url)) {
             const indexPath = path.join(dashboardDir, 'index.html')
             if (fs.existsSync(indexPath)) {
                 return res.sendFile(indexPath)
@@ -508,7 +508,7 @@ export function startRadioServer() {
         }
 
         // Serve index.html for Radio dashboard fallback routes
-        if (url.startsWith('/radio')) {
+        if (url.startsWith('/radio') && !url.includes('/_next/') && !path.extname(url)) {
             const indexPath = path.join(radioDashboardDir, 'index.html')
             if (fs.existsSync(indexPath)) {
                 return res.sendFile(indexPath)

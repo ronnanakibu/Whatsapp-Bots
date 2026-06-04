@@ -3,15 +3,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 
 const getStreamUrl = () => {
-    if (process.env.NEXT_PUBLIC_STREAM_URL) return process.env.NEXT_PUBLIC_STREAM_URL
-    if (typeof window !== 'undefined') {
-        if (window.location.port === '3000' || window.location.port === '3001') {
-            const defaultBackendPort = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? '8080' : '25637'
-            return `http://${window.location.hostname}:${defaultBackendPort}/stream`
-        }
-        return '/stream'
-    }
-    return 'http://localhost:8080/stream'
+    return 'http://ap2.nzb.zelpstore.id:25637/stream'
 }
 
 const STREAM_URL = getStreamUrl()
