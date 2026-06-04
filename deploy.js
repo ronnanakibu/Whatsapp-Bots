@@ -181,11 +181,10 @@ async function main() {
         filesToUpload = Array.from(new Set(filesToUpload));
 
         if (filesToUpload.length === 0) {
-            console.log('👍 [SFTP] Tidak ada file baru/delta yang perlu diunggah. Proses selesai.');
-            return;
-        }
-
-        const sftp = new Client();
+            console.log('👍 [SFTP] Tidak ada file baru/delta yang perlu diunggah. Skip SFTP.');
+            // Jangan return di sini, biar bisa lanjut nge-restart Pterodactyl!
+        } else {
+            const sftp = new Client();
         try {
             console.log(`\n⏳ Menyambungkan ke PTERODACTYL SFTP (Mengirim ${filesToUpload.length} file)...`);
             await sftp.connect(config);
@@ -212,6 +211,7 @@ async function main() {
         } finally {
             await sftp.end();
         }
+        } // Penutup blok else (jika filesToUpload > 0)
     } else {
         console.log('⏩ [SFTP] Dilewati (Flag --sftp tidak dipanggil).');
     }
