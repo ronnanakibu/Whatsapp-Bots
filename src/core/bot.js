@@ -177,6 +177,21 @@ async function startBot() {
     sock.ev.on('messages.update', async (m) => {
         await handleRevokeMessage(sock, m)
     })
+
+    // ─────────────────────────────────────────────
+    // GRACEFUL SHUTDOWN
+    // ─────────────────────────────────────────────
+    
+    const shutdown = async (signal) => {
+        botLogger.warn('bot', `Received ${signal}. Gracefully shutting down...`)
+        try {
+            sock.end(undefined)
+        } catch (_) {}
+        process.exit(0)
+    }
+
+    process.on('SIGINT', () => shutdown('SIGINT'))
+    process.on('SIGTERM', () => shutdown('SIGTERM'))
 }
 
 startBot()
