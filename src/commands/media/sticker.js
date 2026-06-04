@@ -14,8 +14,8 @@ export default {
     async execute(ctx) {
         const { msg, messageContent, type, args, reply, replyMedia } = ctx
 
-        // Cek Apakah pesan berupa gambar langsung atau meng-quote gambar
-        let isImage = type === 'imageMessage'
+        // Cek Apakah pesan berupa gambar/video langsung atau meng-quote gambar/video
+        let isMedia = type === 'imageMessage' || type === 'videoMessage'
         const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
 
         let finalQuotedMsg = quotedMsg
@@ -27,16 +27,17 @@ export default {
             }
         }
 
-        let isQuotedImage = finalQuotedMsg && Object.keys(finalQuotedMsg)[0] === 'imageMessage'
+        const finalQuotedType = finalQuotedMsg ? Object.keys(finalQuotedMsg)[0] : null
+        let isQuotedMedia = finalQuotedType === 'imageMessage' || finalQuotedType === 'videoMessage'
 
-        if (!isImage && !isQuotedImage) {
-            return reply('⚠️ Mana stiker nya, cuy? 😭\n\nKirim gambar dengan caption atau balas gambar lama dengan perintah */s Teks Atas | Teks Bawah* !')
+        if (!isMedia && !isQuotedMedia) {
+            return reply('⚠️ Mana gambarnya, cuy? 😭\n\nKirim gambar/video dengan caption atau balas media lama dengan perintah *.s Teks Atas | Teks Bawah* !')
         }
 
         logger.info('⏳ Sedang di-masak Dik, stiker teks meme lu lagi diproses...')
 
         try {
-            const targetMessage = isImage ? msg : { message: quotedMsg, key: msg.key }
+            const targetMessage = isMedia ? msg : { message: quotedMsg, key: msg.key }
 
             // Unduh buffer biner media dari server WA
             const buffer = await downloadMediaMessage(
@@ -60,8 +61,22 @@ export default {
                 bottomText = parts[1] ? parts[1].trim() : ''
             }
 
-            // Oper pengolahan gambar ke Sharp Service
-            const stickerBuffer = await mediaService.toMemeSticker(buffer, topText, bottomText)
+            let isAnimated = false
+            if (isMedia) {
+                isAnimated = type === 'videoMessage' || msg.message?.videoMessage?.gifPlayback
+            } else if (quotedMsg) {
+                const qType = Object.keys(quotedMsg)[0]
+                isAnimated = qType === 'videoMessage' || quotedMsg.videoMessage?.gifPlayback
+            }
+
+            let stickerBuffer
+            if (isAnimated) {
+                logger.info('⏳ Processing ANIMATED sticker with FFmpeg...')
+                stickerBuffer = await mediaService.toAnimatedMemeSticker(buffer, topText, bottomText)
+            } else {
+                logger.info('⏳ Processing STATIC sticker with Sharp...')
+                stickerBuffer = await mediaService.toMemeSticker(buffer, topText, bottomText)
+            }
 
             // Muntahkan hasilnya dalam wujud stiker berkas WebP
             await replyMedia(stickerBuffer, 'sticker')
