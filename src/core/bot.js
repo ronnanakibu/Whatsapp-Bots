@@ -90,7 +90,7 @@ async function startBot() {
     const sock = makeWASocket({
         version,
         auth: state,
-        logger: pinoLogger,
+        logger: pinoLogger.child({ level: 'fatal' }), // Sembunyikan log internal Baileys yang nyepam
         printQRInTerminal: false, // kita handle manual
     })
 
