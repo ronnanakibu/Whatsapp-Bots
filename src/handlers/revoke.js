@@ -47,17 +47,18 @@ async function processRevokedKey(sock, key) {
         const isGroup = key.remoteJid.endsWith('@g.us')
         const sender = isGroup ? (originalMsg.key.participant || key.remoteJid) : key.remoteJid
         const pushName = originalMsg.pushName || sender.split('@')[0]
+        const isLid = sender.endsWith('@lid')
         
         botLogger.info('revoke', `Caught deleted message from ${sender}`)
 
-        let captionText = `🕵️‍♂️ *THE SNITCH* 🕵️‍♂️\n\nTerciduk kamu hapus pesan, @${sender.split('@')[0]}! 😏\n\n`
+        let captionText = `🕵️‍♂️ *THE SNITCH* 🕵️‍♂️\n\nTerciduk kamu hapus pesan, ${isLid ? `*${pushName}*` : `@${sender.split('@')[0]}`}! 😏\n\n`
         
         const ownerNumbers = (process.env.OWNER_NUMBER || '').split(',').map(n => n.trim())
         const devNumber = ownerNumbers[0]
         const devJid = devNumber + '@s.whatsapp.net'
         const allowedJids = ownerNumbers.map(n => n.includes('@') ? n : n + '@s.whatsapp.net')
         
-        const validMentions = sender.endsWith('@lid') ? undefined : [sender]
+        const validMentions = isLid ? undefined : [sender]
         
         // Handle text message
         if (originalMsg.message?.conversation || originalMsg.message?.extendedTextMessage) {
