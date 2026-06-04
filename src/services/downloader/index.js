@@ -36,8 +36,9 @@ export async function download(url, options = {}) {
     }
 
     let provider = PROVIDERS[platform] || downloadYtdlp
-    // Karena IG/TikTok memblokir cookies dari datacenter HF
-    if (process.env.HF_API_URL && platform === 'youtube') {
+
+    // Override: Jika HF API aktif, paksa SEMUA platform pakai HF (melalui ytdlp)
+    if (process.env.HF_API_URL) {
         provider = downloadYtdlp
     }
 
