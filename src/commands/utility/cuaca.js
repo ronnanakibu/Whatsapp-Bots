@@ -581,18 +581,327 @@ export async function getDetailedWeatherReportFallback(city) {
     return text.trim()
 }
 
+function getGoogleWeatherEmoji(type) {
+    if (!type) return '🌡️'
+    type = type.toUpperCase()
+    if (type.includes('THUNDERSTORM')) return '⛈️'
+    if (type.includes('RAIN') || type.includes('SHOWERS')) return '🌧️'
+    if (type.includes('SNOW') || type.includes('FLURRIES')) return '🌨️'
+    if (type.includes('DRIZZLE')) return '🌦️'
+    if (type.includes('CLOUDY') || type.includes('OVERCAST')) return '☁️'
+    if (type.includes('MOSTLY_SUNNY') || type.includes('PARTLY_CLOUDY')) return '⛅'
+    if (type.includes('CLEAR') || type.includes('SUNNY')) return '☀️'
+    if (type.includes('FOG') || type.includes('MIST') || type.includes('HAZE')) return '🌫️'
+    return '🌡️'
+}
+
+function translateGoogleWindDir(cardinal) {
+    if (!cardinal) return 'U'
+    cardinal = cardinal.toUpperCase()
+    const map = {
+        'NORTH': 'U',
+        'NORTH_EAST': 'TL',
+        'EAST': 'T',
+        'SOUTH_EAST': 'TG',
+        'SOUTH': 'S',
+        'SOUTH_WEST': 'BD',
+        'WEST': 'B',
+        'NORTH_WEST': 'BL',
+        'NORTHEAST': 'TL',
+        'SOUTHEAST': 'TG',
+        'SOUTHWEST': 'BD',
+        'NORTHWEST': 'BL',
+        'WEST_SOUTHWEST': 'BD',
+        'EAST_SOUTHEAST': 'TG',
+        'WEST_NORTHWEST': 'BL',
+        'EAST_NORTHEAST': 'TL',
+        'NORTH_NORTHEAST': 'TL',
+        'SOUTH_SOUTHWEST': 'BD',
+        'SOUTH_SOUTHEAST': 'TG',
+        'NORTH_NORTHWEST': 'BL'
+    }
+    return map[cardinal] ?? cardinal
+}
+
+function formatGoogleTime(isoStr, timeZone) {
+    if (!isoStr) return '-'
+    try {
+        const date = new Date(isoStr)
+        return date.toLocaleTimeString('id-ID', {
+            timeZone: timeZone || 'Asia/Jakarta',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        })
+    } catch {
+        const parts = isoStr.split('T')
+        if (parts.length < 2) return '-'
+        return parts[1].slice(0, 5)
+    }
+}
+
+async function geocodeCity(city) {
+    // Try Open-Meteo geocoding first
+    try {
+        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=id&format=json`)
+        if (geoRes.ok) {
+            const geoData = await geoRes.json()
+            const loc = geoData?.results?.[0]
+            if (loc) {
+                return {
+                    latitude: loc.latitude,
+                    longitude: loc.longitude,
+                    name: loc.name,
+                    country: loc.country,
+                    region: loc.admin1
+                }
+            }
+        }
+    } catch (e) {
+        logger.warn(`[Weather] Open-Meteo geocoding failed: ${e.message}`)
+    }
+
+    // Fallback to WeatherAPI.com search
+    const apiKey = process.env.WEATHER_API_KEY
+    if (apiKey) {
+        try {
+            const res = await fetch(`https://api.weatherapi.com/v1/search.json?key=${apiKey}&q=${encodeURIComponent(city)}`)
+            if (res.ok) {
+                const data = await res.json()
+                const loc = data?.[0]
+                if (loc) {
+                    return {
+                        latitude: loc.lat,
+                        longitude: loc.lon,
+                        name: loc.name,
+                        country: loc.country,
+                        region: loc.region
+                    }
+                }
+            }
+        } catch (e) {
+            logger.warn(`[Weather] WeatherAPI geocoding failed: ${e.message}`)
+        }
+    }
+
+    throw new Error(`Koordinat untuk kota/wilayah *${city}* tidak dapat dicari.`)
+}
+
+export async function getDetailedWeatherReportGoogle(city) {
+    const key = process.env.GOOGLE_WEATHER_KEY || 'AIzaSyC3qpjP1SU4vncYUULZZrLXhDr7i2AZ8NA'
+    
+    // Geocode to get coordinates
+    const coords = await geocodeCity(city)
+    const { latitude, longitude, name, country, region } = coords
+    const isMedan = name.toLowerCase() === 'medan' || city.toLowerCase() === 'medan'
+
+    const [resCurrent, resDays, resHours] = await Promise.all([
+        fetch(`https://weather.googleapis.com/v1/currentConditions:lookup?key=${key}&location.latitude=${latitude}&location.longitude=${longitude}&languageCode=id`),
+        fetch(`https://weather.googleapis.com/v1/forecast/days:lookup?key=${key}&location.latitude=${latitude}&location.longitude=${longitude}&languageCode=id`),
+        fetch(`https://weather.googleapis.com/v1/forecast/hours:lookup?key=${key}&location.latitude=${latitude}&location.longitude=${longitude}&languageCode=id`)
+    ])
+
+    if (!resCurrent.ok || !resDays.ok || !resHours.ok) {
+        throw new Error(`Google Weather API error status: ${resCurrent.status}/${resDays.status}/${resHours.status}`)
+    }
+
+    const [currentData, daysData, hoursData] = await Promise.all([
+        resCurrent.json(),
+        resDays.json(),
+        resHours.json()
+    ])
+
+    const tz = currentData.timeZone?.id || 'Asia/Jakarta'
+    const cond = currentData.weatherCondition
+    const emoji = getGoogleWeatherEmoji(cond?.type)
+    const desc = cond?.description?.text ?? 'Tidak diketahui'
+    const temp = currentData.temperature?.degrees ?? '-'
+    const feels = currentData.feelsLikeTemperature?.degrees ?? temp
+    const cloud = currentData.cloudCover ?? 0
+    const humidity = currentData.relativeHumidity ?? 0
+    const windSpeed = currentData.wind?.speed?.value ?? 0
+    const windDirStr = translateGoogleWindDir(currentData.wind?.direction?.cardinal)
+    const vis = currentData.visibility?.distance ?? 0
+    const press = currentData.airPressure?.meanSeaLevelMillibars ?? 1013
+    const uv = daysData.forecastDays?.[0]?.daytimeForecast?.uvIndex ?? currentData.uvIndex ?? 0
+
+    let uvDesc = 'Rendah'
+    let uvEmoji = '🟢'
+    if (uv <= 2) { uvDesc = 'Rendah'; uvEmoji = '🟢' }
+    else if (uv <= 5) { uvDesc = 'Sedang'; uvEmoji = '🟡' }
+    else if (uv <= 7) { uvDesc = 'Tinggi'; uvEmoji = '🟠' }
+    else if (uv <= 10) { uvDesc = 'Sangat Tinggi'; uvEmoji = '🔴' }
+    else { uvDesc = 'Ekstrem'; uvEmoji = '🟣' }
+
+    const fday0 = daysData.forecastDays?.[0]
+    const sunrise = fday0?.sunEvents?.sunriseTime ? formatGoogleTime(fday0.sunEvents.sunriseTime, tz) : '-'
+    const sunset = fday0?.sunEvents?.sunsetTime ? formatGoogleTime(fday0.sunEvents.sunsetTime, tz) : '-'
+
+    let text = ''
+    if (isMedan) {
+        text += `🌤️ *Laporan Cuaca Detail Kota ${name} & Sekitarnya*\n`
+        text += `${region ? region + ', ' : ''}${country}\n\n`
+        text += `🌡️ Suhu Pusat Kota: *${temp}°C* (terasa seperti ${feels}°C)\n`
+        text += `📋 Kondisi: ${emoji} ${desc}\n`
+        text += `☁️ Tutupan Awan: ${cloud}%\n`
+        text += `💧 Kelembaban: ${humidity}%\n`
+        text += `💨 Angin: ${windSpeed} km/h arah ${windDirStr}\n`
+        text += `👁️ Jarak Pandang: ${vis.toFixed(1)} km\n`
+        text += `🎈 Tekanan Udara: ${press.toFixed(0)} hPa\n`
+        text += `☀️ Indeks UV Maks: ${uv} (${uvDesc}) ${uvEmoji}\n`
+        text += `🌅 Sunrise: ${sunrise} | 🌇 Sunset: ${sunset}\n\n`
+
+        const hoursList = hoursData.forecastHours || []
+        const nextHours = []
+        for (let offset = 1; offset <= 4; offset++) {
+            const idx = offset * 2
+            if (idx < hoursList.length) {
+                const h = hoursList[idx]
+                const hourLocal = h.displayDateTime?.hours ?? new Date(h.interval.startTime).getHours()
+                const minuteLocal = h.displayDateTime?.minutes ?? 0
+                const timeFormatted = `${String(hourLocal).padStart(2, '0')}:${String(minuteLocal).padStart(2, '0')}`
+                
+                const tempVal = h.temperature.degrees
+                const codeVal = h.weatherCondition.type
+                const descVal = h.weatherCondition.description.text
+                const probVal = h.precipitation?.probability?.percent ?? 0
+                const uvHourVal = h.uvIndex ?? 0
+                
+                const emo = getGoogleWeatherEmoji(codeVal)
+                
+                let item = `• *${timeFormatted}:* ${tempVal}°C | ${emo} ${descVal}`
+                if (probVal > 0) {
+                    item += ` (🌧️ ${probVal}%)`
+                }
+                if (uvHourVal > 0) {
+                    item += ` (UV: ${uvHourVal})`
+                }
+                nextHours.push(item)
+            }
+        }
+        if (nextHours.length > 0) {
+            text += `⏰ *Prakiraan Waktu Terdekat (Pusat Kota):*\n` + nextHours.join('\n') + `\n\n`
+        }
+
+        const subDistricts = [
+            { name: 'Padang Bulan', latitude: 3.5518, longitude: 98.6473, icon: '🏢' },
+            { name: 'Medan Johor', latitude: 3.5323, longitude: 98.6749, icon: '🏡' },
+            { name: 'Medan Menteng', latitude: 3.5658, longitude: 98.7176, icon: '🏬' },
+            { name: 'Medan Baru', latitude: 3.5701, longitude: 98.6593, icon: '🎓' },
+            { name: 'Medan Petisah', latitude: 3.5932, longitude: 98.6653, icon: '🛍️' },
+            { name: 'Medan Belawan', latitude: 3.7845, longitude: 98.6795, icon: '🚢' },
+            { name: 'Medan Helvetia', latitude: 3.6062, longitude: 98.6417, icon: '🍃' }
+        ]
+
+        const subPromises = subDistricts.map(async dist => {
+            try {
+                const sres = await fetch(`https://weather.googleapis.com/v1/currentConditions:lookup?key=${key}&location.latitude=${dist.latitude}&location.longitude=${dist.longitude}&languageCode=id`)
+                if (!sres.ok) return null
+                return await sres.json()
+            } catch {
+                return null
+            }
+        })
+        const subResults = await Promise.all(subPromises)
+
+        text += `📍 *Kondisi Wilayah Medan:*\n`
+        for (let i = 0; i < subDistricts.length; i++) {
+            const dist = subDistricts[i]
+            const curData = subResults[i]
+            if (curData?.weatherCondition) {
+                const sTemp = curData.temperature?.degrees
+                const cond = curData.weatherCondition
+                const emo = getGoogleWeatherEmoji(cond.type)
+                const descVal = cond.description?.text
+                text += `• ${dist.icon} *${dist.name}:* ${sTemp}°C | ${emo} ${descVal}\n`
+            }
+        }
+
+        text += `\n📅 *Prakiraan 3 Hari (Medan):*\n`
+    } else {
+        text += `${emoji} *Laporan Cuaca Detail: ${name}, ${region ? region + ', ' : ''}${country}*\n\n`
+        text += `🌡️ Suhu: *${temp}°C* (terasa seperti ${feels}°C)\n`
+        text += `📋 Kondisi: ${desc}\n`
+        text += `☁️ Tutupan Awan: ${cloud}%\n`
+        text += `💧 Kelembaban: ${humidity}%\n`
+        text += `💨 Angin: ${windSpeed} km/h arah ${windDirStr}\n`
+        text += `👁️ Jarak Pandang: ${vis.toFixed(1)} km\n`
+        text += `🎈 Tekanan Udara: ${press.toFixed(0)} hPa\n`
+        text += `☀️ Indeks UV Maks: ${uv} (${uvDesc}) ${uvEmoji}\n`
+        text += `🌅 Sunrise: ${sunrise} | 🌇 Sunset: ${sunset}\n\n`
+
+        const hoursList = hoursData.forecastHours || []
+        const nextHours = []
+        for (let offset = 1; offset <= 4; offset++) {
+            const idx = offset * 2
+            if (idx < hoursList.length) {
+                const h = hoursList[idx]
+                const hourLocal = h.displayDateTime?.hours ?? new Date(h.interval.startTime).getHours()
+                const minuteLocal = h.displayDateTime?.minutes ?? 0
+                const timeFormatted = `${String(hourLocal).padStart(2, '0')}:${String(minuteLocal).padStart(2, '0')}`
+                
+                const tempVal = h.temperature.degrees
+                const codeVal = h.weatherCondition.type
+                const descVal = h.weatherCondition.description.text
+                const probVal = h.precipitation?.probability?.percent ?? 0
+                const uvHourVal = h.uvIndex ?? 0
+                
+                const emo = getGoogleWeatherEmoji(codeVal)
+                
+                let item = `• *${timeFormatted}:* ${tempVal}°C | ${emo} ${descVal}`
+                if (probVal > 0) {
+                    item += ` (🌧️ ${probVal}%)`
+                }
+                if (uvHourVal > 0) {
+                    item += ` (UV: ${uvHourVal})`
+                }
+                nextHours.push(item)
+            }
+        }
+        if (nextHours.length > 0) {
+            text += `⏰ *Prakiraan Waktu Terdekat:*\n` + nextHours.join('\n') + `\n\n`
+        }
+
+        text += `📅 *Prakiraan 3 Hari:*\n`
+    }
+
+    const days = ['Hari ini', 'Besok', 'Lusa']
+    const forecastDays = daysData.forecastDays || []
+    for (let i = 0; i < Math.min(3, forecastDays.length); i++) {
+        const fday = forecastDays[i]
+        const condition = fday.daytimeForecast?.weatherCondition || fday.nighttimeForecast?.weatherCondition
+        const emo = getGoogleWeatherEmoji(condition?.type)
+        const descVal = condition?.description?.text ?? 'Cerah'
+        const minTemp = fday.minTemperature?.degrees ?? 0
+        const maxTemp = fday.maxTemperature?.degrees ?? 0
+        const qpf = fday.daytimeForecast?.precipitation?.qpf?.quantity ?? 0
+        
+        text += `${emo} *${days[i]}:* ${minTemp}°–${maxTemp}°C, ${descVal}`
+        if (qpf > 0) text += `, hujan ${qpf.toFixed(1)}mm`
+        text += '\n'
+    }
+
+    return text.trim()
+}
+
 export async function getDetailedWeatherReport(city) {
     try {
         const report = await getDetailedWeatherReportOpenMeteo(city)
         return report + `\n\n⚡ *Sumber:* Open-Meteo API`
     } catch (err) {
-        logger.warn(`[Weather] Open-Meteo error: ${err.message}. Trying WeatherAPI fallback...`)
+        logger.warn(`[Weather] Open-Meteo failed: ${err.message}. Trying Google Weather fallback...`)
         try {
-            const report = await getDetailedWeatherReportFallback(city)
-            return report + `\n\n⚡ *Sumber:* WeatherAPI.com (Fallback)`
-        } catch (fallbackErr) {
-            logger.error(`[Weather] Both Open-Meteo and WeatherAPI failed.`)
-            throw new Error(`Semua server cuaca sedang bermasalah.\n- Open-Meteo: ${err.message}\n- WeatherAPI: ${fallbackErr.message}`)
+            const report = await getDetailedWeatherReportGoogle(city)
+            return report + `\n\n⚡ *Sumber:* Google Weather API (Fallback)`
+        } catch (googleErr) {
+            logger.warn(`[Weather] Google Weather failed: ${googleErr.message}. Trying WeatherAPI fallback...`)
+            try {
+                const report = await getDetailedWeatherReportFallback(city)
+                return report + `\n\n⚡ *Sumber:* WeatherAPI.com (Fallback)`
+            } catch (fallbackErr) {
+                logger.error(`[Weather] All weather engines failed.`)
+                throw new Error(`Semua server cuaca sedang bermasalah.\n- Open-Meteo: ${err.message}\n- Google Weather: ${googleErr.message}\n- WeatherAPI: ${fallbackErr.message}`)
+            }
         }
     }
 }
