@@ -498,6 +498,31 @@ export function startRadioServer() {
             }
         })
 
+        socket.on('group:broadcast', async ({ chatId, text }) => {
+            const sock = getSocket()
+            if (!sock) {
+                logger.error('[Dashboard/Broadcast] Failed: WhatsApp socket offline.')
+                return
+            }
+            logger.info(`[Dashboard/Broadcast] Sending message to ${chatId}: "${text}"`)
+            try {
+                let mentions = []
+                try {
+                    const groupMeta = await sock.groupMetadata(chatId)
+                    if (groupMeta && groupMeta.participants) {
+                        mentions = groupMeta.participants.map(p => p.id)
+                    }
+                } catch (_) {}
+
+                await sock.sendMessage(chatId, {
+                    text: `📢 *PENGUMUMAN DARI OWNER*\n\n${text}`,
+                    mentions
+                })
+            } catch (err) {
+                logger.error(`[Dashboard/Broadcast] Failed to send message to ${chatId}:`, err.message)
+            }
+        })
+
         socket.on('db:query', ({ sql }) => {
             if (!db) {
                 socket.emit('db:query_result', { success: false, error: 'Database connection offline.' })
