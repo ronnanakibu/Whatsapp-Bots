@@ -4,9 +4,9 @@ const nextConfig: NextConfig = {
   // Output export untuk di-serve static dari bot
   output: 'export',
 
-  // Base path kalau mau serve di subdirectory: /dashboard
+  // Base path kalau mau serve di subdirectory: /radio
   // Uncomment kalau pakai port yang sama dengan radio
-  // basePath: '/dashboard',
+  basePath: '/radio',
 
   // Image domains untuk album art / thumbnails
   images: {

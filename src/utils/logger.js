@@ -180,6 +180,44 @@ export async function flushLogsImmediately() {
 }
 
 // ─────────────────────────────────────────────
+// TELEMETRY LOG LISTENERS (SOCKET.IO INTEGRATION)
+// ─────────────────────────────────────────────
+
+const logListeners = []
+const messageListeners = []
+
+export function addLogListener(cb) {
+    if (typeof cb === 'function') logListeners.push(cb)
+}
+export function removeLogListener(cb) {
+    const idx = logListeners.indexOf(cb)
+    if (idx !== -1) logListeners.splice(idx, 1)
+}
+
+export function addMessageListener(cb) {
+    if (typeof cb === 'function') messageListeners.push(cb)
+}
+export function removeMessageListener(cb) {
+    const idx = messageListeners.indexOf(cb)
+    if (idx !== -1) messageListeners.splice(idx, 1)
+}
+
+const stripAnsi = (str) => str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
+
+// Hook process.stdout.write
+const originalWrite = process.stdout.write.bind(process.stdout)
+process.stdout.write = (chunk, encoding, callback) => {
+    const str = chunk ? chunk.toString() : ''
+    const plainText = stripAnsi(str).trim()
+    if (plainText) {
+        for (const listener of logListeners) {
+            try { listener(plainText) } catch (err) {}
+        }
+    }
+    return originalWrite(chunk, encoding, callback)
+}
+
+// ─────────────────────────────────────────────
 // CORE RAW LOGGER — langsung ke stdout, tanpa pino
 // Dipakai untuk log yang butuh format custom & warna
 // ─────────────────────────────────────────────
@@ -253,6 +291,13 @@ export const botLogger = {
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} 📩 ${C.bold}MSG${C.reset}   ${isGroup ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId}${C.reset}` : `${C.green}[DM]${C.reset}   ${C.dim}${sender}${C.reset}`} ${C.dim}type=${type}${C.reset} ${C.white}"${bodyPreview}"${C.reset}\n`
         )
+        
+        // Broadcast to listeners for Message Observatory
+        for (const listener of messageListeners) {
+            try {
+                listener({ sender, type, body: bodyPreview, isGroup, chatId })
+            } catch (err) {}
+        }
         // Jangan kirim log percakapan biasa ke WhatsApp channel log
         // sendWhatsAppLog(`📩 *[MSG]* ${from} | *type=*${type} | "${bodyPreview}"`)
     },

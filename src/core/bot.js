@@ -16,7 +16,7 @@ import { handleRevokeMessage } from '../handlers/revoke.js'
 import { logger, botLogger, setSocket } from '../utils/logger.js'
 import { initReminderScheduler } from '../commands/general/remindme.js'
 import { initWeatherScheduler } from '../commands/utility/cuaca.js'
-import { startRadioServer } from '../server/radio.js'
+import { startRadioServer, updateBotStatus } from '../server/radio.js'
 import { metricsService } from '../services/metrics.js'
 
 const pinoLogger = logger.child({ module: 'baileys' })
@@ -126,11 +126,13 @@ async function startBot() {
             qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
                 if (!err) process.stdout.write(url + '\n')
             })
+            updateBotStatus('qr', qr)
         }
 
         if (connection === 'connecting') {
             botLogger.connect('connecting')
             metricsService.setWhatsAppStatus('connecting')
+            updateBotStatus('connecting')
         }
 
         if (connection === 'open') {
@@ -138,6 +140,7 @@ async function startBot() {
             botLogger.connect('open', `Logged in as ${sock.user?.name ?? sock.user?.id}`)
             metricsService.setWhatsAppStatus('online')
             botLogger.section('BOT READY 🚀')
+            updateBotStatus('open')
 
             // Start reminder scheduler setelah connected
             initReminderScheduler(sock)
@@ -155,6 +158,7 @@ async function startBot() {
 
             botLogger.connect('close', `status=${statusCode} | ${error?.message ?? 'unknown'}`)
             metricsService.setWhatsAppStatus('offline')
+            updateBotStatus('close')
 
             if (shouldReconnect) {
                 if (reconnectCount < MAX_RECONNECT_ATTEMPTS) {

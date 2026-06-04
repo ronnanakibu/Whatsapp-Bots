@@ -314,7 +314,7 @@ function printSummary() {
     console.log(`  Prefix        : ${process.env.BOT_PREFIX ?? '!'}`)
     console.log(`  Session path  : ${process.env.SESSION_PATH ?? './storage/sessions'}`)
     console.log(`  Node version  : ${process.version}`)
-    console.log(`  Dashboard     : ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '8080'}/`)
+    console.log(`  Dashboard     : ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard`)
     console.log('─'.repeat(50) + '\n')
 }
 
