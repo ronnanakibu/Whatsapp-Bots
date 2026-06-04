@@ -496,8 +496,8 @@ class MediaService {
             try {
                 // Resize video to 512x512 with padding, overlay the text, and output animated webp
                 // We use -loop 0 to loop infinitely, and -t 00:00:08 to cap at 8s max to avoid abuse
-                // Added fps=15 and compression_level 6 to heavily compress the 17MB output into < 1MB
-                await execPromise(`ffmpeg -i ${inputPath} -i ${overlayPath} -filter_complex "[0:v]scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=15,format=rgba[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 40 -loop 0 -preset default -an -vsync 0 -t 00:00:08 ${outputPath}`)
+                // Added fps=10, compression_level 6, and q:v 15 to aggressively compress the output into < 1MB
+                await execPromise(`ffmpeg -i ${inputPath} -i ${overlayPath} -filter_complex "[0:v]scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=10,format=rgba[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 15 -loop 0 -preset default -an -vsync 0 -t 00:00:06 ${outputPath}`)
                 
                 const finalWebpBuffer = fs.readFileSync(outputPath)
                 return await addExif(finalWebpBuffer)
