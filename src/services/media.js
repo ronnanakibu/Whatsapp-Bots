@@ -541,7 +541,8 @@ class MediaService {
 
             const vcodec = ext === 'mp4' ? '-vcodec copy' : ''
             
-            await execPromise(`ffmpeg -y -i ${inputPath} ${vcodec} -af "volume=${volumeMultiplier}" ${outputPath}`)
+            // Menggunakan volume=5.0 biar perbedaannya benar-benar terasa kencang
+            await execPromise(`ffmpeg -y -i "${inputPath}" ${vcodec} -af "volume=${volumeMultiplier}" "${outputPath}"`)
             
             return fs.readFileSync(outputPath)
         } catch (err) {

@@ -135,9 +135,9 @@ async function processDownload(ctx, url, platform, format, isBoost = false) {
 
         if (isBoost) {
             const ext = result.ext || (format === 'audio' ? 'mp3' : 'mp4')
-            result.buffer = await mediaService.boostMediaVolume(result.buffer, ext, 2.0)
+            result.buffer = await mediaService.boostMediaVolume(result.buffer, ext, 5.0)
             if (result.caption) {
-                result.caption += `\n🔊 _(Audio Boosted 200%)_`
+                result.caption += `\n🔊 _(Audio Boosted 500%)_`
             }
         }
 
