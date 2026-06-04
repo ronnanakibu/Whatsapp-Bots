@@ -40,11 +40,30 @@ export const windDir = (deg) => {
     return dirs[Math.round(deg / 45) % 8]
 }
 
+function findClosestHourlyIndex(hourlyTimes, currentTimeStr) {
+    if (!hourlyTimes || !currentTimeStr) return -1
+    const currentEpoch = new Date(currentTimeStr).getTime()
+    let closestIndex = -1
+    let minDiff = Infinity
+    for (let i = 0; i < hourlyTimes.length; i++) {
+        const t = new Date(hourlyTimes[i]).getTime()
+        const diff = Math.abs(t - currentEpoch)
+        if (diff < minDiff) {
+            minDiff = diff
+            closestIndex = i
+        }
+    }
+    return closestIndex
+}
+
 export async function getDetailedWeatherReport(city) {
     // Step 1: Geocoding — nama kota → koordinat (Open-Meteo Geocoding API, free)
     const geoRes = await fetch(
         `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=id&format=json`
     )
+    if (!geoRes.ok) {
+        throw new Error(`Server Geocoding (Open-Meteo) sedang bermasalah (Status ${geoRes.status}). Silakan coba beberapa saat lagi.`)
+    }
     const geoData = await geoRes.json()
     const location = geoData?.results?.[0]
     if (!location) throw new Error(`Kota/Wilayah *${city}* tidak ditemukan. Coba nama yang lebih spesifik.`)
@@ -74,33 +93,88 @@ export async function getDetailedWeatherReport(city) {
     const weatherRes = await fetch(
         `https://api.open-meteo.com/v1/forecast?` +
         `latitude=${lats.join(',')}&longitude=${lons.join(',')}` +
-        `&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m` +
-        `&hourly=temperature_2m,weather_code,precipitation_probability` +
-        `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code` +
+        `&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,visibility,pressure_msl,cloud_cover` +
+        `&hourly=temperature_2m,weather_code,precipitation_probability,uv_index` +
+        `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,sunrise,sunset,uv_index_max` +
         `&timezone=auto&forecast_days=3`
     )
+    if (!weatherRes.ok) {
+        throw new Error(`Server Prakiraan Cuaca (Open-Meteo) sedang bermasalah (Status ${weatherRes.status}). Silakan coba beberapa saat lagi.`)
+    }
     const wData = await weatherRes.json()
     const forecasts = Array.isArray(wData) ? wData : [wData]
     const mainForecast = forecasts[0]
     const c = mainForecast.current
 
+    // Fetch Air Quality for the main location
+    let aqiText = ''
+    try {
+        const aqRes = await fetch(
+            `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&current=us_aqi,pm2_5,pm10&timezone=auto`
+        )
+        const aqData = await aqRes.json()
+        const aq = aqData?.current
+        if (aq) {
+            const aqi = aq.us_aqi
+            let aqiDesc = 'Tidak diketahui'
+            let aqiEmoji = '⚪'
+            if (aqi <= 50) { aqiDesc = 'Baik'; aqiEmoji = '🟢' }
+            else if (aqi <= 100) { aqiDesc = 'Sedang'; aqiEmoji = '🟡' }
+            else if (aqi <= 150) { aqiDesc = 'Tidak Sehat (Sensitif)'; aqiEmoji = '🟠' }
+            else if (aqi <= 200) { aqiDesc = 'Tidak Sehat'; aqiEmoji = '🔴' }
+            else if (aqi <= 300) { aqiDesc = 'Sangat Tidak Sehat'; aqiEmoji = '🟣' }
+            else if (aqi > 300) { aqiDesc = 'Berbahaya'; aqiEmoji = '🟤' }
+
+            aqiText = `\n🍃 *Kualitas Udara (AQI):* ${aqi} (${aqiDesc}) ${aqiEmoji}\n` +
+                      `   - PM2.5: ${aq.pm2_5} µg/m³\n` +
+                      `   - PM10: ${aq.pm10} µg/m³`
+        }
+    } catch (err) {
+        logger.error('❌ [Weather] AQI Error:', err.message)
+    }
+
     const [emoji, desc] = weatherDesc(c.weather_code)
     const locationStr = [name, admin1, country].filter(Boolean).join(', ')
 
+    // Format sunrise & sunset
+    const formatTimeStr = (isoStr) => {
+        if (!isoStr) return '-'
+        const parts = isoStr.split('T')
+        if (parts.length < 2) return '-'
+        return parts[1]
+    }
+    const sunrise = formatTimeStr(mainForecast.daily.sunrise?.[0])
+    const sunset = formatTimeStr(mainForecast.daily.sunset?.[0])
+
+    // Format UV Index
+    const uv = mainForecast.daily.uv_index_max?.[0] ?? 0
+    let uvDesc = 'Rendah'
+    let uvEmoji = '🟢'
+    if (uv <= 2) { uvDesc = 'Rendah'; uvEmoji = '🟢' }
+    else if (uv <= 5) { uvDesc = 'Sedang'; uvEmoji = '🟡' }
+    else if (uv <= 7) { uvDesc = 'Tinggi'; uvEmoji = '🟠' }
+    else if (uv <= 10) { uvDesc = 'Sangat Tinggi'; uvEmoji = '🔴' }
+    else { uvDesc = 'Ekstrem'; uvEmoji = '🟣' }
+
     let text = ''
     if (isMedan) {
-        text += `🌤️ *Laporan Cuaca Kota ${name} & Sekitarnya*\n`
+        text += `🌤️ *Laporan Cuaca Detail Kota ${name} & Sekitarnya*\n`
         text += `${admin1 ? admin1 + ', ' : ''}${country}\n\n`
-        text += `🌡️ Suhu Pusat Kota: *${c.temperature_2m}°C* (terasa ${c.apparent_temperature}°C)\n`
+        text += `🌡️ Suhu Pusat Kota: *${c.temperature_2m}°C* (terasa seperti ${c.apparent_temperature}°C)\n`
+        text += `📋 Kondisi: ${emoji} ${desc}\n`
+        text += `☁️ Tutupan Awan: ${c.cloud_cover}%\n`
         text += `💧 Kelembaban: ${c.relative_humidity_2m}%\n`
-        text += `🌬️ Angin: ${c.wind_speed_10m} km/h arah ${windDir(c.wind_direction_10m)}\n`
-        text += `🌧️ Hujan: ${c.precipitation} mm\n`
-        text += `📋 Kondisi: ${desc}\n\n`
+        text += `💨 Angin: ${c.wind_speed_10m} km/h arah ${windDir(c.wind_direction_10m)}\n`
+        text += `👁️ Jarak Pandang: ${(c.visibility / 1000).toFixed(1)} km\n`
+        text += `🎈 Tekanan Udara: ${c.pressure_msl} hPa\n`
+        text += `☀️ Indeks UV Maks: ${uv} (${uvDesc}) ${uvEmoji}\n`
+        text += `🌅 Sunrise: ${sunrise} | 🌇 Sunset: ${sunset}\n`
+        text += `${aqiText}\n\n`
 
         // hourly forecast for next few hours
         const currentHourStr = c.time
         if (mainForecast.hourly) {
-            const currentIndex = mainForecast.hourly.time.indexOf(currentHourStr)
+            const currentIndex = findClosestHourlyIndex(mainForecast.hourly.time, currentHourStr)
             if (currentIndex !== -1) {
                 const nextHours = []
                 for (let offset = 1; offset <= 4; offset++) {
@@ -110,6 +184,7 @@ export async function getDetailedWeatherReport(city) {
                         const tempVal = mainForecast.hourly.temperature_2m[idx]
                         const codeVal = mainForecast.hourly.weather_code[idx]
                         const probVal = mainForecast.hourly.precipitation_probability ? mainForecast.hourly.precipitation_probability[idx] : null
+                        const uvHourVal = mainForecast.hourly.uv_index ? mainForecast.hourly.uv_index[idx] : null
                         
                         const timeFormatted = timeVal.split('T')[1]
                         const [emo, dsc] = weatherDesc(codeVal)
@@ -117,6 +192,9 @@ export async function getDetailedWeatherReport(city) {
                         let item = `• *${timeFormatted}:* ${tempVal}°C | ${emo} ${dsc}`
                         if (probVal !== null && probVal > 0) {
                             item += ` (🌧️ ${probVal}%)`
+                        }
+                        if (uvHourVal !== null && uvHourVal > 0) {
+                            item += ` (UV: ${uvHourVal})`
                         }
                         nextHours.push(item)
                     }
@@ -140,17 +218,22 @@ export async function getDetailedWeatherReport(city) {
         
         text += `\n📅 *Prakiraan 3 Hari (Medan):*\n`
     } else {
-        text += `${emoji} *Cuaca ${locationStr}*\n\n`
-        text += `🌡️ Suhu: *${c.temperature_2m}°C* (terasa ${c.apparent_temperature}°C)\n`
+        text += `${emoji} *Laporan Cuaca Detail: ${locationStr}*\n\n`
+        text += `🌡️ Suhu: *${c.temperature_2m}°C* (terasa seperti ${c.apparent_temperature}°C)\n`
+        text += `📋 Kondisi: ${desc}\n`
+        text += `☁️ Tutupan Awan: ${c.cloud_cover}%\n`
         text += `💧 Kelembaban: ${c.relative_humidity_2m}%\n`
-        text += `🌬️ Angin: ${c.wind_speed_10m} km/h arah ${windDir(c.wind_direction_10m)}\n`
-        text += `🌧️ Hujan: ${c.precipitation} mm\n`
-        text += `📋 Kondisi: ${desc}\n\n`
+        text += `💨 Angin: ${c.wind_speed_10m} km/h arah ${windDir(c.wind_direction_10m)}\n`
+        text += `👁️ Jarak Pandang: ${(c.visibility / 1000).toFixed(1)} km\n`
+        text += `🎈 Tekanan Udara: ${c.pressure_msl} hPa\n`
+        text += `☀️ Indeks UV Maks: ${uv} (${uvDesc}) ${uvEmoji}\n`
+        text += `🌅 Sunrise: ${sunrise} | 🌇 Sunset: ${sunset}\n`
+        text += `${aqiText}\n\n`
 
         // hourly forecast for next few hours
         const currentHourStr = c.time
         if (mainForecast.hourly) {
-            const currentIndex = mainForecast.hourly.time.indexOf(currentHourStr)
+            const currentIndex = findClosestHourlyIndex(mainForecast.hourly.time, currentHourStr)
             if (currentIndex !== -1) {
                 const nextHours = []
                 for (let offset = 1; offset <= 4; offset++) {
@@ -160,6 +243,7 @@ export async function getDetailedWeatherReport(city) {
                         const tempVal = mainForecast.hourly.temperature_2m[idx]
                         const codeVal = mainForecast.hourly.weather_code[idx]
                         const probVal = mainForecast.hourly.precipitation_probability ? mainForecast.hourly.precipitation_probability[idx] : null
+                        const uvHourVal = mainForecast.hourly.uv_index ? mainForecast.hourly.uv_index[idx] : null
                         
                         const timeFormatted = timeVal.split('T')[1]
                         const [emo, dsc] = weatherDesc(codeVal)
@@ -167,6 +251,9 @@ export async function getDetailedWeatherReport(city) {
                         let item = `• *${timeFormatted}:* ${tempVal}°C | ${emo} ${dsc}`
                         if (probVal !== null && probVal > 0) {
                             item += ` (🌧️ ${probVal}%)`
+                        }
+                        if (uvHourVal !== null && uvHourVal > 0) {
+                            item += ` (UV: ${uvHourVal})`
                         }
                         nextHours.push(item)
                     }
