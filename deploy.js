@@ -3,6 +3,9 @@ import Client from 'ssh2-sftp-client';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { config as dotenvConfig } from 'dotenv';
+
+dotenvConfig();
 
 const config = {
     host: 'ap2.nzb.zelpstore.id',
@@ -211,6 +214,40 @@ async function main() {
         }
     } else {
         console.log('⏩ [SFTP] Dilewati (Flag --sftp tidak dipanggil).');
+    }
+
+    // ─────────────────────────────────────────────
+    // 🔄 RESTART PTERODACTYL SERVER
+    // ─────────────────────────────────────────────
+    const pteroKey = process.env.PTERO_API_KEY;
+    const pteroUrl = process.env.PTERO_URL || 'https://panel.zelpstore.id'; // Ganti dengan URL asli panel
+    const pteroId = process.env.PTERO_SERVER_ID || 'dfbf800f';
+
+    if (pteroKey && pteroUrl && pteroId) {
+        console.log('\n🔄 [Pterodactyl] Mencoba me-restart server secara otomatis...');
+        try {
+            const url = `${pteroUrl.replace(/\/$/, '')}/api/client/servers/${pteroId}/power`;
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${pteroKey}`
+                },
+                body: JSON.stringify({ signal: 'restart' })
+            });
+
+            if (res.ok) {
+                console.log('✅ [Pterodactyl] Server bot berhasil di-restart!');
+            } else {
+                const text = await res.text();
+                console.error(`❌ [Pterodactyl] Gagal me-restart server: HTTP ${res.status} - ${text}`);
+            }
+        } catch (err) {
+            console.error('❌ [Pterodactyl] Error saat memanggil API Pterodactyl:', err.message);
+        }
+    } else {
+        console.log('\n⏩ [Pterodactyl] Auto-restart dilewati (Set PTERO_API_KEY di .env lokal untuk mengaktifkannya).');
     }
 
     console.log('\n🎉 [DONE] Tugas pipeline selesai dieksekusi, cuy!');
