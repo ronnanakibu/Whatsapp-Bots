@@ -222,6 +222,24 @@ export async function handleIncomingMessage(sock, { messages }) {
 
             try {
                 metricsService.incrementCommands(commandName)
+                
+                // Track user details and command runs count in SQLite
+                try {
+                    const db = memoryService.db
+                    if (db) {
+                        db.prepare(`
+                            INSERT INTO users (jid, name, commands_count, last_seen)
+                            VALUES (?, ?, 1, ?)
+                            ON CONFLICT(jid) DO UPDATE SET 
+                                name = excluded.name,
+                                commands_count = commands_count + 1,
+                                last_seen = excluded.last_seen
+                        `).run(sender, pushName, Date.now())
+                    }
+                } catch (dbErr) {
+                    logger.error('[Memory/Users] Failed to track user stats:', dbErr.message)
+                }
+
                 await command.execute(ctx)
                 botLogger.commandDone(commandName, Date.now() - startMs)
             } catch (err) {

@@ -12,6 +12,8 @@ import { radioService } from '../services/radio.js'
 import { logger, addLogListener, removeLogListener, addMessageListener, removeMessageListener, getSocket, getLogHistory } from '../utils/logger.js'
 import { metricsService } from '../services/metrics.js'
 import { commands } from '../core/loader.js'
+import { memoryService } from '../services/memory.js'
+import { moderatorService } from '../services/moderator.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -46,12 +48,17 @@ try {
         CREATE TABLE IF NOT EXISTS users (
             jid TEXT PRIMARY KEY,
             name TEXT,
-            xp INTEGER NOT NULL DEFAULT 0,
+            commands_count INTEGER NOT NULL DEFAULT 0,
             warnings INTEGER NOT NULL DEFAULT 0,
             role TEXT DEFAULT 'user',
             last_seen INTEGER
         );
     `)
+
+    // Safe migration to append commands_count to existing database tables
+    try {
+        db.exec(`ALTER TABLE users ADD COLUMN commands_count INTEGER NOT NULL DEFAULT 0`)
+    } catch (_) {}
 } catch (e) {
     logger.error('[Radio/DB] Failed to initialize SQLite connection:', e.message)
 }
@@ -160,28 +167,18 @@ async function getGroupsList() {
 function getUsersList() {
     if (!db) return []
     try {
-        const rows = db.prepare(`SELECT * FROM users ORDER BY xp DESC`).all()
+        const rows = db.prepare(`SELECT * FROM users ORDER BY commands_count DESC`).all()
         if (rows.length === 0) {
-            // Fallback to chat history unique users
-            const histRows = db.prepare(`
-                SELECT DISTINCT chat_id as jid 
-                FROM chat_history 
-                WHERE role = 'user' 
-                LIMIT 50
-            `).all()
-            return histRows.map((r, idx) => ({
-                jid: r.jid,
-                name: r.jid.split('@')[0],
-                xp: (50 - idx) * 120,
-                warnings: 0,
-                role: 'user',
-                lastSeen: Date.now() - idx * 3600000
-            }))
+            // Fallback mock users using command usage
+            return [
+                { jid: '6285172013920@s.whatsapp.net', name: 'Ronn Anakibu', commandsCount: 154, warnings: 0, role: 'owner', lastSeen: Date.now() },
+                { jid: '628222222222@s.whatsapp.net', name: 'Testing Account', commandsCount: 42, warnings: 2, lastSeen: Date.now() - 3600000 }
+            ]
         }
         return rows.map(r => ({
             jid: r.jid,
             name: r.name || r.jid.split('@')[0],
-            xp: r.xp,
+            commandsCount: r.commands_count || r.xp || 0,
             warnings: r.warnings,
             role: r.role || 'user',
             lastSeen: r.last_seen || Date.now()
@@ -449,9 +446,9 @@ export function startRadioServer() {
                 dbTables: getTableNames(),
                 ai: {
                     providers: [
-                        { name: 'nvidia', active: true, ping: 42 },
-                        { name: 'groq', active: true, ping: 25 },
-                        { name: 'gemini', active: true, ping: 75 }
+                        { name: 'nvidia', active: true, ping: 42, model: 'meta/llama-3.1-70b-instruct', status: 'healthy' },
+                        { name: 'groq', active: true, ping: 25, model: 'llama-3.3-70b-versatile', status: 'healthy' },
+                        { name: 'gemini', active: true, ping: 75, model: 'gemini-2.0-flash', status: 'healthy' }
                     ],
                     fallbackChain: ['nvidia', 'groq', 'gemini']
                 }
@@ -472,6 +469,32 @@ export function startRadioServer() {
                 cmd.enabled = enabled
                 logger.info(`[Dashboard] Toggled command "${name}" -> ${enabled}`)
                 io?.emit('commands:update', getCommandsList())
+            }
+        })
+
+        socket.on('group:toggle_ai', async ({ chatId, enabled }) => {
+            try {
+                memoryService.setAiEnabled(chatId, enabled)
+                logger.info(`[Dashboard] Toggled AI Chat for group "${chatId}" -> ${enabled}`)
+                
+                // Broadcast updated groups list to all connected clients
+                const groups = await getGroupsList()
+                io?.emit('groups:update', groups)
+            } catch (err) {
+                logger.error('[Dashboard/ToggleAI] Failed to toggle group AI:', err.message)
+            }
+        })
+
+        socket.on('group:toggle_moderation', async ({ chatId, enabled }) => {
+            try {
+                await moderatorService.setModerationEnabled(chatId, enabled)
+                logger.info(`[Dashboard] Toggled AI Moderation for group "${chatId}" -> ${enabled}`)
+                
+                // Broadcast updated groups list to all connected clients
+                const groups = await getGroupsList()
+                io?.emit('groups:update', groups)
+            } catch (err) {
+                logger.error('[Dashboard/ToggleMod] Failed to toggle group moderation:', err.message)
             }
         })
 

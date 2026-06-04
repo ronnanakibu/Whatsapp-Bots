@@ -15,15 +15,22 @@ export default function Users({ emit }: UsersProps) {
 
   // Mock list if empty
   const users = usersList.length > 0 ? usersList : [
-    { jid: '628111111111@s.whatsapp.net', name: 'Ronn Anakibu', xp: 4200, warnings: 0, lastSeen: 'Just now' },
-    { jid: '628222222222@s.whatsapp.net', name: 'Testing Account', xp: 200, warnings: 2, lastSeen: '30 mins ago' },
-    { jid: '628333333333@s.whatsapp.net', name: 'Spammy User', xp: 120, warnings: 1, lastSeen: '2 hours ago' }
+    { jid: '6285172013920@s.whatsapp.net', name: 'Ronn Anakibu', commandsCount: 154, warnings: 0, lastSeen: 'Just now' },
+    { jid: '628222222222@s.whatsapp.net', name: 'Testing Account', commandsCount: 42, warnings: 2, lastSeen: '30 mins ago' },
+    { jid: '628333333333@s.whatsapp.net', name: 'Spammy User', commandsCount: 12, warnings: 1, lastSeen: '2 hours ago' }
   ]
 
   const filteredUsers = users.filter(u =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
     u.jid.toLowerCase().includes(search.toLowerCase())
   )
+
+  // Sort by commandsCount from highest to lowest
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    const aCount = a.commandsCount ?? a.xp ?? 0
+    const bCount = b.commandsCount ?? b.xp ?? 0
+    return bCount - aCount
+  })
 
   const handleResetWarnings = (jid: string) => {
     emit('user:reset_warnings', { jid })
@@ -35,7 +42,7 @@ export default function Users({ emit }: UsersProps) {
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
         <div>
           <h3 className="text-sm font-semibold text-white font-mono">User Directory</h3>
-          <p className="text-[10px] text-muted-foreground mt-0.5 font-sans">View active users, XP progress, and warning limits</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5 font-sans">View active users, command execution counts, and warning limits</p>
         </div>
 
         {/* Search Input bar */}
@@ -56,19 +63,19 @@ export default function Users({ emit }: UsersProps) {
         <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-border/60 text-[9px] uppercase font-bold tracking-wider text-muted-foreground/80 font-mono">
           <div className="col-span-3">User Profile</div>
           <div className="col-span-4">JID Identifier</div>
-          <div className="col-span-2">XP Level</div>
+          <div className="col-span-2">Used Commands</div>
           <div className="col-span-2">Warnings</div>
           <div className="col-span-1 text-right">Action</div>
         </div>
 
         {/* List Content */}
         <div className="divide-y divide-border/30 font-mono text-xs">
-          {filteredUsers.length === 0 ? (
+          {sortedUsers.length === 0 ? (
             <div className="p-8 text-center text-xs text-muted-foreground/80 font-sans">
               No users matching search.
             </div>
           ) : (
-            filteredUsers.map((user) => (
+            sortedUsers.map((user) => (
               <div 
                 key={user.jid}
                 className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-muted/10 transition-colors"
@@ -83,10 +90,10 @@ export default function Users({ emit }: UsersProps) {
                   {user.jid}
                 </div>
 
-                {/* XP Level */}
+                {/* Used Commands */}
                 <div className="col-span-2 flex items-center gap-1.5 font-sans">
                   <Award size={13} className="text-amber-500" />
-                  <span className="text-white font-bold">{user.xp} XP</span>
+                  <span className="text-white font-bold">{user.commandsCount ?? user.xp ?? 0} runs</span>
                 </div>
 
                 {/* Warnings count badge */}
