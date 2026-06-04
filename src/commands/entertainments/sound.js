@@ -14,7 +14,8 @@ const MEME_SOUNDS = {
     'bonk': 'https://www.myinstants.com/media/sounds/bonk_XjB1kwG.mp3',
     'emotional': 'https://www.myinstants.com/media/sounds/emotional-damage-meme.mp3',
     'illuminati': 'https://www.myinstants.com/media/sounds/illuminati-confirmed.mp3',
-    'windows': 'https://www.myinstants.com/media/sounds/windows-xp-startup.mp3'
+    'windows': 'https://www.myinstants.com/media/sounds/windows-xp-startup.mp3',
+    'boom': 'https://www.myinstants.com/media/sounds/yamede-kudasai.mp3'
 }
 
 export default {
