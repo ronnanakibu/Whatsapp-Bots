@@ -1,14 +1,101 @@
 // src/services/downloader/providers/instagram.js
 // Instagram Downloader — Reels, Posts, Stories, IGTV
-// Strategy: cobbler API publik (no auth) → fallback ke scraper
-// Priority: cobbler API1 → API2 → API3 (multi fallback untuk reliability)
+// Strategy: Embed scrape (fastest, no auth) → fallback API publik
+// Priority: Embed → SaveIG → SnapSave → InstaFinsta
 
-import { fetchBuffer, fetchJson, sanitizeFilename } from '../utils.js'
+import { fetchBuffer, sanitizeFilename } from '../utils.js'
 import { logger } from '../../../utils/logger.js'
+import https from 'https'
+import http from 'http'
 
 // ─────────────────────────────────────────────
-// API ENDPOINTS (publik, no key required)
-// Ordered by reliability
+// EMBED SCRAPER — Metode tercepat, langsung dari IG
+// Mengekstrak video_url dari halaman /embed/
+// ─────────────────────────────────────────────
+
+/**
+ * Ekstrak shortcode dari URL Instagram
+ */
+function extractShortcode(url) {
+    const match = url.match(/(?:reel|p|tv)\/([A-Za-z0-9_-]+)/)
+    return match ? match[1] : null
+}
+
+/**
+ * Fetch HTML mentah pakai http/https native (lebih reliable dari fetch)
+ */
+function fetchHtml(url, timeout = 15000) {
+    return new Promise((resolve, reject) => {
+        const parsed = new URL(url)
+        const mod = parsed.protocol === 'https:' ? https : http
+        const req = mod.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+            family: 4,
+            timeout,
+        }, (res) => {
+            // Follow redirects
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                return fetchHtml(res.headers.location, timeout).then(resolve).catch(reject)
+            }
+            let data = ''
+            res.on('data', chunk => data += chunk)
+            res.on('end', () => resolve(data))
+            res.on('error', reject)
+        })
+        req.on('error', reject)
+        req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout ${timeout}ms`)) })
+    })
+}
+
+/**
+ * Download video dari Instagram melalui halaman embed (METODE UTAMA)
+ * Cara kerja: IG /embed/ page mengekspose video_url langsung di HTML
+ * Keunggulan: Tidak perlu API pihak ke-3, tidak perlu cookies, langsung dari CDN IG
+ */
+async function downloadViaEmbed(url) {
+    const shortcode = extractShortcode(url)
+    if (!shortcode) throw new Error('Shortcode tidak ditemukan di URL')
+
+    const embedUrl = `https://www.instagram.com/reel/${shortcode}/embed/`
+    logger.info(`[Instagram] Embed: fetching ${embedUrl}`)
+    
+    const html = await fetchHtml(embedUrl)
+    
+    let videoUrl = null
+
+    // Method 1: Escaped format (paling umum di embed page)
+    // Format: \"video_url\":\"https:\\/\\/...\"
+    const escapedMatch = html.match(/\\"video_url\\":\\"(https?:[^"]*?)\\"/)
+    if (escapedMatch) {
+        // Two-step unescape: \\\\/ → \\/ → /
+        videoUrl = escapedMatch[1]
+            .replace(/\\\\\//g, '/')   // Step 1: \\/ → /  (double escaped)
+            .replace(/\\\//g, '/')      // Step 2: \/ → /   (single escaped)
+            .replace(/\\u0026/g, '&')   // Step 3: \u0026 → &
+    }
+
+    // Method 2: Direct format (kadang muncul)
+    if (!videoUrl) {
+        const directMatch = html.match(/"video_url":"(https?:[^"]+)"/)
+        if (directMatch) {
+            videoUrl = directMatch[1]
+                .replace(/\\\//g, '/')
+                .replace(/\\u0026/g, '&')
+        }
+    }
+
+    if (!videoUrl) throw new Error('video_url tidak ditemukan di embed page')
+    
+    return videoUrl
+}
+
+// ─────────────────────────────────────────────
+// FALLBACK API ENDPOINTS (publik, no key required)
+// Digunakan jika embed scrape gagal
 // ─────────────────────────────────────────────
 
 const IG_APIS = [
@@ -91,11 +178,45 @@ function parseInstaFinsta(data) {
 export async function downloadInstagram(url, options = {}) {
     let lastError = null
 
+    // ──── TAHAP 1: Coba Embed Scrape (tercepat, paling reliable) ────
+    try {
+        logger.info('[Instagram] Trying: Embed Scrape (primary)')
+        const videoUrl = await downloadViaEmbed(url)
+        logger.info(`[Instagram] Embed: Got CDN URL: ${videoUrl.substring(0, 80)}...`)
+
+        const { buffer, mimeType } = await fetchBuffer(videoUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+                'Referer': 'https://www.instagram.com/',
+            },
+            timeout: 300_000,
+            maxSizeMB: 50,
+        })
+
+        const filename = sanitizeFilename(`ig_${Date.now()}.mp4`)
+        return {
+            buffer,
+            filename,
+            caption: '📸 *Instagram Reels/Video*\n_via Embed Scrape_',
+            mimeType: 'video/mp4',
+            ext: 'mp4',
+            platform: 'instagram',
+            type: 'video',
+            multiple: null,
+        }
+    } catch (err) {
+        logger.warn(`[Instagram] Embed failed: ${err.message}`)
+        lastError = err
+    }
+
+    // ──── TAHAP 2: Fallback ke API pihak ke-3 ────
     for (const api of IG_APIS) {
         try {
             logger.debug(`[Instagram] Trying API: ${api.name}`)
 
             const apiUrl = api.buildUrl(url)
+            // Use dynamic import for fetchJson to keep it lazy
+            const { fetchJson } = await import('../utils.js')
             const raw = await fetchJson(apiUrl, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36',
