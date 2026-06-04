@@ -48,27 +48,27 @@ async function processRevokedKey(sock, key) {
         const sender = isGroup ? (originalMsg.key.participant || key.remoteJid) : key.remoteJid
         const pushName = originalMsg.pushName || sender.split('@')[0]
         const isLid = sender.endsWith('@lid')
-        
+
         botLogger.info('revoke', `Caught deleted message from ${sender}`)
 
-        let captionText = `🕵️‍♂️ *THE SNITCH* 🕵️‍♂️\n\nTerciduk kamu hapus pesan, ${isLid ? `*${pushName}*` : `@${sender.split('@')[0]}`}! 😏\n\n`
-        
+        let captionText = `🕵️‍♂️ *PEMBOHONK* 🕵️‍♂️\n\nTerciduk kau hapus pesan, ${isLid ? `*${pushName}*` : `@${sender.split('@')[0]}`}! 😏\n\n`
+
         const ownerNumbers = (process.env.OWNER_NUMBER || '').split(',').map(n => n.trim())
         const devNumber = ownerNumbers[0]
         const devJid = devNumber + '@s.whatsapp.net'
         const allowedJids = ownerNumbers.map(n => n.includes('@') ? n : n + '@s.whatsapp.net')
-        
+
         const validMentions = isLid ? undefined : [sender]
-        
+
         // Handle text message
         if (originalMsg.message?.conversation || originalMsg.message?.extendedTextMessage) {
             const body = originalMsg.message.conversation || originalMsg.message.extendedTextMessage.text
             captionText += `Pesan: "${body}"`
-            
+
             const promptText = `[ANTI-SNITCH]\nPesan dihapus oleh *${pushName}* di ${isGroup ? 'Grup' : 'Private'}.\n\nIsi: "${body}"\n\nBalas pesan ini dengan *1* (Kirim ke grup asal) atau *0* (Abaikan demi privasi).`
             const promptOptions = { text: promptText }
             const promptMsg = await sock.sendMessage(devJid, promptOptions)
-            
+
             interactiveService.createSession(promptMsg.key.id, allowedJids, allowedJids, async (ctx, answer) => {
                 if (answer === '1') {
                     const sendOptions = { text: captionText }
@@ -93,10 +93,10 @@ async function processRevokedKey(sock, key) {
                 // Download from store message
                 const stream = await downloadContentFromMessage(mediaContent, messageType.replace('Message', ''))
                 let buffer = Buffer.from([])
-                for await(const chunk of stream) {
+                for await (const chunk of stream) {
                     buffer = Buffer.concat([buffer, chunk])
                 }
-                
+
                 let promptMsg;
                 const promptText = `[ANTI-SNITCH]\nMedia dihapus oleh *${pushName}* di ${isGroup ? 'Grup' : 'Private'}.\n\nBalas pesan ini dengan *1* (Kirim ke grup asal) atau *0* (Abaikan demi privasi).`
 
@@ -112,7 +112,7 @@ async function processRevokedKey(sock, key) {
                 } else {
                     // Send media attached with prompt text
                     const mOpts = {
-                        [messageType.replace('Message', '')]: buffer, 
+                        [messageType.replace('Message', '')]: buffer,
                         caption: promptText,
                         mimetype: mediaContent.mimetype
                     }
@@ -133,8 +133,8 @@ async function processRevokedKey(sock, key) {
                             await sock.sendMessage(key.remoteJid, { audio: buffer, mimetype: mediaContent.mimetype, ptt: mediaContent.ptt })
                         } else {
                             const sOpts = {
-                                [messageType.replace('Message', '')]: buffer, 
-                                caption: captionText, 
+                                [messageType.replace('Message', '')]: buffer,
+                                caption: captionText,
                                 mimetype: mediaContent.mimetype
                             }
                             if (validMentions) sOpts.mentions = validMentions
