@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDashboardStore } from '@/lib/store'
-import { Disc3, Search, Music } from 'lucide-react'
+import { Disc3, Search, Music, Plus, Minus } from 'lucide-react'
 
 interface LyricLine {
     time: number
@@ -39,6 +39,7 @@ export default function LiveLyrics() {
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState(false)
     const [activeIndex, setActiveIndex] = useState(-1)
+    const [offsetSec, setOffsetSec] = useState(-2.5) // Default 2.5s delay for stream buffer
     
     const containerRef = useRef<HTMLDivElement>(null)
     const activeLineRef = useRef<HTMLDivElement>(null)
@@ -104,7 +105,7 @@ export default function LiveLyrics() {
         let animationFrame: number
         
         const sync = () => {
-            const elapsed = (Date.now() - nowPlaying.startedAt) / 1000
+            const elapsed = (Date.now() - nowPlaying.startedAt) / 1000 + offsetSec
             
             // Find current line index
             let currentIndex = -1
@@ -132,7 +133,7 @@ export default function LiveLyrics() {
 
         animationFrame = requestAnimationFrame(sync)
         return () => cancelAnimationFrame(animationFrame)
-    }, [isPlaying, track, nowPlaying.startedAt, lyrics, activeIndex])
+    }, [isPlaying, track, nowPlaying.startedAt, lyrics, activeIndex, offsetSec])
 
     return (
         <div 
@@ -148,6 +149,27 @@ export default function LiveLyrics() {
 
             {/* Header / Status */}
             <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+                {lyrics.length > 0 && !isLoading && (
+                    <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg backdrop-blur-md bg-black/20 border border-white/10">
+                        <button 
+                            onClick={() => setOffsetSec(s => s - 0.5)}
+                            className="p-1 hover:bg-white/10 rounded transition-colors text-white/50 hover:text-white"
+                            title="Delay lyrics (-0.5s)"
+                        >
+                            <Minus size={10} />
+                        </button>
+                        <span className="text-[9px] font-mono w-8 text-center text-white/70">
+                            {offsetSec > 0 ? '+' : ''}{offsetSec.toFixed(1)}s
+                        </span>
+                        <button 
+                            onClick={() => setOffsetSec(s => s + 0.5)}
+                            className="p-1 hover:bg-white/10 rounded transition-colors text-white/50 hover:text-white"
+                            title="Advance lyrics (+0.5s)"
+                        >
+                            <Plus size={10} />
+                        </button>
+                    </div>
+                )}
                 <div 
                     className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-mono tracking-wider uppercase backdrop-blur-md"
                     style={{ background: `${accentColor}20`, color: accentColor }}
