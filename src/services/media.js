@@ -486,12 +486,23 @@ class MediaService {
             if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
 
             const id = crypto.randomBytes(4).toString('hex')
-            const isWebp = bufferVideo.slice(8, 12).toString('ascii') === 'WEBP'
-            const inputPath = path.join(tmpDir, `${id}_in.${isWebp ? 'webp' : 'mp4'}`)
+            const isWebp = bufferVideo.length > 12 && bufferVideo.slice(8, 12).toString('ascii') === 'WEBP'
+            
+            let finalBufferVideo = bufferVideo
+            let extension = 'mp4'
+
+            if (isWebp) {
+                // Konversi WebP ke GIF pakai Sharp karena FFmpeg sering gagal decode animated WebP (libwebp_anim missing)
+                logger.info('⏳ Converting Animated WebP to GIF for FFmpeg processing...')
+                finalBufferVideo = await sharp(bufferVideo, { animated: true }).gif().toBuffer()
+                extension = 'gif'
+            }
+
+            const inputPath = path.join(tmpDir, `${id}_in.${extension}`)
             const overlayPath = path.join(tmpDir, `${id}_overlay.png`)
             const outputPath = path.join(tmpDir, `${id}_out.webp`)
 
-            fs.writeFileSync(inputPath, bufferVideo)
+            fs.writeFileSync(inputPath, finalBufferVideo)
             fs.writeFileSync(overlayPath, overlayPng)
 
             try {
