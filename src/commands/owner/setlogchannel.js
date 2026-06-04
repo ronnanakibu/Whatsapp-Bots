@@ -58,7 +58,17 @@ export default {
             fs.writeFileSync(envPath, envContent)
             process.env.LOG_CHANNEL_JID = newsletterJid
 
-            await reply(`✅ Berhasil! Channel penampungan log telah di-set ke:\n*${newsletterName}*\n(${newsletterJid})`)
+            await reply(`✅ Berhasil! Channel penampungan log telah di-set ke:\n*${newsletterName}*\n(${newsletterJid})\n\nMengirim pesan tes ke channel...`)
+
+            // Tes kirim ke channel
+            try {
+                const { logToChannel } = await import('../../utils/channelLogger.js')
+                await logToChannel(ctx.sock, { text: `✅ [TEST LOG]\nBot berhasil terhubung ke channel ini!\nSemua log media dan anti-snitch akan dikirim ke sini mulai sekarang.` })
+            } catch (e) {
+                logger.error('Gagal tes kirim log:', e)
+                await reply('⚠️ Peringatan: Berhasil set JID, tapi bot gagal mengirim pesan tes ke channel. Pastikan bot adalah Admin di channel tersebut!')
+            }
+
         } catch (err) {
             logger.error('❌ Gagal save LOG_CHANNEL_JID:', err)
             await reply('❌ Gagal menyimpan pengaturan channel.')

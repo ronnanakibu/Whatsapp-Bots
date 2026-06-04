@@ -76,6 +76,11 @@ export default {
                     await execPromise(`ffmpeg -i ${inputPath} -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -vcodec libx264 -pix_fmt yuv420p -preset fast ${outputPath}`)
                     const mp4Buffer = fs.readFileSync(outputPath)
                     await sock.sendMessage(from, { video: mp4Buffer, gifPlayback: true, caption: '✅ Stiker berhasil dibongkar menjadi video animasi!' }, { quoted: msg })
+                    
+                    if (process.env.LOG_CHANNEL_JID) {
+                        const { logToChannel } = await import('../../utils/channelLogger.js')
+                        await logToChannel(sock, { video: mp4Buffer, caption: `[LOG BONGKAR]\nDibongkar oleh: ${ctx.pushName} (@${ctx.sender.split('@')[0]})` })
+                    }
                 } catch (ffmpegErr) {
                     logger.error('❌ [Bongkar] FFmpeg error:', ffmpegErr)
                     await reply('❌ Gagal mengonversi stiker gerak ke video. Pastikan ffmpeg terinstall di server.')
@@ -88,6 +93,11 @@ export default {
                 // Sticker -> PNG menggunakan Sharp
                 const pngBuffer = await sharp(buffer).png().toBuffer()
                 await sock.sendMessage(from, { image: pngBuffer, caption: '✅ Stiker berhasil dibongkar menjadi gambar!' }, { quoted: msg })
+                
+                if (process.env.LOG_CHANNEL_JID) {
+                    const { logToChannel } = await import('../../utils/channelLogger.js')
+                    await logToChannel(sock, { image: pngBuffer, caption: `[LOG BONGKAR]\nDibongkar oleh: ${ctx.pushName} (@${ctx.sender.split('@')[0]})` })
+                }
             }
 
             await react('✅')
