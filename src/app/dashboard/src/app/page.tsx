@@ -31,7 +31,8 @@ import Settings from '../components/pages/Settings'
 
 export default function DashboardPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [authToken, setAuthToken] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState(false)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
 
@@ -43,10 +44,7 @@ export default function DashboardPage() {
   useEffect(() => {
     // Check localStorage token
     const token = localStorage.getItem('bot_auth_token')
-    if (token) {
-      // Sederhana: kita asumsikan token valid untuk mockup UI pertama,
-      // tetapi panggil validasi di backend kelak.
-      setAuthToken(token)
+    if (token === '6285172013920_2007') {
       setIsAuthenticated(true)
     }
     setIsLoadingAuth(false)
@@ -54,18 +52,22 @@ export default function DashboardPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!authToken.trim()) return
-
-    // Simpan token ke localStorage
-    localStorage.setItem('bot_auth_token', authToken)
-    setIsAuthenticated(true)
-    toast.success('Successfully Authenticated')
+    if (phoneNumber.trim() === '6285172013920' && password.trim() === '2007') {
+      localStorage.setItem('bot_auth_token', '6285172013920_2007')
+      setIsAuthenticated(true)
+      setAuthError(false)
+      toast.success('Successfully Authenticated')
+    } else {
+      setAuthError(true)
+      toast.error('Invalid phone number or password')
+    }
   }
 
   const handleLogout = () => {
     localStorage.removeItem('bot_auth_token')
     setIsAuthenticated(false)
-    setAuthToken('')
+    setPhoneNumber('')
+    setPassword('')
     toast.success('Logged Out')
   }
 
@@ -121,21 +123,37 @@ export default function DashboardPage() {
             </div>
             <h1 className="text-xl font-bold tracking-tight text-white">Authenticate BotOS</h1>
             <p className="text-xs text-muted-foreground mt-1.5">
-              Enter your access token to view the real-time panel
+              Enter your credentials to view the real-time panel
             </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <input
-                type="password"
-                placeholder="Access Token"
-                value={authToken}
-                onChange={e => setAuthToken(e.target.value)}
+                type="text"
+                placeholder="Phone Number"
+                value={phoneNumber}
+                onChange={e => setPhoneNumber(e.target.value)}
                 className="w-full h-11 px-4 bg-muted/50 border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-accent transition-colors"
                 required
               />
             </div>
+            <div>
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full h-11 px-4 bg-muted/50 border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-accent transition-colors"
+                required
+              />
+            </div>
+            {authError && (
+              <div className="flex items-center gap-2 text-xs text-rose-500 bg-rose-500/10 border border-rose-500/20 p-3 rounded-lg">
+                <AlertCircle size={14} />
+                <span>Incorrect credentials, please try again.</span>
+              </div>
+            )}
             <button
               type="submit"
               className="w-full h-11 bg-white hover:bg-neutral-200 text-black text-xs font-semibold rounded-lg transition-colors flex items-center justify-center"
