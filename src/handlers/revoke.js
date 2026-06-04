@@ -27,8 +27,15 @@ export async function checkRevokeUpsert(sock, msg) {
 
 import { interactiveService } from '../services/interactive.js'
 
+// Cache untuk mencegah eksekusi ganda yang bisa bikin Baileys crash (USync concurrency bug)
+const processedRevokes = new Set()
+
 async function processRevokedKey(sock, key) {
     try {
+        if (processedRevokes.has(key.id)) return // Cegah eksekusi ganda
+        processedRevokes.add(key.id)
+        setTimeout(() => processedRevokes.delete(key.id), 60000) // Hapus dari cache setelah 1 menit
+
         if (key.fromMe) return // Ignore if bot deletes its own message
 
         const originalMsg = await store.loadMessage(key.remoteJid, key.id)
