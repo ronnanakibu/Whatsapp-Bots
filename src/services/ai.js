@@ -408,12 +408,17 @@ async function chat(chatId, userMessage, forcedProvider = null) {
     // Tentukan provider utama (dari parameter, database memori, atau default 'groq')
     let provider = forcedProvider || memoryService.getAiProvider(chatId) || 'groq'
 
-    if (provider === 'nvidia' && nvidiaClient) {
-        try {
-            return await nvidiaChat(chatId, userMessage)
-        } catch (err) {
-            logger.warn(`[AI] NVIDIA failed (${err.message}), falling back to Groq`)
+    if (provider === 'nvidia') {
+        if (!nvidiaClient) {
+            logger.warn('[AI] NVIDIA API key not configured, falling back to Groq')
             provider = 'groq'
+        } else {
+            try {
+                return await nvidiaChat(chatId, userMessage)
+            } catch (err) {
+                logger.warn(`[AI] NVIDIA failed (${err.message}), falling back to Groq`)
+                provider = 'groq'
+            }
         }
     }
 
