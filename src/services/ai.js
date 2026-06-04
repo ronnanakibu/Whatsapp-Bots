@@ -363,7 +363,7 @@ async function geminiFactCheck(query) {
     const modelName = getAvailableModel(GEMINI_MODELS)
     const model = genAI.getGenerativeModel({ model: modelName })
     
-    const prompt = `Sebagai asisten pemeriksa fakta independen, tolong verifikasi kebenaran informasi atau tautan berita berikut ini dengan mengambil dan menyimpulkan dari berbagai sumber terpercaya di internet:\n\n"${query}"\n\nBuatlah laporan ringkas dengan struktur:\n1. Status (Fakta / Hoax / Konteks Keliru)\n2. Kesimpulan Singkat\n3. Penjelasan Lengkap\n4. Referensi Web Terpercaya (wajib sertakan link jika ada).`
+    const prompt = `Anda adalah mesin pencari fakta otomatis. JANGAN MENGGUNAKAN BASA-BASI, JANGAN MENYAPA, DAN JANGAN MEMBUKA PERCAKAPAN. Langsung berikan hasil verifikasi fakta dari kueri berikut menggunakan sumber internet terpercaya:\n\n"${query}"\n\nBerikan laporan ringkas dengan struktur persis seperti ini:\n1. Status: [Fakta / Hoax / Konteks Keliru]\n2. Kesimpulan Singkat:\n3. Penjelasan Lengkap:\n4. Referensi Web Terpercaya: (Wajib link)`
 
     try {
         const result = await model.generateContent(prompt)
