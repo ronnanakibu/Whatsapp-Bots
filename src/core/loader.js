@@ -7,6 +7,10 @@ import { logger } from '../utils/logger.js'
 export const commands = new Map()
 
 export async function loadCommands(dir = './src/commands') {
+    if (dir === './src/commands') {
+        commands.clear() // Bersihkan map sebelum load ulang saat reconnect
+    }
+    
     console.log(`🔍 [Debug Loader] Sedang memindai direktori: ${dir}`)
     let entries = []
 
