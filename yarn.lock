@@ -1456,6 +1456,11 @@ node-fzf@~0.14.0:
     string-width "~2.1.1"
     ttys "0.0.3"
 
+node-webpmux@^3.2.1:
+  version "3.2.1"
+  resolved "https://registry.npmjs.org/node-webpmux/-/node-webpmux-3.2.1.tgz"
+  integrity sha512-MKgpq9nFgo44pIVNx/umD3nkqb2E8oqQTfmstVsfNdx9uV4cX7a4LqA+d8AZd3v5tgJXwENKUFsXNP3bRLP8nQ==
+
 nodemon@^3.1.14:
   version "3.1.14"
   resolved "https://registry.npmjs.org/nodemon/-/nodemon-3.1.14.tgz"
