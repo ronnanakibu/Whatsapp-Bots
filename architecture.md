@@ -1,102 +1,180 @@
 # ⚙️ WABOT 2.0 - Core System Architecture & Workflow
 
-Selamat datang di dokumentasi arsitektur sistem **WABOT 2.0 (RonnBot)**. Dokumen ini dirancang untuk memberikan gambaran menyeluruh mengenai struktur berkas, ketergantungan library (dependencies), alur kerja (workflow), serta mekanisme pipeline deployment bot.
+Selamat datang di spesifikasi arsitektur teknis **WABOT 2.0 (RonnBot)**. Dokumen ini dibuat untuk memetakan secara detail struktur data, ketergantungan sistem, alur proses (*workflows*), skema database, serta alur otomatisasi rilis lokal.
 
 ---
 
-## 📂 1. Struktur Direktori & File Core
+## 🗺️ 1. Mindmap Struktur Sistem & Folder (Mermaid Map)
 
-Berikut adalah struktur folder utama beserta peran masing-masing komponen di dalam sistem:
-
-```text
-WABOT2.0/
-├── changelogs/             # Folder penyimpanan rilis lokal (.md)
-│   ├── v2.0.0.md           # Log versi 2.0.0
-│   └── v2.1.0.md           # Log versi 2.1.0 (cuaca & stabibilitas)
-├── storage/                # Penyimpanan data lokal persisten
-│   ├── database/
-│   │   └── main.db         # Database utama SQLite (caching sound, subs, dll)
-│   ├── logs/
-│   │   └── app.log         # Berkas log terstruktur di level production
-│   └── sessions/           # Kredensial auth WhatsApp multi-device (Baileys)
-├── src/                    # Source code utama aplikasi
-│   ├── core/
-│   │   └── bot.js          # Inisialisasi socket Baileys, auth, & heartbeat
-│   ├── commands/           # Modul perintah dikelompokkan secara logis
-│   │   ├── entertainments/ # Perintah hiburan (sound.js, meme.js, dll)
-│   │   ├── general/        # Perintah umum (changelogs.js, menu.js, dll)
-│   │   ├── group/          # Fitur moderasi grup (pin.js, dll)
-│   │   ├── owner/          # Perintah khusus owner (bc.js, dll)
-│   │   └── utility/        # Fitur utilitas (cuaca.js, dll)
-│   ├── services/
-│   │   ├── interactive.js  # Mengelola percakapan interaktif (tanya-jawab)
-│   │   └── memory.js       # Mengelola riwayat percakapan untuk AI Context
-│   └── utils/
-│       ├── group.js        # Helper moderasi, admin check, dll
-│       ├── logger.js       # Global logger ke terminal & WhatsApp Log Channel
-│       └── rateLimiter.js  # Cooldown command per user
-├── .env                    # Konfigurasi sensitif (API Keys, JID Log, dll)
-├── deploy.js               # Automasi Git commit & push, SFTP sync, & restart bot
-└── start.js                # Daemon runner untuk me-load dotenv & menjalankan bot
-```
-
----
-
-## 📊 2. Alur Kerja Sistem (System Workflow Diagram)
-
-Berikut adalah diagram visual yang menunjukkan bagaimana **WABOT 2.0** menerima pesan, memproses perintah, mengelola database lokal, melakukan fallback API cuaca, hingga memancarkan log otomatis ke channel log WhatsApp.
+Di bawah ini adalah representasi visual diagram pohon hirarki folder dari codebase WABOT 2.0:
 
 ```mermaid
 graph TD
-    A[Pesan Masuk dari WhatsApp] -->|Diterima oleh Baileys Socket| B(src/core/bot.js)
-    B -->|Diteruskan ke Handler| C{Command atau Obrolan Biasa?}
-    
-    C -->|Obrolan / Mention AI| D(src/services/memory.js)
-    D -->|Simpan History & Generate Context| E[Call AI API: Gemini/Groq/Nvidia]
-    E -->|Kirim Jawaban| F[WhatsApp Chat Room]
-    
-    C -->|Deteksi Prefiks . / !| G[src/utils/rateLimiter.js Cooldown Check]
-    G -->|Lolos Cooldown| H[Dynamic Command Loader]
-    
-    H -->|Contoh: Perintah .cuaca| I{Engine 1: Open-Meteo}
-    I -->|Sukses| J[Format & Kirim Hasil]
-    I -->|Gagal/Down 502| K{Engine 2: Google Weather API}
-    K -->|Sukses| J
-    K -->|Gagal/Error| L{Engine 3: WeatherAPI.com}
-    L -->|Sukses| J
-    L -->|Gagal Semua| M[Kirim Graceful Error Message]
-    
-    J & F & M -->|Setiap Kejadian Log| N(src/utils/logger.js)
-    N -->|Kirim ke Terminal| O[Stdout Console]
-    N -->|Queue Buffer 2.5 Detik| P{Anti-Spam / Re-entrant Protection}
-    P -->|Flush Batch Message| Q[WhatsApp Log Channel JID]
+    %% Styling Nodes
+    classDef root fill:#29b6f6,stroke:#01579b,stroke-width:3px,color:#fff,font-weight:bold;
+    classDef core fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px,color:#01579b;
+    classDef cmd fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c;
+    classDef service fill:#e8f5e9,stroke:#66bb6a,stroke-width:2px,color:#1b5e20;
+    classDef util fill:#fff3e0,stroke:#ffb74d,stroke-width:2px,color:#e65100;
+    classDef storage fill:#efebe9,stroke:#a1887f,stroke-width:2px,color:#3e2723;
+
+    Root((WABOT 2.0)):::root --> Core[Core Engine]:::core
+    Root --> Cmds[Command Modules]:::cmd
+    Root --> Serv[System Services]:::service
+    Root --> Utils[Utility Helpers]:::util
+    Root --> Stor[Storage & Database]:::storage
+
+    %% Core Sub-Tree
+    Core --> start_js[start.js<br/>dotenv loader & daemon]
+    Core --> bot_js[src/core/bot.js<br/>Baileys connection & socket]
+
+    %% Commands Sub-Tree
+    Cmds --> cmd_ent[entertainments/<br/>sound.js, meme.js]
+    Cmds --> cmd_gen[general/<br/>changelogs.js, aboutbots.js]
+    Cmds --> cmd_grp[group/<br/>pin.js]
+    Cmds --> cmd_own[owner/<br/>bc.js]
+    Cmds --> cmd_utl[utility/<br/>cuaca.js]
+
+    %% Services Sub-Tree
+    Serv --> s_inter[interactive.js<br/>Tanya-jawab interaktif]
+    Serv --> s_mem[memory.js<br/>Context isolation & AI history]
+
+    %% Utils Sub-Tree
+    Utils --> u_grp[group.js<br/>Admin-role validators]
+    Utils --> u_log[logger.js<br/>Batch channel log formatter]
+    Utils --> u_lim[rateLimiter.js<br/>User command cooldown]
+
+    %% Storage Sub-Tree
+    Stor --> db_main[storage/database/main.db<br/>Persisten Better-SQLite3]
+    Stor --> db_sess[storage/sessions/<br/>Kredensial auth WhatsApp]
 ```
 
 ---
 
-## 🛠️ 3. Library Utama & Peran Dependencies
+## 🔄 2. Alur Eksekusi Pesan & Perintah (Execution Workflow)
 
-| Nama Library | Peran Utama dalam WABOT 2.0 |
-| :--- | :--- |
-| **`@whiskeysockets/baileys`** | Menghubungkan bot dengan server WhatsApp secara langsung via protocol WebSockets, mendukung multi-device, media download, pinning, dan custom message formats. |
-| **`better-sqlite3`** | Engine database SQLite super cepat untuk Node.js. Dipakai untuk caching pencarian sound MyInstants, data langganan cuaca harian, dan history chat AI. |
-| **`pino` & `pino-pretty`** | Menangani log aplikasi secara terstruktur, cepat, dan rapi di terminal sebelum difilter untuk dikirim ke WhatsApp Log Channel. |
-| **`axios` & `cheerio`** | Mengunduh file, melakukan request API fallback, dan melakukan web scraping data HTML (seperti scraping MP3 MyInstants). |
-| **`dotenv`** | Memuat variabel lingkungan dari file `.env` ke `process.env` untuk melindungi data kredensial / API Keys. |
+Diagram alur di bawah menggambarkan perjalanan pesan masuk dari server WhatsApp hingga diproses oleh bot, baik sebagai perintah langsung (command), AI conversation, maupun logging system.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as WhatsApp User
+    participant Bot as Baileys Socket (bot.js)
+    participant Limiter as Cooldown (rateLimiter.js)
+    participant Router as Command Router
+    participant Service as System Services
+    participant DB as SQLite3 (main.db)
+    participant API as External APIs
+    participant LogChan as WhatsApp Log Channel
+
+    User->>Bot: Mengirim pesan (misal: ".cuaca Medan")
+    Bot->>Bot: Parse pesan & deteksi prefiks perintah
+    
+    rect rgb(240, 248, 255)
+        note right of Bot: Tahap Validasi & Keamanan
+        Bot->>Limiter: Periksa cooldown aktif untuk JID pengirim
+        Limiter-->>Bot: Lolos (user tidak spamming)
+    end
+
+    rect rgb(253, 245, 230)
+        note right of Bot: Tahap Rute Eksekusi Perintah
+        Bot->>Router: Panggil command cuaca.js
+        Router->>DB: Periksa database jika ada parameter khusus
+        DB-->>Router: Kembalikan data (bila ada)
+        
+        Router->>API: Fetch Open-Meteo API
+        alt Open-Meteo Normal (200 OK)
+            API-->>Router: Kembalikan data ramalan cuaca
+        else Open-Meteo Down (502 Bad Gateway)
+            Router->>API: Fallback ke Google Weather API
+            API-->>Router: Kembalikan data ramalan cuaca Google
+        end
+        
+        Router-->>Bot: Format output laporan teks cuaca
+    end
+
+    Bot->>User: Kirim balasan laporan cuaca
+    
+    rect rgb(245, 245, 245)
+        note right of Bot: Tahap Transparansi & Logger System
+        Bot->>LogChan: Daftarkan log eksekusi ke antrian buffer (logger.js)
+        note over LogChan: Queue menampung data selama 2.5 detik
+        LogChan->>LogChan: Mengirim batch log sekaligus ke WhatsApp Channel Log
+    end
+```
 
 ---
 
-## 🚀 4. Alur Kerja Deployment (Pipeline Workflow)
+## 🗄️ 3. Skema Relasi Database Lokal (Better-SQLite3)
 
-Ketika kamu menjalankan perintah `npm run push` di terminal local:
+Aplikasi menggunakan **SQLite3** via library performa tinggi `better-sqlite3` untuk menyimpan state dinamis tanpa overhead database server eksternal. Berikut adalah skema tabel persisten yang digunakan:
 
-1. **Git Automation (`deploy.js`)**:
-   - Memeriksa status repositori git lokal.
-   - Melakukan delta commit otomatis dengan pesan waktu terkini (misal: `"deploy: sync auto 2026-06-04 13:27:09"`).
-   - Melakukan `git push` untuk mencadangkan kode terbaru ke repositori GitHub jarak jauh.
-2. **SFTP Sync**:
-   - Menghubungkan koneksi aman SFTP ke panel Pterodactyl.
-   - Membandingkan berkas dan hanya mengunggah file yang berubah saja (*delta sync*) demi efisiensi bandwidth.
-3. **Bot Restart**:
-   - Mengirim sinyal perintah melalui API Pterodactyl untuk me-restart server bot secara instan.
-   - Bot memicu fungsi `shutdown` yang langsung melakukan `flushLogsImmediately()` untuk mengirim notifikasi restart ke log channel WhatsApp sebelum proses dimatikan dan dihidupkan ulang oleh start script.
+```mermaid
+erDiagram
+    weather_subscriptions {
+        TEXT chat_id PK "JID Room WhatsApp"
+        TEXT city "Nama kota langganan harian"
+        INTEGER created_at "Unix epoch timestamp"
+    }
+
+    sound_cache {
+        TEXT keyword PK "Kata kunci suara / lagu"
+        TEXT url "Direct URL ke audio file (MP3)"
+        INTEGER created_at "Unix epoch timestamp"
+    }
+
+    chat_history {
+        INTEGER id PK "Auto Increment"
+        TEXT chat_id "JID Room WhatsApp"
+        TEXT role "user | assistant | system"
+        TEXT content "Pesan percakapan"
+        TEXT topic "Kategori obrolan AI"
+        INTEGER timestamp "Unix epoch timestamp"
+    }
+```
+
+---
+
+## ☀️ 4. Desain Struktur Fallback Cuaca 3-Tingkat (Triple Engine)
+
+Ketika server Open-Meteo mengalami gangguan (outage), bot tidak akan mogok atau crash. Sistem akan mengalihkan request secara transparan melalui alur bertingkat berikut:
+
+```mermaid
+graph TD
+    Start[User ketik .cuaca Kota] --> Geo{Geocoding Kota}
+    
+    Geo -->|Open-Meteo Geocoding OK| Fetch1[Request Open-Meteo Forecast]
+    Geo -->|Open-Meteo Geocoding Down| FallbackGeo[Geocoding via WeatherAPI.com]
+    FallbackGeo --> Fetch2[Request Google Weather API]
+
+    Fetch1 -->|Response 200 OK| Output1[Kirim Laporan Cuaca + Footer Open-Meteo]
+    Fetch1 -->|Response 502/Error| Fetch2
+    
+    Fetch2 -->|Response 200 OK| Output2[Kirim Laporan Cuaca + Footer Google Weather]
+    Fetch2 -->|Response Error| Fetch3[Request WeatherAPI.com Forecast]
+    
+    Fetch3 -->|Response 200 OK| Output3[Kirim Laporan Cuaca + Footer WeatherAPI.com]
+    Fetch3 -->|Response Error| Err[Kirim Pesan Graceful Error: Semua Server Down]
+```
+
+---
+
+## 🛠️ 5. Teknologi Core & Library Dependencies
+
+| Library / Dependencies | Deskripsi Teknis |
+| :--- | :--- |
+| **`@whiskeysockets/baileys`** | Implementasi lightweight WhatsApp Web API. Menangani koneksi soket, handshake, pemeliharaan sesi terenkripsi, enkripsi pesan, serta event listener obrolan. |
+| **`better-sqlite3`** | Wrapper database SQLite tercepat di Node.js yang mengeksekusi kueri SQL secara sinkronus untuk latensi memori mendekati nol. |
+| **`pino` & `pino-pretty`** | Logger asinkronus dengan overhead CPU sangat rendah. Membantu pelacakan stack trace error runtime bot di terminal secara real-time. |
+| **`axios` & `cheerio`** | Axios digunakan untuk koneksi HTTP client handal, sedangkan Cheerio digunakan untuk mem-parsing DOM HTML pada proses scraping asset audio MyInstants. |
+| **`dotenv`** | Membaca berkas `.env` dan menyuntikkan konfigurasinya ke dalam variabel lingkungan lokal (`process.env`). |
+
+---
+
+## 🚀 6. Alur Automasi Pipeline Rilis (`deploy.js`)
+
+Ketika perintah **`npm run push`** dijalankan di lokal developer:
+
+1. **Git Delta Commit**: Skrip memeriksa status git repositori lokal. Jika ada modifikasi berkas, skrip secara otomatis melakukan commit lokal dengan penanda waktu dinamis, lalu melakukan `git push` ke repositori pusat GitHub.
+2. **SFTP Delta Sync**: Skrip membuka koneksi SFTP aman ke server panel Pterodactyl. Menggunakan algoritma pembanding ukuran file dan tanggal modifikasi (*delta sync*) untuk hanya mengunggah file yang berubah secara real-time.
+3. **Pterodactyl Remote Restart**: Pemicu API dikirim ke panel untuk me-restart bot. Bot mengeksekusi fungsi `shutdown()`, memaksa antrian log WhatsApp dikirim seketika (`flushLogsImmediately()`), menghentikan proses koneksi Baileys secara aman, lalu daemon server menghidupkan kembali bot dengan kode terbaru.
