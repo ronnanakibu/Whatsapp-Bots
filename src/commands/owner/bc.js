@@ -43,20 +43,41 @@ export default {
 
             // Register session
             interactiveService.createSession(sentMsg.key.id, chatId, sender, async (replyCtx, answer) => {
-                const choice = parseInt(answer)
-                if (isNaN(choice) || choice < 1 || choice > allIndex) {
+                // Parse batch inputs (e.g. "1, 3, 5")
+                const choices = answer.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+                
+                if (!choices.length) {
                     return replyCtx.reply('❌ Pilihan tidak valid. Broadcast dibatalkan.')
                 }
 
-                await replyCtx.react('⏳')
-                await replyCtx.reply('⏳ Memulai broadcast...')
-
                 let targets = []
-                if (choice === allIndex) {
+                let invalidChoices = []
+
+                if (choices.includes(allIndex)) {
+                    // Kalau ada milih All, otomatis target semua grup
                     targets = groupList
                 } else {
-                    targets = [groupList[choice - 1]]
+                    // Masukkan grup-grup spesifik
+                    for (const choice of choices) {
+                        if (choice >= 1 && choice < allIndex) {
+                            // Hindari duplikat target
+                            const g = groupList[choice - 1]
+                            if (!targets.some(t => t.id === g.id)) {
+                                targets.push(g)
+                            }
+                        } else {
+                            invalidChoices.push(choice)
+                        }
+                    }
                 }
+
+                if (!targets.length) {
+                    return replyCtx.reply('❌ Semua pilihan nomor salah. Broadcast dibatalkan.')
+                }
+
+                await replyCtx.react('⏳')
+                const warningMsg = invalidChoices.length > 0 ? `\n(⚠️ Nomor tidak valid diabaikan: ${invalidChoices.join(', ')})` : ''
+                await replyCtx.reply(`⏳ Memulai broadcast ke ${targets.length} grup...${warningMsg}`)
 
                 let success = 0
                 let failed = 0
