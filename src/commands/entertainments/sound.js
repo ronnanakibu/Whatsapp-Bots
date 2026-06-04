@@ -47,8 +47,8 @@ export default {
         try {
             await sock.sendMessage(from, {
                 audio: { url: soundUrl },
-                mimetype: 'audio/mp4',
-                ptt: true // Kirim sebagai Voice Note
+                mimetype: 'audio/mpeg',
+                ptt: false // Nonaktifkan PTT agar MP3 bisa diputar di WA Mobile tanpa error
             }, { quoted: msg })
 
             await react('✅')
