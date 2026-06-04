@@ -2,11 +2,17 @@ import crypto from 'crypto'
 import webpmux from 'node-webpmux'
 
 export async function addExif(webpBuffer, packname = 'ronnBot by ronnanakibu', author = 'https://github.com/ronnanakibu') {
+    const isAnimated = webpBuffer.includes(Buffer.from('ANIM'))
+
     const json = {
         'sticker-pack-id': crypto.randomBytes(32).toString('hex'),
         'sticker-pack-name': packname,
         'sticker-pack-publisher': author,
         emojis: ['🤖', '🔥', '😂']
+    }
+
+    if (isAnimated) {
+        json['is-animated'] = 1
     }
     const jsonStr = JSON.stringify(json)
     const jsonBuffer = Buffer.from(jsonStr, 'utf8')
