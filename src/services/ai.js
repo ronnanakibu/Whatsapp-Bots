@@ -260,32 +260,36 @@ async function analyzeImage(imageBuffer, mimeType = 'image/jpeg', prompt = 'Desk
     }
 }
 
-// ─────────────────────────────────────────────
-// IMAGE GENERATION — via Gemini Imagen / fallback prompt
-// ─────────────────────────────────────────────
-
-async function generateImage(rawPrompt) {
-    // 1. ENHANCE PROMPT WITH GEMINI (Biar hasilnya sekelas Midjourney/DALL-E)
-    let prompt = rawPrompt
+async function enhancePrompt(rawPrompt) {
     try {
         logger.info(`[AI] Enhancing prompt via Gemini...`)
         const enhancerModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
         const instructions = `
-            You are an expert AI image prompt engineer. 
-            The user wants an image based on this input: "${rawPrompt}"
-            Write a highly detailed, descriptive, and visually rich prompt in English for a text-to-image model.
+            You are an expert AI prompt engineer. 
+            The user wants to generate media (image/video) based on this input: "${rawPrompt}"
+            Write a highly detailed, descriptive, and visually rich prompt in English.
             Focus on subject details, lighting, camera angles, art style, and atmosphere.
             IMPORTANT: Return ONLY the prompt text, no intro, no explanation, no quotes.
         `
         const enhanceRes = await enhancerModel.generateContent(instructions)
         const enhanced = enhanceRes.response.text()?.trim()
         if (enhanced && enhanced.length > 10) {
-            prompt = enhanced
-            logger.info(`[AI] Enhanced Prompt: ${prompt.slice(0, 100)}...`)
+            logger.info(`[AI] Enhanced Prompt: ${enhanced.slice(0, 100)}...`)
+            return enhanced
         }
     } catch (e) {
         logger.warn(`[AI] Gagal enhance prompt: ${e.message}`)
     }
+    return rawPrompt // Fallback ke prompt asli
+}
+
+// ─────────────────────────────────────────────
+// IMAGE GENERATION — via Gemini Imagen / fallback prompt
+// ─────────────────────────────────────────────
+
+async function generateImage(rawPrompt) {
+    // 1. ENHANCE PROMPT WITH GEMINI (Biar hasilnya sekelas Midjourney/DALL-E)
+    const prompt = await enhancePrompt(rawPrompt)
 
     // Mode 1: Hugging Face (jika ada HF_TOKEN di .env)
     if (process.env.HF_TOKEN) {
@@ -473,6 +477,7 @@ export const aiService = {
     chat,
     analyzeImage,
     generateImage,
+    enhancePrompt,
     debugCode,  // sudah handle chatId
     getDailyFact,
     nvidiaChat,

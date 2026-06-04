@@ -1,6 +1,7 @@
 import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 import { logger } from '../../utils/logger.js'
 import { Client } from "@gradio/client"
+import { aiService } from '../../services/ai.js'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
@@ -21,11 +22,13 @@ export default {
             return reply('⚠️ Tulis prompt videonya cuy!\nContoh: `.cosmos a dog playing in the park`\nAtau reply sebuah gambar dengan `.cosmos <prompt>` buat bikin gambarnya bergerak.')
         }
 
-        const prompt = args.join(' ')
+        const rawPrompt = args.join(' ')
         await react('⏳')
         await reply('⏳ Memulai koneksi ke model Cosmos3-Nano... (Ini mungkin memakan waktu 1-3 menit antrian).')
 
         try {
+            // Enhance prompt via Gemini biar hasilnya lebih keren
+            const prompt = await aiService.enhancePrompt(rawPrompt)
             // Check if user replied to an image
             let imagePath = null
             const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
