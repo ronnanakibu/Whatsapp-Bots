@@ -1,6 +1,6 @@
 import { store } from '../services/store.js'
 import { botLogger } from '../utils/logger.js'
-import { downloadContentFromMessage } from '@whiskeysockets/baileys'
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
 
 /**
  * Handle messages.update to catch revoked messages
@@ -90,13 +90,10 @@ async function processRevokedKey(sock, key) {
             if (body) captionText += `Caption: "${body}"`
 
             try {
-                // Download from store message
-                const stream = await downloadContentFromMessage(mediaContent, messageType.replace('Message', ''))
-                let buffer = Buffer.from([])
-                for await (const chunk of stream) {
-                    buffer = Buffer.concat([buffer, chunk])
-                }
-
+                // Gunakan downloadMediaMessage agar lebih stabil dan langsung me-return buffer
+                const buffer = await downloadMediaMessage(originalMsg, 'buffer', {})
+                if (!buffer) throw new Error('Gagal mengunduh media, buffer kosong')
+                
                 let promptMsg;
                 const promptText = `[ANTI-SNITCH]\nMedia dihapus oleh *${pushName}* di ${isGroup ? 'Grup' : 'Private'}.\n\nBalas pesan ini dengan *1* (Kirim ke grup asal) atau *0* (Abaikan demi privasi).`
 
