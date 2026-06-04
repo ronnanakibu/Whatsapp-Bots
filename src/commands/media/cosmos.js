@@ -73,8 +73,8 @@ export default {
                 prompt, // prompt
                 imageInput, // image
                 "480p (832x480, fast)", // resolution
-                65, // num_frames
-                25, // steps
+                33, // num_frames (dikurangi dari 65 biar gak kena limit GPU HF)
+                20, // steps (dikurangi dari 25)
                 6, // guidance
                 false, // enable_sound
                 "", // negative_prompt
