@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDashboardStore } from '@/lib/store'
-import { useAccentColor } from '@/hooks/useAccentColor'
 import { Disc3, Search, Music } from 'lucide-react'
 
 interface LyricLine {
@@ -69,7 +68,7 @@ export default function LiveLyrics() {
                 
                 if (isMounted) {
                     if (data && data.length > 0) {
-                        const bestMatch = data.find((d: any) => d.syncedLyrics) || data[0]
+                        const bestMatch = data.find((d: { syncedLyrics?: string; plainLyrics?: string }) => d.syncedLyrics) || data[0]
                         if (bestMatch.syncedLyrics) {
                             setLyrics(parseLrc(bestMatch.syncedLyrics))
                         } else if (bestMatch.plainLyrics) {
@@ -82,7 +81,7 @@ export default function LiveLyrics() {
                     }
                     setIsLoading(false)
                 }
-            } catch (err) {
+            } catch {
                 if (isMounted) {
                     setError(true)
                     setIsLoading(false)
