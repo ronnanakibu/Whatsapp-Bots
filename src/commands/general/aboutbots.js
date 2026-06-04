@@ -1,11 +1,11 @@
 // src/commands/general/aboutbots.js
-// Perintah .aboutbots — Informasi Profil Developer & Ringkasan Arsitektur Bot
+// Perintah .aboutbots — Informasi Profil Developer & Mindmap Arsitektur Bot
 
 export default {
     name: 'aboutbots',
     aliases: ['aboutbot', 'about', 'info', 'infobot'],
     category: 'general',
-    description: 'Menampilkan detail profil developer serta arsitektur sistem WABOT 2.0',
+    description: 'Menampilkan detail profil developer serta mindmap arsitektur sistem WABOT 2.0',
     usage: '.aboutbots',
     cooldown: 5,
     permissions: ['user'],
@@ -31,15 +31,59 @@ export default {
 
         text += `──────────────────────────────\n\n`
 
-        text += `*📂 CORE SYSTEM ARCHITECTURE*\n`
-        text += `Sistem RonnBot dibangun dengan struktur folder modular & mandiri:\n\n`
+        text += `*🌐 SYSTEM ARCHITECTURE MINDMAP*\n\n`
+        text += `*Root (WABOT 2.0)*\n`
+        text += ` ├── ⚙️ *Core Engine*\n`
+        text += ` │    ├── \`start.js\` (Dotenv & Daemon Runner)\n`
+        text += ` │    └── \`src/core/bot.js\` (Baileys Connection & Events)\n`
+        text += ` ├── 🚀 *Command Modules* (\`src/commands/\`)\n`
+        text += ` │    ├── \`entertainments/\` ➔ sound.js, meme.js\n`
+        text += ` │    ├── \`general/\` ➔ changelogs.js, aboutbots.js\n`
+        text += ` │    ├── \`group/\` ➔ pin.js (moderasi grup)\n`
+        text += ` │    ├── \`owner/\` ➔ bc.js (broadcast owner)\n`
+        text += ` │    └── \`utility/\` ➔ cuaca.js (laporan detail)\n`
+        text += ` ├── 🧠 *System Services* (\`src/services/\`)\n`
+        text += ` │    ├── \`interactive.js\` (Tanya-jawab interaktif)\n`
+        text += ` │    └── \`memory.js\` (AI Context & Chat history)\n`
+        text += ` ├── 🛠️ *Utility Helpers* (\`src/utils/\`)\n`
+        text += ` │    ├── \`group.js\` (Role & Admin Validator)\n`
+        text += ` │    ├── \`logger.js\` (Log Channel Buffer Queue)\n`
+        text += ` │    └── \`rateLimiter.js\` (Cooldown Command Guard)\n`
+        text += ` └── 🗄️ *Storage & DB*\n`
+        text += `      ├── \`storage/database/main.db\` (SQLite3 Cache)\n`
+        text += `      └── \`storage/sessions/\` (Kredensial Login WhatsApp)\n\n`
 
-        text += `• *Core Engine:* \`src/core/bot.js\` — Inisialisasi socket Baileys, kelola autentikasi sesi, serta monitoring status bot.\n`
-        text += `• *Command Modules:* Perintah terbagi rapi berdasarkan kategori di \`src/commands/\` (\`entertainments\`, \`general\`, \`group\`, \`owner\`, \`utility\`).\n`
-        text += `• *AI Context Memory:* \`src/services/memory.js\` — Mengisolasi riwayat chat AI per chat room.\n`
-        text += `• *Dynamic Redundancy:* Sistem cuaca yang otomatis melakukan fallback bertingkat jika server penyedia cuaca mengalami gangguan (Open-Meteo ➡️ Google Weather ➡️ WeatherAPI).\n`
-        text += `• *Realtime Logger Channel:* Mengalirkan event log aktivitas bot ke WhatsApp Log Channel secara efisien menggunakan antrian buffer & perlindungan infinite loop.\n`
-        text += `• *Automated Pipeline:* \`deploy.js\` — Pipeline otomatis sekali ketik untuk delta-sync SFTP ke panel Pterodactyl dan backup repositori ke GitHub.\n\n`
+        text += `──────────────────────────────\n\n`
+
+        text += `*🔄 MESSAGE EXECUTION WORKFLOW*\n\n`
+        text += `*[Pesan Masuk]*\n`
+        text += `      │\n`
+        text += `      ▼\n`
+        text += `*[Baileys Socket Connection]*\n`
+        text += `      │\n`
+        text += `      ▼\n`
+        text += `*[src/utils/rateLimiter.js]* ➔ (Pencegahan Spam/Cooldown)\n`
+        text += `      │\n`
+        text += `      ▼\n`
+        text += `*[src/core/bot.js]* ➔ (Parser & Router)\n`
+        text += `      │\n`
+        text += `      ├─ 💬 *[Obrolan Biasa / AI]* ➔ \`memory.js\` ➔ Call AI ➔ [Reply]\n`
+        text += `      │\n`
+        text += `      └─ 🚀 *[Command]* ➔ Panggil modul terkait (contoh: \`.cuaca\`)\n`
+        text += `                │\n`
+        text += `                ▼\n`
+        text += `            *[API Open-Meteo]* ── (Gagal/502) ──➔ *[Google Weather]*\n`
+        text += `                │ (Sukses)                              │ (Sukses)\n`
+        text += `                ▼                                       ▼\n`
+        text += `            *[Kirim Hasil]* 💻                      *[Kirim Hasil]* 💻\n`
+        text += `                │                                       │\n`
+        text += `                └───────────────────┬───────────────────┘\n`
+        text += `                                    │\n`
+        text += `                                    ▼\n`
+        text += `                  *[src/utils/logger.js]* (Queue 2.5s)\n`
+        text += `                                    │\n`
+        text += `                                    ▼\n`
+        text += `                  *[WhatsApp Log Channel]* 📜\n\n`
 
         text += `──────────────────────────────\n\n`
         text += `💡 *Ketik \`.menu\` untuk melihat seluruh daftar perintah bot.*`
