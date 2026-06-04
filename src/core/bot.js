@@ -13,7 +13,7 @@ import { loadCommands } from './loader.js'
 import { store } from '../services/store.js'
 import { handleIncomingMessage } from '../handlers/message.js'
 import { handleRevokeMessage } from '../handlers/revoke.js'
-import { logger, botLogger } from '../utils/logger.js'
+import { logger, botLogger, setSocket } from '../utils/logger.js'
 import { initReminderScheduler } from '../commands/general/remindme.js'
 import { initWeatherScheduler } from '../commands/utility/cuaca.js'
 import { startRadioServer } from '../server/radio.js'
@@ -93,6 +93,9 @@ async function startBot() {
         logger: pinoLogger.child({ level: 'fatal' }), // Sembunyikan log internal Baileys yang nyepam
         printQRInTerminal: false, // kita handle manual
     })
+
+    // Daftarkan socket instance ke logger untuk WhatsApp channel logging
+    setSocket(sock)
 
     // Bind In-Memory Store
     store.bind(sock.ev)

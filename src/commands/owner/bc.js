@@ -85,10 +85,24 @@ export default {
                 for (const group of targets) {
                     try {
                         const participants = group.participants.map(p => p.id)
-                        await sock.sendMessage(group.id, {
+                        const sent = await sock.sendMessage(group.id, {
                             text: `📢 *PENGUMUMAN DARI DEVELOPER*\n\n${text}`,
                             mentions: participants
                         })
+
+                        // Otomatis pin pesan broadcast di grup tujuan
+                        try {
+                            await sock.sendMessage(group.id, {
+                                pin: {
+                                    type: 1,
+                                    time: 604800, // 7 hari
+                                    key: sent.key
+                                }
+                            })
+                        } catch (pinErr) {
+                            logger.error(`❌ [Broadcast] Gagal pin di grup ${group.subject}:`, pinErr.message)
+                        }
+
                         success++
                     } catch (e) {
                         failed++

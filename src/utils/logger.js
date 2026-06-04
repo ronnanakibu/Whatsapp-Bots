@@ -102,6 +102,57 @@ function ts() {
 }
 
 // ─────────────────────────────────────────────
+// WHATSAPP CHANNEL LOGGER QUEUE & FLUSHER
+// ─────────────────────────────────────────────
+
+let sockInstance = null
+let logBuffer = []
+let flushTimeout = null
+let isFlushing = false
+let isLogging = false // Mencegah infinite loop logging re-entrant
+
+export function setSocket(sock) {
+    sockInstance = sock
+}
+
+function sendWhatsAppLog(text) {
+    const logJid = process.env.LOG_CHANNEL_JID
+    if (!logJid || !sockInstance || isLogging) return
+
+    logBuffer.push(text)
+
+    if (!flushTimeout && !isFlushing) {
+        flushTimeout = setTimeout(flushLogs, 2500)
+    }
+}
+
+async function flushLogs() {
+    flushTimeout = null
+    if (logBuffer.length === 0 || !sockInstance) return
+
+    isFlushing = true
+    const currentBatch = [...logBuffer]
+    logBuffer = []
+
+    isLogging = true
+    try {
+        const logJid = process.env.LOG_CHANNEL_JID
+        if (logJid) {
+            const messageText = currentBatch.join('\n')
+            await sockInstance.sendMessage(logJid, { text: messageText })
+        }
+    } catch (err) {
+        console.error('❌ [ChannelLogger] Gagal flush log ke channel:', err.message)
+    } finally {
+        isLogging = false
+        isFlushing = false
+        if (logBuffer.length > 0) {
+            flushTimeout = setTimeout(flushLogs, 2500)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
 // CORE RAW LOGGER — langsung ke stdout, tanpa pino
 // Dipakai untuk log yang butuh format custom & warna
 // ─────────────────────────────────────────────
@@ -122,6 +173,11 @@ function rawLog(level, module, ...args) {
     process.stdout.write(
         `${timestamp} ${icon} ${levelStr} ${modLabel} ${message}\n`
     )
+
+    // Kirim ke WhatsApp Channel (kecuali trace/debug agar tidak spamming/rate limit)
+    if (level !== 'trace' && level !== 'debug') {
+        sendWhatsAppLog(`${icon} *[${level.toUpperCase()}]* ${module ? `[${module.toUpperCase()}] ` : ''}${message}`)
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -158,25 +214,28 @@ export const botLogger = {
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} 🤖 ${C.bold}${C.cyan}[SYSTEM]${C.reset} ${msg}\n`
         )
+        sendWhatsAppLog(`🤖 *[SYSTEM]* ${msg}`)
     },
 
     /** Incoming message */
     message: ({ sender, type, body, isGroup, chatId }) => {
         const from = isGroup
-            ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId}${C.reset}`
-            : `${C.green}[DM]${C.reset}   ${C.dim}${sender}${C.reset}`
+            ? `[GROUP] ${chatId}`
+            : `[DM] ${sender}`
         const bodyPreview = body || ''
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} 📩 ${C.bold}MSG${C.reset}   ${from} ${C.dim}type=${type}${C.reset} ${C.white}"${bodyPreview}"${C.reset}\n`
+            `${C.gray}${ts()}${C.reset} 📩 ${C.bold}MSG${C.reset}   ${isGroup ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId}${C.reset}` : `${C.green}[DM]${C.reset}   ${C.dim}${sender}${C.reset}`} ${C.dim}type=${type}${C.reset} ${C.white}"${bodyPreview}"${C.reset}\n`
         )
+        sendWhatsAppLog(`📩 *[MSG]* ${from} | *type=*${type} | "${bodyPreview}"`)
     },
 
     /** Command execution */
     command: (name, sender, args = []) => {
-        const argsStr = args.length ? `${C.dim}[${args.join(', ')}]${C.reset}` : ''
+        const argsStr = args.length ? `[${args.join(', ')}]` : ''
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} 🚀 ${C.bold}${C.green}CMD${C.reset}    ${C.bold}${name}${C.reset} ${C.dim}← ${sender}${C.reset} ${argsStr}\n`
+            `${C.gray}${ts()}${C.reset} 🚀 ${C.bold}${C.green}CMD${C.reset}    ${C.bold}${name}${C.reset} ${C.dim}← ${sender}${C.reset} ${args.length ? `${C.dim}[${args.join(', ')}]${C.reset}` : ''}\n`
         )
+        sendWhatsAppLog(`🚀 *[CMD]* ${name} ← ${sender} ${argsStr}`)
     },
 
     /** Command result */
@@ -185,14 +244,16 @@ export const botLogger = {
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} ✅ ${C.bold}DONE${C.reset}   ${C.bold}${name}${C.reset} ${speed}(${ms}ms)${C.reset}\n`
         )
+        sendWhatsAppLog(`✅ *[DONE]* ${name} (${ms}ms)`)
     },
 
     /** AI call */
     ai: (provider, model, chatId, ms = null) => {
-        const msStr = ms !== null ? ` ${C.dim}${ms}ms${C.reset}` : ''
+        const msStr = ms !== null ? ` (${ms}ms)` : ''
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} 🤖 ${C.bold}${C.magenta}AI${C.reset}     ${C.bold}${provider}/${model}${C.reset} → ${C.dim}${chatId}${C.reset}${msStr}\n`
+            `${C.gray}${ts()}${C.reset} 🤖 ${C.bold}${C.magenta}AI${C.reset}     ${C.bold}${provider}/${model}${C.reset} → ${C.dim}${chatId}${C.reset}${ms !== null ? ` ${C.dim}${ms}ms${C.reset}` : ''}\n`
         )
+        sendWhatsAppLog(`🤖 *[AI]* ${provider}/${model} → ${chatId}${msStr}`)
     },
 
     /** AI route trigger (seamless/mention/dm) */
@@ -202,6 +263,7 @@ export const botLogger = {
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} 💬 ${color}${C.bold}[${route.toUpperCase()}]${C.reset} "${preview}"\n`
         )
+        sendWhatsAppLog(`💬 *[${route.toUpperCase()}]* "${preview}"`)
     },
 
     /** Admin/group action */
@@ -209,6 +271,7 @@ export const botLogger = {
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} 👑 ${C.bold}${C.red}ADMIN${C.reset}  ${C.bold}${action}${C.reset} → ${C.dim}${target}${C.reset} ${C.gray}by ${by}${C.reset}\n`
         )
+        sendWhatsAppLog(`👑 *[ADMIN]* ${action} → ${target} by ${by}`)
     },
 
     /** Reminder fired */
@@ -216,14 +279,16 @@ export const botLogger = {
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} ⏰ ${C.bold}${C.yellow}REMIND${C.reset} #${id} → ${C.dim}${chatId}${C.reset}\n`
         )
+        sendWhatsAppLog(`⏰ *[REMIND]* #${id} → ${chatId}`)
     },
 
     /** Media processing */
     media: (type, ms = null) => {
-        const msStr = ms !== null ? ` ${C.dim}${ms}ms${C.reset}` : ''
+        const msStr = ms !== null ? ` (${ms}ms)` : ''
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} 🎨 ${C.bold}${C.blue}MEDIA${C.reset}  ${type}${msStr}\n`
+            `${C.gray}${ts()}${C.reset} 🎨 ${C.bold}${C.blue}MEDIA${C.reset}  ${type}${ms !== null ? ` ${C.dim}${ms}ms${C.reset}` : ''}\n`
         )
+        sendWhatsAppLog(`🎨 *[MEDIA]* ${type}${msStr}`)
     },
 
     /** Connection events */
@@ -232,23 +297,26 @@ export const botLogger = {
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} ${icon} ${C.bold}CONN${C.reset}   ${status.toUpperCase()} ${C.dim}${detail}${C.reset}\n`
         )
+        sendWhatsAppLog(`${icon} *[CONN]* ${status.toUpperCase()} ${detail}`)
     },
 
     /** Error dengan stack trace opsional */
     err: (module, err, context = '') => {
         const errMsg = err instanceof Error ? err.message : String(err)
         const stack = err instanceof Error && err.stack
-            ? `\n${C.dim}${err.stack}${C.reset}`
+            ? `\n_${err.stack.slice(0, 500)}_`
             : ''
         process.stdout.write(
-            `${C.gray}${ts()}${C.reset} ❌ ${C.bold}${C.red}ERROR${C.reset}  ${C.red}[${module}]${C.reset} ${context ? C.dim + context + ' ' + C.reset : ''}${errMsg}${stack}\n`
+            `${C.gray}${ts()}${C.reset} ❌ ${C.bold}${C.red}ERROR${C.reset}  ${C.red}[${module}]${C.reset} ${context ? C.dim + context + ' ' + C.reset : ''}${errMsg}${err instanceof Error && err.stack ? `\n${C.dim}${err.stack}${C.reset}` : ''}\n`
         )
+        sendWhatsAppLog(`❌ *[ERROR]* [${module.toUpperCase()}] ${context ? `(${context}) ` : ''}${errMsg}${stack}`)
     },
 
     /** Separator / section header */
     section: (title) => {
         const line = '─'.repeat(50)
         process.stdout.write(`\n${C.dim}${line}\n  ${title}\n${line}${C.reset}\n\n`)
+        sendWhatsAppLog(`\n--- *${title}* ---\n`)
     },
 
     /** Raw divider */
