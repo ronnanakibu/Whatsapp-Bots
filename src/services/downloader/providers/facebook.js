@@ -116,7 +116,7 @@ export async function downloadFacebook(url, options = {}) {
             )
 
             let caption = `📘 *Facebook Video*`
-            if (parsed.title) caption += `\n📝 ${parsed.title.slice(0, 100)}`
+            if (parsed.title) caption += `\n📝 ${parsed.title}`
             if (parsed.quality) caption += `\n🎞️ Kualitas: ${parsed.quality}`
             caption += `\n_via ${api.name}_`
 

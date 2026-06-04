@@ -146,7 +146,7 @@ export async function downloadTikTok(rawUrl, options = {}) {
             // Build caption
             let caption = `🎵 *TikTok*`
             if (parsed.author) caption += `\n👤 ${parsed.author}`
-            if (parsed.title) caption += `\n📝 ${parsed.title.slice(0, 100)}`
+            if (parsed.title) caption += `\n📝 ${parsed.title}`
             caption += `\n_No watermark via ${api.name}_`
 
             return {
