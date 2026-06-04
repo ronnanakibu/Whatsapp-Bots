@@ -15,7 +15,24 @@ export default {
             return reply('❌ Masukkan kata kunci berita yang ingin dicek!\n\nContoh: *.cekhoax vaksin covid*')
         }
 
-        const query = args.join(' ')
+        let query = args.join(' ')
+        
+        // Cerdas: Jika input berupa URL, ekstrak keyword dari path URL-nya
+        if (query.startsWith('http://') || query.startsWith('https://')) {
+            try {
+                const urlObj = new URL(query)
+                // Ambil path terakhir atau gabungan path, hapus tanda hubung/slash menjadi spasi
+                const pathParts = urlObj.pathname.split('/').filter(p => p.length > 3)
+                if (pathParts.length > 0) {
+                    let slug = pathParts[pathParts.length - 1]
+                    // Bersihkan slug dari strip, garis bawah, dan ekstensi html/php
+                    query = slug.replace(/[-_]/g, ' ').replace(/\.(html|php|aspx)$/, '')
+                }
+            } catch (e) {
+                // Ignore jika bukan URL valid
+            }
+        }
+
         await reply(`🔍 Sedang mencari fakta tentang *"${query}"* di database TurnBackHoax...`)
 
         try {
