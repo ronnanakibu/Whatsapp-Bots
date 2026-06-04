@@ -68,6 +68,12 @@ export default {
                 isAnimated = finalQuotedType === 'videoMessage' || finalQuotedMsg[finalQuotedType]?.gifPlayback || (finalQuotedType === 'stickerMessage' && finalQuotedMsg[finalQuotedType]?.isAnimated)
             }
 
+            // FALLBACK: Kadang WA pembuat stiker bawaan gak nge-set isAnimated=true di metadata.
+            // Jadi kita cek langsung dari dalam struktur biner file WebP-nya!
+            if (!isAnimated && buffer.length > 12 && buffer.slice(8, 12).toString('ascii') === 'WEBP') {
+                isAnimated = buffer.includes(Buffer.from('ANIM'))
+            }
+
             let stickerBuffer
             if (isAnimated) {
                 logger.info('⏳ Processing ANIMATED sticker with FFmpeg...')
