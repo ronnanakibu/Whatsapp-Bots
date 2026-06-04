@@ -57,7 +57,7 @@ export default {
 
                 // Convert webp to mp4
                 try {
-                    await execPromise(`ffmpeg -i ${inputPath} -vcodec libx264 -pix_fmt yuv420p -loop 0 -preset fast ${outputPath}`)
+                    await execPromise(`ffmpeg -i ${inputPath} -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -vcodec libx264 -pix_fmt yuv420p -preset fast ${outputPath}`)
                     const mp4Buffer = fs.readFileSync(outputPath)
                     await sock.sendMessage(from, { video: mp4Buffer, gifPlayback: true, caption: '✅ Stiker berhasil dibongkar menjadi video animasi!' }, { quoted: msg })
                 } catch (ffmpegErr) {
