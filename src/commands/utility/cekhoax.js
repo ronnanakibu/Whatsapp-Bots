@@ -48,7 +48,21 @@ export default {
                 if (article.conclusion) {
                     replyText += `   Kesimpulan: ${article.conclusion}\n`
                 }
-                replyText += `   Tautan: https://turnbackhoax.id/artikel/${article.slug}\n\n`
+                
+                // Parse dan sertakan sumber verifikasi jika ada
+                if (Array.isArray(article.references) && article.references.length > 0) {
+                    // Beberapa data API dipisah dengan newline dalam satu string
+                    const rawRefs = article.references.flatMap(ref => typeof ref === 'string' ? ref.split(/[\r\n]+/) : ref)
+                    const cleanRefs = rawRefs.map(r => r.trim()).filter(Boolean)
+                    if (cleanRefs.length > 0) {
+                        replyText += `   Referensi Riset:\n`
+                        // Tampilkan maksimal 3 sumber agar pesan tidak terlalu panjang
+                        cleanRefs.slice(0, 3).forEach(r => replyText += `   - ${r}\n`)
+                        if (cleanRefs.length > 3) replyText += `   - _(+${cleanRefs.length - 3} sumber lainnya)_\n`
+                    }
+                }
+                
+                replyText += `   Tautan Resmi: https://turnbackhoax.id/artikel/${article.slug}\n\n`
             })
 
             replyText += `_Sumber: API TurnBackHoax.id / MAFINDO_`
