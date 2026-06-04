@@ -28,6 +28,7 @@ export default {
 
         let finalQuotedMsg = quotedMsg
         if (quotedMsg) {
+            const quotedType = Object.keys(quotedMsg)[0]
             const wrapperTypes = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2']
             if (wrapperTypes.includes(quotedType)) {
                 finalQuotedMsg = quotedMsg[quotedType].message
