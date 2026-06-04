@@ -9,8 +9,8 @@ export default {
     aliases: ['debug', 'fix', 'review'],
     category: 'ai',
     description: 'Debug atau review kode dengan AI.',
-    usage: '!code [kode] atau reply pesan berisi kode',
-    example: '!code console.log("hello"',
+    usage: '.code [kode] atau reply pesan berisi kode',
+    example: '.code console.log("hello"',
     cooldown: 5,
     permissions: ['user'],
 

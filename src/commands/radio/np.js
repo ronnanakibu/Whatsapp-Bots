@@ -6,7 +6,7 @@ export default {
     aliases: ['nowplaying', 'laguapa', 'current'],
     category: 'radio',
     description: 'Info lagu yang sedang diputar',
-    usage: '!np',
+    usage: '.np',
     cooldown: 3,
     permissions: ['user'],
 

@@ -11,8 +11,8 @@ export default {
     aliases: ['fakta', 'facts'],
     category: 'ai',
     description: 'Fakta menarik acak dari berbagai topik.',
-    usage: '!fact [topik]',
-    example: '!fact astronomi',
+    usage: '.fact [topik]',
+    example: '.fact astronomi',
     cooldown: 5,
     permissions: ['user'],
 

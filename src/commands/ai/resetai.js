@@ -8,7 +8,7 @@ export default {
     aliases: ['clearai', 'lupaai'],
     category: 'ai',
     description: 'Reset memory percakapan AI di chat ini.',
-    usage: '!resetai',
+    usage: '.resetai',
     cooldown: 5,
     permissions: ['user'],
 

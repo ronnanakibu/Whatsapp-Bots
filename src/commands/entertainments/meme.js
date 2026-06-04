@@ -6,8 +6,8 @@ export default {
     aliases: ['randomeme', 'memes'],
     category: 'entertainment',
     description: 'Random meme dari Reddit',
-    usage: '!meme [subreddit]',
-    example: '!meme programmerhumor',
+    usage: '.meme [subreddit]',
+    example: '.meme programmerhumor',
     cooldown: 5,
     permissions: ['user'],
 

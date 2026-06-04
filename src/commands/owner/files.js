@@ -27,7 +27,7 @@ export default {
     aliases: ['file'],
     category: 'owner',
     description: '[OWNER] Akses filesystem bot — lihat, baca, edit source code',
-    usage: '!files [ls|cat|edit|tree] [path] [content?]',
+    usage: '.files [ls|cat|edit|tree] [path] [content?]',
     cooldown: 2,
     permissions: ['owner'],
 

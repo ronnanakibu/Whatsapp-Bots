@@ -7,7 +7,7 @@ export default {
     aliases: ['openchat'],
     category: 'admin',
     description: 'Buka grup (semua anggota bisa kirim pesan).',
-    usage: '!unmute',
+    usage: '.unmute',
     cooldown: 3,
     permissions: ['admin'],
 

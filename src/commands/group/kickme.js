@@ -8,7 +8,7 @@ export default {
     aliases: ['kick-me'],
     category: 'admin',
     description: 'Keluar sendiri dari grup.',
-    usage: '!kickme',
+    usage: '.kickme',
     cooldown: 3,
     permissions: ['admin'],
 

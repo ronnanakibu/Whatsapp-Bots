@@ -29,7 +29,7 @@ export default {
     aliases: ['dares', 'tohdare', 'tantang'],
     category: 'entertainment',
     description: 'Random dare challenge untuk game Truth or Dare',
-    usage: '!dare',
+    usage: '.dare',
     cooldown: 3,
     permissions: ['user'],
 

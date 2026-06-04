@@ -11,8 +11,8 @@ export default {
     aliases: ['vision', 'analisa', 'describe', 'ocr'],
     category: 'ai',
     description: 'Analisa gambar dengan AI. Kirim foto + caption command.',
-    usage: '!lihat [pertanyaan tentang gambar]',
-    example: '!lihat apa yang ada di gambar ini?',
+    usage: '.lihat [pertanyaan tentang gambar]',
+    example: '.lihat apa yang ada di gambar ini?',
     cooldown: 5,
     permissions: ['user'],
 

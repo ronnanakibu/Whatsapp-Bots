@@ -5,7 +5,7 @@ export default {
     aliases: ['changelog', 'update', 'releases'],
     category: 'general',
     description: 'Melihat update/changelog terbaru langsung dari GitHub',
-    usage: '!changelogs',
+    usage: '.changelogs',
     cooldown: 5,
     permissions: ['user'],
 

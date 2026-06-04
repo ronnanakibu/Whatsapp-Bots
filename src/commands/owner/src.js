@@ -56,7 +56,7 @@ export default {
     aliases: ['source', 'fs', 'code-owner'],
     category: 'owner',
     description: '[OWNER] Baca, list, atau edit source code bot.',
-    usage: '!src list | !src read <path> | !src write <path>',
+    usage: '.src list | .src read <path> | !src write <path>',
     cooldown: 2,
     permissions: ['owner'],
 

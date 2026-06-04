@@ -6,8 +6,8 @@ export default {
     aliases: ['cekweb', 'isdown', 'checksite'],
     category: 'utility',
     description: 'Cek apakah sebuah website sedang up atau down',
-    usage: '!uptime [url]',
-    example: '!uptime https://google.com',
+    usage: '.uptime [url]',
+    example: '.uptime https://google.com',
     cooldown: 5,
     permissions: ['user'],
 

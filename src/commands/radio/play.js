@@ -10,8 +10,8 @@ export default {
     aliases: ['request', 'req', 'putar'],
     category: 'radio',
     description: 'Request lagu ke radio. Batch: pisahkan dengan koma.',
-    usage: '!play [judul/URL]',
-    example: '!play Sheila on 7 - Melompat Lebih Tinggi, Peterpan - Ada Apa Denganmu',
+    usage: '.play [judul/URL]',
+    example: '.play Sheila on 7 - Melompat Lebih Tinggi, Peterpan - Ada Apa Denganmu',
     cooldown: 5,
     permissions: ['user'],
 

@@ -8,7 +8,7 @@ export default {
     aliases: ['scan', 'bacagambar', 'extract'],
     category: 'utility',
     description: 'Extract teks dari gambar (foto struk, dokumen, screenshot, dll)',
-    usage: '!ocr (kirim/reply gambar)',
+    usage: '.ocr (kirim/reply gambar)',
     cooldown: 5,
     permissions: ['user'],
 

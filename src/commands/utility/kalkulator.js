@@ -6,8 +6,8 @@ export default {
     aliases: ['calc', 'hitung', 'math'],
     category: 'utility',
     description: 'Evaluasi ekspresi matematika',
-    usage: '!kalkulator [ekspresi]',
-    example: '!kalkulator (25 * 4) + sqrt(16) / 2',
+    usage: '.kalkulator [ekspresi]',
+    example: '.kalkulator (25 * 4) + sqrt(16) . 2',
     cooldown: 2,
     permissions: ['user'],
 

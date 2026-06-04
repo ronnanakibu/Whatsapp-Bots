@@ -4,7 +4,7 @@ export default {
     aliases: ['menu', 'h'],
     category: 'general',
     description: 'Tampilkan semua command yang tersedia',
-    usage: '!help [command]',
+    usage: '.help [command]',
     cooldown: 3,
     permissions: ['user'],
 

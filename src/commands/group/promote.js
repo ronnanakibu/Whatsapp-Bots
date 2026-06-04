@@ -6,7 +6,7 @@ export default {
     name: 'promote',
     category: 'admin',
     description: 'Jadikan anggota sebagai admin grup.',
-    usage: '!promote @user',
+    usage: '.promote @user',
     cooldown: 3,
     permissions: ['admin'],
 

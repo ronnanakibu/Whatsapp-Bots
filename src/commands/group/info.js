@@ -6,7 +6,7 @@ export default {
     aliases: ['ginfo'],
     category: 'admin',
     description: 'Menampilkan informasi dan daftar admin grup.',
-    usage: '!groupinfo',
+    usage: '.groupinfo',
     cooldown: 3,
     permissions: ['admin'],
 

@@ -9,7 +9,7 @@ export default {
     aliases: ['e', 'ev'],
     category: 'owner',
     description: '[OWNER] Jalankan kode JavaScript dinamis.',
-    usage: '!eval [kode]',
+    usage: '.eval [kode]',
     cooldown: 0,
     permissions: ['owner'],
 

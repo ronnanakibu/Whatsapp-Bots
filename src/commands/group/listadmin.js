@@ -5,7 +5,7 @@ export default {
     name: 'listadmin',
     category: 'admin',
     description: 'Menampilkan daftar admin di grup.',
-    usage: '!listadmin',
+    usage: '.listadmin',
     cooldown: 3,
     permissions: ['admin'],
 
