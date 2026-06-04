@@ -8,7 +8,9 @@ export default {
     desc: 'Mencari kebenaran suatu berita di database TurnBackHoax (MAFINDO).',
     use: '<kata kunci berita>',
     
-    async execute(sock, m, args) {
+    async execute(ctx) {
+        const { sock, msg: m, args } = ctx
+
         if (!args[0]) {
             return m.reply('❌ Masukkan kata kunci berita yang ingin dicek!\n\nContoh: *.cekhoax vaksin covid*')
         }
