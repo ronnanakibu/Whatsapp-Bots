@@ -523,6 +523,15 @@ class RadioService extends EventEmitter {
         return new Promise(async (resolve, reject) => {
             try {
                 const filters = [FX_PRESETS[this.#activeFx], EQ_PRESETS[this.#activeEq]].filter(Boolean)
+                
+                // Tambahkan efek Fade In selama 3 detik di awal lagu
+                filters.push('afade=t=in:st=0:d=3')
+                
+                // Tambahkan efek Fade Out selama 3 detik di akhir lagu (jika durasinya diketahui)
+                if (track.duration && track.duration > 6) {
+                    filters.push(`afade=t=out:st=${track.duration - 3}:d=3`)
+                }
+
                 const filterStr = filters.join(',')
 
                 botLogger.info('radio', `Memulai streaming untuk: ${track.title} [source: ${track.source || 'unknown'}]`)

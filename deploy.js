@@ -26,6 +26,9 @@ const ignoreList = [
     'memory',
     'scratch',
     'hf-bakcend',
+    'test_hoax.js',
+    'test_nvidia.js',
+    'test_routing.js',
     '.next'
 ];
 

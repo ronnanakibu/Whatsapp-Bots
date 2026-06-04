@@ -59,6 +59,11 @@ class MemoryService {
             this.#db.exec(`ALTER TABLE chat_history ADD COLUMN topic TEXT NOT NULL DEFAULT 'general'`)
         } catch (_) { /* kolom sudah ada, skip */ }
 
+        // Step 2.5: Tambah kolom ai_provider di chat_config
+        try {
+            this.#db.exec(`ALTER TABLE chat_config ADD COLUMN ai_provider TEXT`)
+        } catch (_) { /* kolom sudah ada, skip */ }
+
         // Step 3: Baru buat index setelah kolom topic pasti ada
         try {
             this.#db.exec(`
@@ -184,6 +189,19 @@ class MemoryService {
             VALUES (?, ?)
             ON CONFLICT(chat_id) DO UPDATE SET ai_enabled = excluded.ai_enabled, updated_at = unixepoch()
         `).run(chatId, enabled ? 1 : 0)
+    }
+
+    getAiProvider(chatId) {
+        const row = this.#db.prepare('SELECT ai_provider FROM chat_config WHERE chat_id = ?').get(chatId)
+        return row ? row.ai_provider : null
+    }
+
+    setAiProvider(chatId, provider) {
+        this.#db.prepare(`
+            INSERT INTO chat_config (chat_id, ai_enabled, ai_provider)
+            VALUES (?, 1, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET ai_provider = excluded.ai_provider, updated_at = unixepoch()
+        `).run(chatId, provider)
     }
 
     getStats() {

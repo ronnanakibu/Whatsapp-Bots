@@ -19,17 +19,34 @@ export default {
     async execute(ctx) {
         const { args, reply, react, chatId, msg } = ctx
 
-        if (!args.length) {
-            return reply(`*Cara pakai:*\n!q [pertanyaan kamu]\n\nContoh:\n!q siapa penemu listrik?\n!q lanjutkan cerita kita\n\nKetik !resetai untuk reset memory obrolan.`)
+        let forcedProvider = null
+        let cleanArgs = []
+        
+        for (const arg of args) {
+            if (arg === '--groq') forcedProvider = 'groq'
+            else if (arg === '--nvidia') forcedProvider = 'nvidia'
+            else if (arg === '--gemini') forcedProvider = 'gemini'
+            else cleanArgs.push(arg)
         }
 
-        const question = args.join(' ')
+        const question = cleanArgs.join(' ')
+
+        // Jika user sengaja mengganti parameter provider
+        if (forcedProvider) {
+            memoryService.setAiProvider(chatId, forcedProvider)
+            await reply(`[⚙️] Preferensi AI untuk chat ini diubah ke: *${forcedProvider.toUpperCase()}*`)
+        }
+
+        if (!question) {
+            if (forcedProvider) return // Kalau cuma setting param tanpa tanya, stop di sini
+            return reply(`*Cara pakai:*\n!q [pertanyaan kamu]\n\nAtau ganti AI sementara/permanen:\n!q --nvidia [tanya sesuatu]\n!q --groq\n\nKetik !resetparamai untuk reset otak ke default.`)
+        }
 
         // Thinking indicator
         await react('🤔')
 
         try {
-            const result = await aiService.chat(chatId, question)
+            const result = await aiService.chat(chatId, question, forcedProvider)
 
             const text = result.text
             const sent = await reply(text)

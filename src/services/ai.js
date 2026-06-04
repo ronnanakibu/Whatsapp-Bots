@@ -4,6 +4,7 @@
 
 import Groq from 'groq-sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import OpenAI from 'openai'
 import { memoryService } from './memory.js'
 import { logger } from '../utils/logger.js'
 
@@ -13,11 +14,21 @@ import { logger } from '../utils/logger.js'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+const nvidiaClient = process.env.NVIDIA_API_KEY ? new OpenAI({ 
+    apiKey: process.env.NVIDIA_API_KEY, 
+    baseURL: 'https://integrate.api.nvidia.com/v1' 
+}) : null
 
 // ─────────────────────────────────────────────
 // MODEL POOL
 // Rotasi otomatis kalau satu model rate-limited
 // ─────────────────────────────────────────────
+
+const NVIDIA_MODELS = [
+    'meta/llama-3.1-70b-instruct',
+    'meta/llama-3.1-8b-instruct',
+    'nvidia/llama-3.1-nemotron-70b-instruct',
+]
 
 const GROQ_MODELS = [
     'llama-3.3-70b-versatile',
@@ -73,7 +84,60 @@ Aturan:
 - Kalau ada konteks percakapan sebelumnya, gunakan untuk jawaban yang lebih relevan`
 
 // ─────────────────────────────────────────────
-// GROQ CHAT (primary — paling cepat)
+// NVIDIA CHAT (primary — paling pintar & cepat)
+// ─────────────────────────────────────────────
+
+async function nvidiaChat(chatId, userMessage, retryCount = 0) {
+    if (!nvidiaClient) throw new Error('NVIDIA API Key not configured')
+    const model = getAvailableModel(NVIDIA_MODELS)
+    const history = memoryService.getHistory(chatId)
+
+    const messages = [
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...history,
+        { role: 'user', content: userMessage }
+    ]
+
+    try {
+        const res = await nvidiaClient.chat.completions.create({
+            model,
+            messages,
+            max_tokens: 1024,
+            temperature: 0.7,
+        })
+
+        const reply = res.choices[0]?.message?.content?.trim()
+        if (!reply) throw new Error('Empty response from NVIDIA')
+
+        // Simpan ke memory
+        memoryService.addMessage(chatId, 'user', userMessage)
+        memoryService.addMessage(chatId, 'assistant', reply)
+
+        return { text: reply, model, provider: 'nvidia' }
+
+    } catch (err) {
+        const isRateLimit = err?.status === 429 || err?.message?.includes('rate')
+        const isModelError = err?.status === 400
+
+        if (isRateLimit) {
+            setCooldown(model, 60_000)
+            if (retryCount < NVIDIA_MODELS.length) {
+                logger.warn(`[AI] NVIDIA rate limit on ${model}, retrying...`)
+                return nvidiaChat(chatId, userMessage, retryCount + 1)
+            }
+        }
+
+        if (isModelError && retryCount < NVIDIA_MODELS.length) {
+            setCooldown(model, 30_000)
+            return nvidiaChat(chatId, userMessage, retryCount + 1)
+        }
+
+        throw err
+    }
+}
+
+// ─────────────────────────────────────────────
+// GROQ CHAT (fallback 1)
 // ─────────────────────────────────────────────
 
 async function groqChat(chatId, userMessage, retryCount = 0) {
@@ -337,19 +401,36 @@ Sumber: [sebutkan sumber/konteks singkat]`
 }
 
 // ─────────────────────────────────────────────
-// MAIN CHAT — Auto fallback Groq → Gemini
+// MAIN CHAT — Auto fallback NVIDIA → Groq → Gemini
 // ─────────────────────────────────────────────
 
-async function chat(chatId, userMessage) {
-    // Coba Groq dulu (lebih cepat)
-    try {
-        return await groqChat(chatId, userMessage)
-    } catch (groqErr) {
-        logger.warn(`[AI] Groq failed (${groqErr.message}), falling back to Gemini`)
+async function chat(chatId, userMessage, forcedProvider = null) {
+    // Tentukan provider utama (dari parameter, database memori, atau default 'groq')
+    let provider = forcedProvider || memoryService.getAiProvider(chatId) || 'groq'
+
+    if (provider === 'nvidia' && nvidiaClient) {
+        try {
+            return await nvidiaChat(chatId, userMessage)
+        } catch (err) {
+            logger.warn(`[AI] NVIDIA failed (${err.message}), falling back to Groq`)
+            provider = 'groq'
+        }
+    }
+
+    if (provider === 'groq') {
+        try {
+            return await groqChat(chatId, userMessage)
+        } catch (err) {
+            logger.warn(`[AI] Groq failed (${err.message}), falling back to Gemini`)
+            provider = 'gemini'
+        }
+    }
+
+    if (provider === 'gemini') {
         try {
             return await geminiChat(chatId, userMessage)
-        } catch (geminiErr) {
-            logger.error('[AI] Both providers failed:', geminiErr.message)
+        } catch (err) {
+            logger.error('[AI] Gemini failed:', err.message)
             throw new Error('Semua AI provider sedang sibuk. Coba lagi sebentar.')
         }
     }
@@ -389,6 +470,7 @@ export const aiService = {
     generateImage,
     debugCode,  // sudah handle chatId
     getDailyFact,
+    nvidiaChat,
     groqChat,
     geminiChat,
     geminiFactCheck,
