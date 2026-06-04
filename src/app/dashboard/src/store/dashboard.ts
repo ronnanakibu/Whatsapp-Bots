@@ -62,6 +62,7 @@ interface DashboardState {
   commandsList: any[]
   groupsList: any[]
   usersList: any[]
+  dbTables: string[]
   aiConfig: {
     providers: any[]
     fallbackChain: string[]
@@ -79,6 +80,7 @@ interface DashboardState {
   setCommandsList: (list: any[]) => void
   setGroupsList: (list: any[]) => void
   setUsersList: (list: any[]) => void
+  setDbTables: (tables: string[]) => void
   setAiConfig: (config: DashboardState['aiConfig']) => void
 }
 
@@ -110,6 +112,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   commandsList: [],
   groupsList: [],
   usersList: [],
+  dbTables: [],
   aiConfig: {
     providers: [],
     fallbackChain: ['nvidia', 'groq', 'gemini']
@@ -144,5 +147,6 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setCommandsList: (list) => set({ commandsList: list }),
   setGroupsList: (list) => set({ groupsList: list }),
   setUsersList: (list) => set({ usersList: list }),
+  setDbTables: (tables) => set({ dbTables: tables }),
   setAiConfig: (config) => set({ aiConfig: config })
 }))

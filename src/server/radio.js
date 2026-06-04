@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url'
 import Database from 'better-sqlite3'
 
 import { radioService } from '../services/radio.js'
-import { logger, addLogListener, removeLogListener, addMessageListener, removeMessageListener } from '../utils/logger.js'
+import { logger, addLogListener, removeLogListener, addMessageListener, removeMessageListener, getSocket, getLogHistory } from '../utils/logger.js'
 import { metricsService } from '../services/metrics.js'
 import { commands } from '../core/loader.js'
 
@@ -65,39 +65,96 @@ function getDbSize() {
     }
 }
 
+function getTableNames() {
+    if (!db) return []
+    try {
+        const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all()
+        return rows.map(r => r.name)
+    } catch (e) {
+        return []
+    }
+}
+
 // ─────────────────────────────────────────────
 // DATA GETTERS
 // ─────────────────────────────────────────────
 
-function getGroupsList() {
-    if (!db) return []
-    try {
-        const rows = db.prepare(`
-            SELECT 
-                c.chat_id as id,
-                c.persona,
-                c.ai_enabled,
-                c.ai_provider,
-                m.enabled as mod_enabled,
-                m.max_warnings
-            FROM chat_config c
-            LEFT JOIN moderation_config m ON c.chat_id = m.chat_id
-            WHERE c.chat_id LIKE '%@g.us'
-        `).all()
+// Cache for group avatar URLs to prevent rate-limiting and performance lags
+const avatarCache = {}
 
-        return rows.map(r => ({
-            id: r.id,
-            name: r.id.split('@')[0],
-            aiEnabled: !!r.ai_enabled,
-            aiProvider: r.ai_provider || 'groq',
-            modEnabled: !!r.mod_enabled,
-            maxWarnings: r.max_warnings || 3,
-            memberCount: Math.floor(Math.random() * 45) + 5,
-            lastActivity: 'Active'
-        }))
-    } catch (e) {
-        return []
+async function getGroupsList() {
+    const sock = getSocket()
+    let groupsMeta = {}
+    if (sock) {
+        try {
+            groupsMeta = await sock.groupFetchAllParticipating()
+        } catch (err) {
+            logger.error('[Radio/Groups] Failed to fetch participating groups:', err.message)
+        }
     }
+
+    const dbConfigs = {}
+    if (db) {
+        try {
+            const rows = db.prepare(`
+                SELECT 
+                    c.chat_id as id,
+                    c.persona,
+                    c.ai_enabled,
+                    c.ai_provider,
+                    m.enabled as mod_enabled,
+                    m.max_warnings
+                FROM chat_config c
+                LEFT JOIN moderation_config m ON c.chat_id = m.chat_id
+                WHERE c.chat_id LIKE '%@g.us'
+            `).all()
+            for (const r of rows) {
+                dbConfigs[r.id] = r
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    const groupJids = new Set([...Object.keys(groupsMeta), ...Object.keys(dbConfigs)])
+    
+    // Resolve group metadata and profile picture URLs in parallel with in-memory caching
+    const mergedList = await Promise.all(Array.from(groupJids).map(async (jid) => {
+        const meta = groupsMeta[jid]
+        const dbConf = dbConfigs[jid]
+
+        let name = meta?.subject || dbConf?.id?.split('@')[0] || jid.split('@')[0]
+        let desc = 'No group description available.'
+        if (meta?.desc) {
+            desc = typeof meta.desc === 'string' ? meta.desc : String(meta.desc)
+        }
+        let memberCount = meta?.participants?.length || Math.floor(Math.random() * 45) + 5
+        
+        let avatarUrl = avatarCache[jid] || ''
+        if (!avatarUrl && sock && sock.profilePictureUrl) {
+            try {
+                avatarUrl = await sock.profilePictureUrl(jid, 'image')
+                avatarCache[jid] = avatarUrl
+            } catch (_) {
+                avatarCache[jid] = '' // Cache empty string on failure to prevent repeated API calls
+            }
+        }
+
+        return {
+            chatId: jid,
+            name: name,
+            desc: desc,
+            avatarUrl: avatarUrl,
+            members: memberCount,
+            aiEnabled: dbConf ? !!dbConf.ai_enabled : false,
+            moderationEnabled: dbConf ? !!dbConf.mod_enabled : false,
+            aiProvider: dbConf ? (dbConf.ai_provider || 'groq') : 'groq',
+            maxWarnings: dbConf ? (dbConf.max_warnings || 3) : 3,
+            lastActivity: 'Active'
+        }
+    }))
+
+    return mergedList
 }
 
 function getUsersList() {
@@ -278,6 +335,20 @@ export function updateBotStatus(state, qr = null) {
     // Broadcast status to Socket.IO & SSE
     io?.emit('status:change', { state, qr })
     broadcastSSE('status:change', { state, qr })
+
+    // If bot becomes online/open, broadcast updated lists after dynamic sync stabilizes
+    if (state === 'open') {
+        setTimeout(async () => {
+            try {
+                const groups = await getGroupsList()
+                io?.emit('groups:update', groups)
+                const users = getUsersList()
+                io?.emit('users:update', users)
+            } catch (err) {
+                logger.error('[Radio/StatusOpen] Failed to broadcast lists on open:', err.message)
+            }
+        }, 3000)
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -339,46 +410,55 @@ export function startRadioServer() {
     addMessageListener(messageListenerCallback)
 
     // Socket.IO core namespaces & connection management
-    io.on('connection', (socket) => {
+    io.on('connection', async (socket) => {
         logger.info(`[Dashboard] Client connected: ${socket.id}`)
 
-        // Send initialization package
-        socket.emit('init', {
-            status: { state: currentBotStatus, qr: currentQrCode },
-            uptime: Math.floor(process.uptime()),
-            metrics: {
-                cpuUsage: metricsService.getSystemMetrics().cpuUsage,
-                memoryUsage: metricsService.getSystemMetrics().memoryUsed,
-                totalMemory: metricsService.getSystemMetrics().memoryTotal,
-                messagesToday: metricsService.getAnalyticsData().downloadsToday * 6 + 15,
-                commandsExecuted: metricsService.getAnalyticsData().commandsToday,
-                aiRequests: Math.floor(metricsService.getAnalyticsData().commandsToday * 0.4),
-                downloads: metricsService.getAnalyticsData().downloadsToday,
-                activeUsers: getUsersList().length,
-                activeGroups: getGroupsList().length,
-                dbSize: getDbSize()
-            },
-            analytics: {
-                hourlyMessageVolume: [2, 5, 1, 8, 12, 16, 9, 14, 11, 23, 19, 21, 28, 30, 24, 18, 15, 12, 9, 6, 4, 3, 2, 1],
-                commandUsage: metricsService.getAnalyticsData().topCommands,
-                aiCalls: [
-                    { provider: 'groq', count: 24 },
-                    { provider: 'gemini', count: 18 },
-                    { provider: 'nvidia', count: 10 }
-                ]
-            },
-            commands: getCommandsList(),
-            groups: getGroupsList(),
-            users: getUsersList(),
-            ai: {
-                providers: [
-                    { name: 'nvidia', active: true, ping: 42 },
-                    { name: 'groq', active: true, ping: 25 },
-                    { name: 'gemini', active: true, ping: 75 }
-                ],
-                fallbackChain: ['nvidia', 'groq', 'gemini']
-            }
-        })
+        try {
+            const groups = await getGroupsList()
+            const users = getUsersList()
+
+            // Send initialization package
+            socket.emit('init', {
+                status: { state: currentBotStatus, qr: currentQrCode },
+                uptime: Math.floor(process.uptime()),
+                metrics: {
+                    cpuUsage: metricsService.getSystemMetrics().cpuUsage,
+                    memoryUsage: metricsService.getSystemMetrics().memoryUsed,
+                    totalMemory: metricsService.getSystemMetrics().memoryTotal,
+                    messagesToday: metricsService.getAnalyticsData().downloadsToday * 6 + 15,
+                    commandsExecuted: metricsService.getAnalyticsData().commandsToday,
+                    aiRequests: Math.floor(metricsService.getAnalyticsData().commandsToday * 0.4),
+                    downloads: metricsService.getAnalyticsData().downloadsToday,
+                    activeUsers: users.length,
+                    activeGroups: groups.length,
+                    dbSize: getDbSize()
+                },
+                analytics: {
+                    hourlyMessageVolume: [2, 5, 1, 8, 12, 16, 9, 14, 11, 23, 19, 21, 28, 30, 24, 18, 15, 12, 9, 6, 4, 3, 2, 1],
+                    commandUsage: metricsService.getAnalyticsData().topCommands,
+                    aiCalls: [
+                        { provider: 'groq', count: 24 },
+                        { provider: 'gemini', count: 18 },
+                        { provider: 'nvidia', count: 10 }
+                    ]
+                },
+                commands: getCommandsList(),
+                groups: groups,
+                users: users,
+                logs: getLogHistory(),
+                dbTables: getTableNames(),
+                ai: {
+                    providers: [
+                        { name: 'nvidia', active: true, ping: 42 },
+                        { name: 'groq', active: true, ping: 25 },
+                        { name: 'gemini', active: true, ping: 75 }
+                    ],
+                    fallbackChain: ['nvidia', 'groq', 'gemini']
+                }
+            })
+        } catch (err) {
+            logger.error('[Dashboard/Init] Error compiling client init payload:', err.message)
+        }
 
         // Client triggers
         socket.on('bot:restart', () => {
@@ -392,6 +472,42 @@ export function startRadioServer() {
                 cmd.enabled = enabled
                 logger.info(`[Dashboard] Toggled command "${name}" -> ${enabled}`)
                 io?.emit('commands:update', getCommandsList())
+            }
+        })
+
+        socket.on('db:query', ({ sql }) => {
+            if (!db) {
+                socket.emit('db:query_result', { success: false, error: 'Database connection offline.' })
+                return
+            }
+            logger.info(`[Dashboard/DB] Executing query: "${sql}"`)
+            try {
+                const trimmed = sql.trim()
+                const stmt = db.prepare(trimmed)
+                
+                // Use better-sqlite3 statement.reader property to identify SELECT and other read queries
+                const isSelect = stmt.reader
+                if (isSelect) {
+                    const rows = stmt.all()
+                    socket.emit('db:query_result', { success: true, isSelect: true, data: rows })
+                } else {
+                    const info = stmt.run()
+                    socket.emit('db:query_result', { 
+                        success: true, 
+                        isSelect: false, 
+                        data: {
+                            changes: info.changes,
+                            lastInsertRowid: info.lastInsertRowid
+                        },
+                        // Refresh table names just in case a table was created or dropped
+                        dbTables: getTableNames()
+                    })
+                    // Also broadcast updated tables list to all connected clients if DDL/DML ran
+                    io?.emit('db:tables_update', getTableNames())
+                }
+            } catch (err) {
+                logger.error(`[Dashboard/DB] Query execution failed: "${sql}" - ${err.message}`)
+                socket.emit('db:query_result', { success: false, error: err.message })
             }
         })
 

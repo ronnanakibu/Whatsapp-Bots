@@ -172,6 +172,13 @@ export async function handleIncomingMessage(sock, { messages }) {
                 return
             }
 
+            if (command.enabled === false) {
+                await react('🚫')
+                await reply(`🚫 Command *!${commandName}* sedang dinonaktifkan oleh owner secara realtime.`)
+                botLogger.warn('handler', `Attempted to use disabled command "${commandName}" from ${sender}`)
+                return
+            }
+
             // ── VALIDATOR MIDDLEWARE ──
             const valResult = validateArgs(rawArgs)
             if (!valResult.valid) {

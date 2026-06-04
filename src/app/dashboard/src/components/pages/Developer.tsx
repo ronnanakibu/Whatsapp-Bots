@@ -46,8 +46,12 @@ export default function Developer() {
         <div className="flex flex-col md:flex-row items-center md:items-start gap-6 relative z-10">
           {/* Avatar avatar */}
           <div className="relative shrink-0">
-            <div className="h-24 w-24 rounded-full bg-gradient-to-tr from-accent to-indigo-500 flex items-center justify-center text-white font-extrabold text-3xl shadow-xl shadow-accent/10 border border-white/10">
-              R
+            <div className="h-24 w-24 rounded-full overflow-hidden shadow-xl shadow-accent/10 border border-white/10">
+              <img 
+                src="https://github.com/ronnanakibu.png" 
+                alt="Ronn" 
+                className="h-full w-full object-cover"
+              />
             </div>
             <div className="absolute bottom-0 right-0 h-6 w-6 rounded-full bg-emerald-500 border-2 border-background flex items-center justify-center text-[10px] text-white">
               ⚡

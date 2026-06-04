@@ -115,6 +115,10 @@ export function setSocket(sock) {
     sockInstance = sock
 }
 
+export function getSocket() {
+    return sockInstance
+}
+
 function sendWhatsAppLog(text) {
     const logJid = process.env.LOG_CHANNEL_JID
     if (!logJid || !sockInstance || isLogging) return
@@ -185,6 +189,12 @@ export async function flushLogsImmediately() {
 
 const logListeners = []
 const messageListeners = []
+const logHistory = []
+const MAX_LOG_HISTORY = 100
+
+export function getLogHistory() {
+    return logHistory
+}
 
 export function addLogListener(cb) {
     if (typeof cb === 'function') logListeners.push(cb)
@@ -210,6 +220,10 @@ process.stdout.write = (chunk, encoding, callback) => {
     const str = chunk ? chunk.toString() : ''
     const plainText = stripAnsi(str).trim()
     if (plainText) {
+        logHistory.push(plainText)
+        if (logHistory.length > MAX_LOG_HISTORY) {
+            logHistory.shift()
+        }
         for (const listener of logListeners) {
             try { listener(plainText) } catch (err) {}
         }

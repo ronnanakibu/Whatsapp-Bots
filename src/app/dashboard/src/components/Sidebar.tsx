@@ -58,7 +58,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
           </div>
           <div>
             <h1 className="text-sm font-semibold tracking-tight text-white">BotOS</h1>
-            <p className="text-[10px] text-muted-foreground font-mono">v2.5.0</p>
+            <p className="text-[10px] text-muted-foreground font-mono">v2.5.2</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 px-2 py-1 bg-muted rounded-full border border-border text-[10px] text-muted-foreground font-medium">

@@ -17,6 +17,7 @@ export function useSocket() {
     setCommandsList,
     setGroupsList,
     setUsersList,
+    setDbTables,
     setAiConfig
   } = useDashboardStore()
 
@@ -53,6 +54,15 @@ export function useSocket() {
       if (data.commands) setCommandsList(data.commands)
       if (data.groups) setGroupsList(data.groups)
       if (data.users) setUsersList(data.users)
+      if (data.dbTables) setDbTables(data.dbTables)
+      if (data.logs) {
+        const formattedLogs = data.logs.map((text: string, idx: number) => ({
+          id: `init-${idx}-${Math.random().toString(36).substring(7)}`,
+          timestamp: Date.now() - (data.logs.length - idx) * 1000,
+          text
+        }))
+        useDashboardStore.setState({ logs: formattedLogs })
+      }
       if (data.ai) setAiConfig(data.ai)
     })
 
@@ -91,6 +101,10 @@ export function useSocket() {
       setUsersList(list)
     })
 
+    socket.on('db:tables_update', (list) => {
+      setDbTables(list)
+    })
+
     socket.on('ai:update', (config) => {
       setAiConfig(config)
     })
@@ -104,5 +118,5 @@ export function useSocket() {
     socketRef.current?.emit(event, data)
   }
 
-  return { emit }
+  return { emit, socket: socketRef.current }
 }
