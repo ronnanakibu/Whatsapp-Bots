@@ -49,6 +49,11 @@ async function startBot() {
         botLogger.system('Commands loaded ✓')
         startRadioServer()
         botLogger.system('Radio server started ✓')
+        
+        // Start Discord Bot if token exists
+        const { startDiscordBot } = await import('../discord/index.js')
+        startDiscordBot()
+        botLogger.system('Discord bot initialized ✓')
     } catch (err) {
         botLogger.err('bot', err, 'loadCommands')
     }
