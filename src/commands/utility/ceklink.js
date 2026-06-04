@@ -71,35 +71,26 @@ export default {
 
     async fallbackCheck(url, reply, react) {
         try {
-            // Gunakan VirusTotal public lookup (no key, limited)
-            const domain = new URL(url).hostname
-            const res = await fetch(`https://www.virustotal.com/vtapi/v2/url/report?apikey=0&resource=${encodeURIComponent(url)}`)
+            const prompt = `Analisa URL berikut ini apakah berpotensi sebagai link phishing, malware, scam, atau link aman.
+URL: ${url}
 
-            // Kalau tidak ada API key VT, fallback ke heuristic check saja
-            const suspiciousPatterns = [
-                /bit\.ly|tinyurl|t\.co/i,        // shortlinks (neutral, tapi tandai)
-                /login.*paypal|paypal.*login/i,
-                /secure.*bank|bank.*secure/i,
-                /account.*verify|verify.*account/i,
-                /free.*prize|prize.*free/i,
-                /\.xyz$|\.tk$|\.ml$|\.ga$|\.cf$/i, // TLD mencurigakan
-            ]
+Berikan analisa singkat dan padat (maksimal 3-4 kalimat).
+Format balasan (gunakan emoji):
+✅ *Aman* atau ⚠️ *Mencurigakan* atau ⛔ *Berbahaya*
+[Analisa kamu]
 
-            const suspicious = suspiciousPatterns.filter(p => p.test(url))
+Jangan berikan pengingat tentang API key.`
 
-            if (!suspicious.length) {
-                await reply(`✅ *Cek URL*\n\n🔗 ${url}\n\n📋 Tidak ditemukan pola mencurigakan.\n_Catatan: Untuk cek lebih akurat, tambahkan SAFE_BROWSING_API_KEY di .env_`)
-            } else {
-                await reply(
-                    `⚠️ *URL Mencurigakan*\n\n` +
-                    `🔗 ${url}\n\n` +
-                    `📋 Ditemukan ${suspicious.length} pola mencurigakan.\n` +
-                    `_Hati-hati! Tambahkan SAFE_BROWSING_API_KEY untuk cek lebih akurat._`
-                )
-            }
+            // Gunakan isolated ID agar tidak bercampur dengan history chat user
+            const { aiService } = await import('../../services/ai.js')
+            const isolatedId = `__ceklink__${Date.now()}`
+            
+            const result = await aiService.geminiChat(isolatedId, prompt)
+            
+            await reply(`🔍 *Analisa AI (Gemini)*\n\n🔗 ${url}\n\n${result.text}`)
             await react('✅')
         } catch (err) {
-            await reply(`❌ Gagal cek URL: ${err.message}`)
+            await reply(`❌ Gagal cek URL via AI: ${err.message}`)
             await react('❌')
         }
     }
