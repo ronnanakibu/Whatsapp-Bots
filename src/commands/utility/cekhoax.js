@@ -49,7 +49,7 @@ export default {
             const isFallbackResult = data?.meta?.total_articles > 1000
 
             if (!articles || articles.length === 0 || isFallbackResult) {
-                botLogger(`⚠️ Data spesifik tidak ditemukan di TurnBackHoax. Mengalihkan ke Gemini AI untuk menganalisa fakta dari internet... ⏳`)
+                await reply(`⚠️ Data spesifik tidak ditemukan di TurnBackHoax. Mengalihkan ke Gemini AI untuk menganalisa fakta dari internet... ⏳`)
 
                 const originalQuery = args.join(' ')
                 const prompt = `Sebagai asisten pemeriksa fakta, tolong verifikasi kebenaran informasi atau tautan berita berikut ini dengan mengambil dan menyimpulkan dari berbagai sumber terpercaya di internet:\n\n"${originalQuery}"\n\nBuatlah laporan ringkas dengan struktur:\n1. Status (Fakta / Hoax / Konteks Keliru)\n2. Kesimpulan Singkat\n3. Penjelasan Lengkap\n4. Referensi Web Terpercaya (wajib sertakan link jika ada).`
