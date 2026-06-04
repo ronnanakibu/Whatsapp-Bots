@@ -139,6 +139,21 @@ export async function handleIncomingMessage(sock, { messages }) {
             }
         }
 
+        // ── AI MODERATOR CHECK ──
+        if (isGroup && !isCommand && body.trim().length > 0) {
+            const { moderatorService } = await import('../services/moderator.js')
+            if (await moderatorService.isModerationEnabled(from)) {
+                const bypass = await moderatorService.isAdminOrOwner(sock, from, sender)
+                if (!bypass) {
+                    const check = await moderatorService.checkMessage(body)
+                    if (check.isToxic && check.confidence >= 0.75) {
+                        await moderatorService.handleViolation(sock, from, sender, check.reason, msg, reply, react)
+                        return
+                    }
+                }
+            }
+        }
+
         // ─────────────────────────────────────────────
         // ROUTE 1: COMMAND (prefix)
         // ─────────────────────────────────────────────

@@ -52,6 +52,21 @@ class MemoryService {
                 persona     TEXT,
                 updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
             );
+
+            CREATE TABLE IF NOT EXISTS moderation_config (
+                chat_id     TEXT    PRIMARY KEY,
+                enabled     INTEGER NOT NULL DEFAULT 0,
+                max_warnings INTEGER NOT NULL DEFAULT 3,
+                updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+            );
+
+            CREATE TABLE IF NOT EXISTS moderation_warnings (
+                chat_id     TEXT    NOT NULL,
+                user_id     TEXT    NOT NULL,
+                warning_count INTEGER NOT NULL DEFAULT 0,
+                updated_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+                PRIMARY KEY (chat_id, user_id)
+            );
         `)
 
         // Step 2: Tambah kolom topic SEBELUM buat index yang reference kolom ini
@@ -202,6 +217,10 @@ class MemoryService {
             VALUES (?, 1, ?)
             ON CONFLICT(chat_id) DO UPDATE SET ai_provider = excluded.ai_provider, updated_at = unixepoch()
         `).run(chatId, provider)
+    }
+
+    get db() {
+        return this.#db
     }
 
     getStats() {
