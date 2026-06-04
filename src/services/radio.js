@@ -614,7 +614,7 @@ class RadioService extends EventEmitter {
                     '-i', isDirectUrl ? inputStream : 'pipe:0',
                     '-vn',
                     '-acodec', 'libmp3lame',
-                    '-ab', '128k',
+                    '-ab', '320k',
                     '-ar', '44100',
                     '-ac', '2',
                 ]
