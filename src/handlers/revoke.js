@@ -44,6 +44,7 @@ async function processRevokedKey(sock, key) {
 
         let captionText = `🕵️‍♂️ *THE SNITCH* 🕵️‍♂️\n\nTerciduk kamu hapus pesan, @${sender.split('@')[0]}! 😏\n\n`
         const devJid = process.env.OWNER_NUMBER + '@s.whatsapp.net'
+        const validMentions = sender.endsWith('@lid') ? [] : [sender]
         
         // Handle text message
         if (originalMsg.message?.conversation || originalMsg.message?.extendedTextMessage) {
@@ -51,11 +52,11 @@ async function processRevokedKey(sock, key) {
             captionText += `Pesan: "${body}"`
             
             const promptText = `[ANTI-SNITCH]\nPesan dihapus oleh @${sender.split('@')[0]} di ${isGroup ? 'Grup' : 'Private'}.\n\nIsi: "${body}"\n\nBalas pesan ini dengan *1* (Kirim ke grup asal) atau *0* (Abaikan demi privasi).`
-            const promptMsg = await sock.sendMessage(devJid, { text: promptText, mentions: [sender] })
+            const promptMsg = await sock.sendMessage(devJid, { text: promptText, mentions: validMentions })
             
             interactiveService.createSession(promptMsg.key.id, devJid, devJid, async (ctx, answer) => {
                 if (answer === '1') {
-                    await sock.sendMessage(key.remoteJid, { text: captionText, mentions: [sender] })
+                    await sock.sendMessage(key.remoteJid, { text: captionText, mentions: validMentions })
                     await ctx.reply('✅ Diteruskan ke chat asal.')
                 } else if (answer === '0') {
                     await ctx.reply('🔒 Diabaikan. Privasi terjaga.')
@@ -89,13 +90,13 @@ async function processRevokedKey(sock, key) {
                     } else {
                         await sock.sendMessage(devJid, { audio: buffer, mimetype: mediaContent.mimetype, ptt: mediaContent.ptt })
                     }
-                    promptMsg = await sock.sendMessage(devJid, { text: promptText, mentions: [sender] })
+                    promptMsg = await sock.sendMessage(devJid, { text: promptText, mentions: validMentions })
                 } else {
                     // Send media attached with prompt text
                     promptMsg = await sock.sendMessage(devJid, { 
                         [messageType.replace('Message', '')]: buffer, 
                         caption: promptText, 
-                        mentions: [sender],
+                        mentions: validMentions,
                         mimetype: mediaContent.mimetype
                     })
                 }
@@ -103,16 +104,16 @@ async function processRevokedKey(sock, key) {
                 interactiveService.createSession(promptMsg.key.id, devJid, devJid, async (ctx, answer) => {
                     if (answer === '1') {
                         if (messageType === 'stickerMessage') {
-                            await sock.sendMessage(key.remoteJid, { text: captionText, mentions: [sender] })
+                            await sock.sendMessage(key.remoteJid, { text: captionText, mentions: validMentions })
                             await sock.sendMessage(key.remoteJid, { sticker: buffer })
                         } else if (messageType === 'audioMessage') {
-                            await sock.sendMessage(key.remoteJid, { text: captionText, mentions: [sender] })
+                            await sock.sendMessage(key.remoteJid, { text: captionText, mentions: validMentions })
                             await sock.sendMessage(key.remoteJid, { audio: buffer, mimetype: mediaContent.mimetype, ptt: mediaContent.ptt })
                         } else {
                             await sock.sendMessage(key.remoteJid, { 
                                 [messageType.replace('Message', '')]: buffer, 
                                 caption: captionText, 
-                                mentions: [sender],
+                                mentions: validMentions,
                                 mimetype: mediaContent.mimetype
                             })
                         }
@@ -123,7 +124,7 @@ async function processRevokedKey(sock, key) {
                 })
             } catch (err) {
                 botLogger.err('revoke', err, 'Failed to download deleted media')
-                await sock.sendMessage(devJid, { text: `[ANTI-SNITCH]\nGagal mengunduh media yang dihapus oleh @${sender.split('@')[0]}.`, mentions: [sender] })
+                await sock.sendMessage(devJid, { text: `[ANTI-SNITCH]\nGagal mengunduh media yang dihapus oleh @${sender.split('@')[0]}.`, mentions: validMentions })
             }
         }
     } catch (err) {
