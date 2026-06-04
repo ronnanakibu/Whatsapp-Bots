@@ -24,6 +24,8 @@ const ignoreList = [
     'AGENTS.md',
     'CLAUDE.md',
     'memory',
+    'scratch',
+    'hf-bakcend',
     '.next'
 ];
 
@@ -144,9 +146,9 @@ async function main() {
         // Auto build & include dashboard/out if dashboard source files changed
         const hasDashboardChanges = filesToUpload.some(file => {
             const normalized = file.replace(/\\/g, '/');
-            return normalized.startsWith('dashboard/') && 
-                   !normalized.startsWith('dashboard/out/') && 
-                   !normalized.startsWith('dashboard/node_modules/');
+            return normalized.startsWith('dashboard/') &&
+                !normalized.startsWith('dashboard/out/') &&
+                !normalized.startsWith('dashboard/node_modules/');
         });
 
         if (hasDashboardChanges) {

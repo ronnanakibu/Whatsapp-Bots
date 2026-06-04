@@ -28,11 +28,10 @@ export async function downloadYtdlp(url, options = {}) {
     // Kita biarkan yt-dlp yang menentukan ekstensi aslinya, lalu kita cari filenya
     const outTemplate = path.join(TEMP_DIR, `${sessionId}.%(ext)s`)
 
-    let args = [
+    const args = [
         '--no-playlist',
         '--no-warnings',
-        '--quiet',
-        '--dump-json', // Supaya kita dapat JSON metadata di stdout
+        '--write-info-json', // Tulis metadata ke file .info.json, JANGAN pakai --dump-json karena itu mencegah download!
         '-o', outTemplate,
     ]
 
@@ -60,10 +59,8 @@ export async function downloadYtdlp(url, options = {}) {
     return new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, args)
         
-        let stdout = ''
         let stderr = ''
 
-        proc.stdout.on('data', d => stdout += d.toString())
         proc.stderr.on('data', d => stderr += d.toString())
 
         proc.on('close', code => {
@@ -74,12 +71,14 @@ export async function downloadYtdlp(url, options = {}) {
             }
 
             try {
-                // Parse metadata dari output dump-json
-                const jsonStrs = stdout.trim().split('\n')
-                // Ambil baris terakhir yang berupa JSON
-                const metadata = JSON.parse(jsonStrs[jsonStrs.length - 1])
+                // Baca metadata dari file .info.json
+                const infoJsonPath = path.join(TEMP_DIR, `${sessionId}.info.json`)
+                let metadata = {}
+                if (fs.existsSync(infoJsonPath)) {
+                    metadata = JSON.parse(fs.readFileSync(infoJsonPath, 'utf-8'))
+                }
                 
-                // Cari file yang berhasil di-download
+                // Cari file yang berhasil di-download (jangan ambil .info.json)
                 const downloadedFile = findDownloadedFile(sessionId)
                 
                 if (!downloadedFile) {
@@ -131,7 +130,7 @@ export async function downloadYtdlp(url, options = {}) {
 function findDownloadedFile(sessionId) {
     if (!fs.existsSync(TEMP_DIR)) return null
     const files = fs.readdirSync(TEMP_DIR)
-    const match = files.find(f => f.startsWith(sessionId))
+    const match = files.find(f => f.startsWith(sessionId) && !f.endsWith('.info.json'))
     if (match) return path.join(TEMP_DIR, match)
     return null
 }
