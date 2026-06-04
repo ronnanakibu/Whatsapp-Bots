@@ -39,7 +39,7 @@ export function startDiscordBot() {
         if (command === 'play') {
             const query = args.join(' ')
             if (!query) return message.reply('Tulis lagu yang mau diputar. Contoh: `!play Nadin Amizah`')
-            
+
             const voiceChannel = message.member?.voice?.channel
             if (!voiceChannel) return message.reply('Kamu harus masuk ke Voice Channel dulu!')
 
@@ -67,7 +67,7 @@ export function startDiscordBot() {
                 const radioPort = process.env.RADIO_PORT || 8080
                 const resource = createAudioResource(`http://127.0.0.1:${radioPort}/stream`)
                 audioPlayer.play(resource)
-                
+
                 message.reply('Masuk ke Voice Channel & menyambungkan siaran radio WA! 📻')
             }
 
@@ -75,7 +75,7 @@ export function startDiscordBot() {
                 // Tambahkan lagu ke antrean global WA
                 const msg = await message.reply(`🔍 Mencari \`${query}\`...`)
                 const track = await radioService.addTrack(query, message.author.username)
-                
+
                 msg.edit(`✅ **Ditambahkan ke antrean:** ${track.title}\nRequested by: ${track.requestedBy}`)
             } catch (err) {
                 message.reply(`❌ Gagal menambahkan lagu: ${err.message}`)
