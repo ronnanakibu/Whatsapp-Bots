@@ -46,6 +46,7 @@ async function processRevokedKey(sock, key) {
 
         const isGroup = key.remoteJid.endsWith('@g.us')
         const sender = isGroup ? (originalMsg.key.participant || key.remoteJid) : key.remoteJid
+        const pushName = originalMsg.pushName || sender.split('@')[0]
         
         botLogger.info('revoke', `Caught deleted message from ${sender}`)
 
@@ -62,9 +63,8 @@ async function processRevokedKey(sock, key) {
             const body = originalMsg.message.conversation || originalMsg.message.extendedTextMessage.text
             captionText += `Pesan: "${body}"`
             
-            const promptText = `[ANTI-SNITCH]\nPesan dihapus oleh @${sender.split('@')[0]} di ${isGroup ? 'Grup' : 'Private'}.\n\nIsi: "${body}"\n\nBalas pesan ini dengan *1* (Kirim ke grup asal) atau *0* (Abaikan demi privasi).`
+            const promptText = `[ANTI-SNITCH]\nPesan dihapus oleh *${pushName}* di ${isGroup ? 'Grup' : 'Private'}.\n\nIsi: "${body}"\n\nBalas pesan ini dengan *1* (Kirim ke grup asal) atau *0* (Abaikan demi privasi).`
             const promptOptions = { text: promptText }
-            if (validMentions) promptOptions.mentions = validMentions
             const promptMsg = await sock.sendMessage(devJid, promptOptions)
             
             interactiveService.createSession(promptMsg.key.id, devJid, devJid, async (ctx, answer) => {
@@ -96,7 +96,7 @@ async function processRevokedKey(sock, key) {
                 }
                 
                 let promptMsg;
-                const promptText = `[ANTI-SNITCH]\nMedia dihapus oleh @${sender.split('@')[0]} di ${isGroup ? 'Grup' : 'Private'}.\n\nBalas pesan ini dengan *1* (Kirim ke grup asal) atau *0* (Abaikan demi privasi).`
+                const promptText = `[ANTI-SNITCH]\nMedia dihapus oleh *${pushName}* di ${isGroup ? 'Grup' : 'Private'}.\n\nBalas pesan ini dengan *1* (Kirim ke grup asal) atau *0* (Abaikan demi privasi).`
 
                 if (messageType === 'stickerMessage' || messageType === 'audioMessage') {
                     // Send media first, then prompt text
@@ -106,7 +106,6 @@ async function processRevokedKey(sock, key) {
                         await sock.sendMessage(devJid, { audio: buffer, mimetype: mediaContent.mimetype, ptt: mediaContent.ptt })
                     }
                     const pOpts = { text: promptText }
-                    if (validMentions) pOpts.mentions = validMentions
                     promptMsg = await sock.sendMessage(devJid, pOpts)
                 } else {
                     // Send media attached with prompt text
@@ -115,7 +114,6 @@ async function processRevokedKey(sock, key) {
                         caption: promptText,
                         mimetype: mediaContent.mimetype
                     }
-                    if (validMentions) mOpts.mentions = validMentions
                     promptMsg = await sock.sendMessage(devJid, mOpts)
                 }
 
