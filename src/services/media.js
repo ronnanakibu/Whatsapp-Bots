@@ -527,6 +527,33 @@ class MediaService {
             throw new Error('Gagal memproses stiker animasi.')
         }
     }
+    async boostMediaVolume(buffer, ext = 'mp4', volumeMultiplier = 2.0) {
+        let inputPath, outputPath
+        try {
+            const tmpDir = path.resolve('./storage/media/tmp')
+            if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+            const id = crypto.randomBytes(4).toString('hex')
+            inputPath = path.join(tmpDir, `${id}_in.${ext}`)
+            outputPath = path.join(tmpDir, `${id}_out.${ext}`)
+
+            fs.writeFileSync(inputPath, buffer)
+
+            const vcodec = ext === 'mp4' ? '-vcodec copy' : ''
+            
+            await execPromise(`ffmpeg -y -i ${inputPath} ${vcodec} -af "volume=${volumeMultiplier}" ${outputPath}`)
+            
+            return fs.readFileSync(outputPath)
+        } catch (err) {
+            logger.error('❌ [FFmpeg] Boost Volume Error:', err.message)
+            return buffer // Fallback ke file asli kalau gagal
+        } finally {
+            try {
+                if (inputPath && fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+                if (outputPath && fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+            } catch (e) {}
+        }
+    }
 }
 
 export default new MediaService()

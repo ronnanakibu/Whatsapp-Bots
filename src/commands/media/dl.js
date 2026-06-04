@@ -8,6 +8,7 @@ import { extractUrl } from '../../services/downloader/detector.js'
 import { formatBytes } from '../../services/downloader/utils.js'
 import { downloadQueue } from '../../services/downloader/index.js'
 import { interactiveService } from '../../services/interactive.js'
+import mediaService from '../../services/media.js'
 
 // Platform emoji map untuk display
 const PLATFORM_EMOJI = {
@@ -29,16 +30,19 @@ export default {
     aliases: ['download', 'unduh', 'reels', 'tiktok', 'tt', 'ytmp3', 'ig', 'fb'],
     category: 'media',
     description: 'Download video dari Instagram, TikTok, YouTube, Facebook.',
-    usage: '.dl [link] | .ytmp3 [link] untuk audio',
-    example: '.dl https://www.instagram.com/reel/xxx',
+    usage: '.dl [link] [--boost] | .ytmp3 [link] untuk audio',
+    example: '.dl https://www.tiktok.com/xxx --boost',
     cooldown: 10,
     permissions: ['user'],
 
     async execute(ctx) {
         const { args, reply, react, sock, chatId, msg, commandName } = ctx
 
-        // ── 1. Ekstrak URL ─────────────────────────
-        const rawInput = args.join(' ').trim()
+        // ── 1. Ekstrak URL & Flag ─────────────────────────
+        let rawInput = args.join(' ').trim()
+        const isBoost = rawInput.includes('--boost')
+        rawInput = rawInput.replace('--boost', '').trim()
+
         const url = extractUrl(rawInput) ?? (rawInput.startsWith('http') ? rawInput : null)
 
         if (!url) {
@@ -50,8 +54,8 @@ export default {
                 `• 🎬 YouTube (!dl = video, !ytmp3 = audio)\n` +
                 `• 📘 Facebook (Video/Reels)\n\n` +
                 `*Cara pakai:*\n` +
-                `!dl [link]\n\n` +
-                `_Contoh: !dl https://instagram.com/reel/xxx_`
+                `!dl [link] [--boost]\n\n` +
+                `_Contoh: !dl https://instagram.com/reel/xxx --boost_`
             )
         }
 
@@ -78,10 +82,10 @@ export default {
 
         if (isAudioCommand) {
             format = 'audio'
-            await processDownload(ctx, url, platform, format)
+            await processDownload(ctx, url, platform, format, isBoost)
         } else if (isVideoCommand || platform !== 'youtube') {
             format = 'video'
-            await processDownload(ctx, url, platform, format)
+            await processDownload(ctx, url, platform, format, isBoost)
         } else {
             // Interactive Prompt hanya untuk YouTube jika tidak spesifik
             const promptMsg = await reply(
@@ -98,9 +102,9 @@ export default {
                 ctx.sender,
                 async (replyCtx, answer) => {
                     if (answer === '1') {
-                        await processDownload(replyCtx, url, platform, 'video')
+                        await processDownload(replyCtx, url, platform, 'video', isBoost)
                     } else if (answer === '2') {
-                        await processDownload(replyCtx, url, platform, 'audio')
+                        await processDownload(replyCtx, url, platform, 'audio', isBoost)
                     } else {
                         await replyCtx.reply('❌ Pilihan tidak valid. Silakan ulangi perintah !dl')
                     }
@@ -114,7 +118,7 @@ export default {
 // PROSES DOWNLOAD (Pisah Fungsi biar rapi)
 // ─────────────────────────────────────────────
 
-async function processDownload(ctx, url, platform, format) {
+async function processDownload(ctx, url, platform, format, isBoost = false) {
     const { reply, react, sock, chatId, msg } = ctx
     
     await react('⏳')
@@ -128,6 +132,15 @@ async function processDownload(ctx, url, platform, format) {
 
     try {
         const result = await download(url, { format })
+
+        if (isBoost) {
+            const ext = result.ext || (format === 'audio' ? 'mp3' : 'mp4')
+            result.buffer = await mediaService.boostMediaVolume(result.buffer, ext, 2.0)
+            if (result.caption) {
+                result.caption += `\n🔊 _(Audio Boosted 200%)_`
+            }
+        }
+
         await sendMedia(sock, chatId, msg, result)
         await react('✅')
     } catch (err) {
