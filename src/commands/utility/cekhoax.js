@@ -9,14 +9,14 @@ export default {
     use: '<kata kunci berita>',
     
     async execute(ctx) {
-        const { sock, msg: m, args } = ctx
+        const { sock, msg: m, args, reply } = ctx
 
         if (!args[0]) {
-            return m.reply('❌ Masukkan kata kunci berita yang ingin dicek!\n\nContoh: *.cekhoax vaksin covid*')
+            return reply('❌ Masukkan kata kunci berita yang ingin dicek!\n\nContoh: *.cekhoax vaksin covid*')
         }
 
         const query = args.join(' ')
-        await m.reply(`🔍 Sedang mencari fakta tentang *"${query}"* di database TurnBackHoax...`)
+        await reply(`🔍 Sedang mencari fakta tentang *"${query}"* di database TurnBackHoax...`)
 
         try {
             const apiUrl = `https://turnbackhoax.id/search?q=${encodeURIComponent(query)}`
@@ -30,7 +30,7 @@ export default {
             const articles = data?.data || []
             
             if (!articles || articles.length === 0) {
-                return m.reply(`🕵️‍♂️ Tidak ditemukan artikel hoax/fakta dengan kata kunci *"${query}"*.`)
+                return reply(`🕵️‍♂️ Tidak ditemukan artikel hoax/fakta dengan kata kunci *"${query}"*.`)
             }
 
             // Ambil maksimal 3 hasil teratas
@@ -74,13 +74,13 @@ export default {
                     caption: replyText.trim()
                 }, { quoted: m })
             } else {
-                await m.reply(replyText.trim())
+                await reply(replyText.trim())
             }
             
             botLogger.commandDone('cekhoax', 0)
         } catch (err) {
             botLogger.err('command', err, 'cekhoax')
-            m.reply('❌ Terjadi kesalahan saat menghubungi server TurnBackHoax. Coba lagi nanti.')
+            reply('❌ Terjadi kesalahan saat menghubungi server TurnBackHoax. Coba lagi nanti.')
         }
     }
 }
