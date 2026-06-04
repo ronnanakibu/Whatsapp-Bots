@@ -3,7 +3,12 @@ import sharp from 'sharp'
 import fs from 'fs'
 import path from 'path'
 import https from 'https'
+import { exec } from 'child_process'
+import util from 'util'
+import crypto from 'crypto'
 import { logger } from '../utils/logger.js'
+
+const execPromise = util.promisify(exec)
 
 const EMOJI_CACHE_DIR = path.resolve('./storage/media/emoji-cache')
 const NOTO_BASE = 'https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128'
@@ -416,6 +421,92 @@ class MediaService {
         } catch (e) {
             logger.error('❌ toMemeSticker error:', e.message)
             throw new Error('Gagal memproses stiker meme.')
+        }
+    }
+
+    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '') {
+        try {
+            const cleanTop = topText.trim().toUpperCase()
+            const cleanBottom = bottomText.trim().toUpperCase()
+
+            const topData = this.#processTextAdaptive(cleanTop, false)
+            const bottomData = this.#processTextAdaptive(cleanBottom, true)
+
+            const emojiMap = await prepareEmojiMap(cleanTop + ' ' + cleanBottom)
+            let svgContent = ''
+
+            topData.lines.forEach((line, i) => {
+                const y = topData.startY + (i * topData.lineSpacing)
+                svgContent += this.#renderLine(line, y, topData.fontSize, {
+                    x: 256,
+                    textAnchor: 'middle',
+                    fontFamily: "Impact, 'Arial Narrow', sans-serif",
+                    fontWeight: 'bold',
+                    fill: 'white',
+                    stroke: 'black',
+                    strokeWidth: topData.fontSize > 60 ? '8' : '5',
+                    emojiMap,
+                    letterSpacing: '0px'
+                })
+            })
+
+            bottomData.lines.forEach((line, i) => {
+                const y = bottomData.startY + (i * bottomData.lineSpacing)
+                svgContent += this.#renderLine(line, y, bottomData.fontSize, {
+                    x: 256,
+                    textAnchor: 'middle',
+                    fontFamily: "Impact, 'Arial Narrow', sans-serif",
+                    fontWeight: 'bold',
+                    fill: 'white',
+                    stroke: 'black',
+                    strokeWidth: bottomData.fontSize > 60 ? '8' : '5',
+                    emojiMap,
+                    letterSpacing: '0px'
+                })
+            })
+
+            const svg = Buffer.from(`<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                ${svgContent}
+            </svg>`)
+
+            // Render SVG text to transparent PNG
+            const overlayPng = await sharp({
+                create: { width: 512, height: 512, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+            })
+                .composite([{ input: svg, top: 0, left: 0 }])
+                .png()
+                .toBuffer()
+
+            const tmpDir = path.resolve('./storage/media/tmp')
+            if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+            const id = crypto.randomBytes(4).toString('hex')
+            const inputPath = path.join(tmpDir, `${id}_in.mp4`)
+            const overlayPath = path.join(tmpDir, `${id}_overlay.png`)
+            const outputPath = path.join(tmpDir, `${id}_out.webp`)
+
+            fs.writeFileSync(inputPath, bufferVideo)
+            fs.writeFileSync(overlayPath, overlayPng)
+
+            try {
+                // Resize video to 512x512 with padding, overlay the text, and output animated webp
+                // We use -loop 0 to loop infinitely, and -t 00:00:10 to cap at 10s max to avoid abuse
+                await execPromise(`ffmpeg -i ${inputPath} -i ${overlayPath} -filter_complex "[0:v]scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0.0[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -qscale 75 -loop 0 -an -vsync 0 -t 00:00:10 ${outputPath}`)
+                
+                const finalWebpBuffer = fs.readFileSync(outputPath)
+                return finalWebpBuffer
+            } catch (ffmpegErr) {
+                logger.error('❌ [FFmpeg] Animated Meme Sticker Error:', ffmpegErr)
+                throw new Error('Gagal merender video menjadi stiker animasi.')
+            } finally {
+                if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+                if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath)
+                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+            }
+
+        } catch (e) {
+            logger.error('❌ toAnimatedMemeSticker error:', e.message)
+            throw new Error('Gagal memproses stiker animasi.')
         }
     }
 }

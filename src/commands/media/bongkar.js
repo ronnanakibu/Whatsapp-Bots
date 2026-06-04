@@ -59,7 +59,7 @@ export default {
                 try {
                     await execPromise(`ffmpeg -i ${inputPath} -vcodec libx264 -pix_fmt yuv420p -loop 0 -preset fast ${outputPath}`)
                     const mp4Buffer = fs.readFileSync(outputPath)
-                    await sock.sendMessage(from, { video: mp4Buffer, caption: '✅ Stiker berhasil dibongkar menjadi video!' }, { quoted: msg })
+                    await sock.sendMessage(from, { video: mp4Buffer, gifPlayback: true, caption: '✅ Stiker berhasil dibongkar menjadi video animasi!' }, { quoted: msg })
                 } catch (ffmpegErr) {
                     logger.error('❌ [Bongkar] FFmpeg error:', ffmpegErr)
                     await reply('❌ Gagal mengonversi stiker gerak ke video. Pastikan ffmpeg terinstall di server.')
