@@ -93,11 +93,9 @@ export default {
                         // Otomatis pin pesan broadcast di grup tujuan
                         try {
                             await sock.sendMessage(group.id, {
-                                pin: {
-                                    type: 1,
-                                    time: 604800, // 7 hari
-                                    key: sent.key
-                                }
+                                pin: sent.key,
+                                type: 1,
+                                time: 604800 // 7 hari
                             })
                         } catch (pinErr) {
                             logger.error(`❌ [Broadcast] Gagal pin di grup ${group.subject}:`, pinErr.message)

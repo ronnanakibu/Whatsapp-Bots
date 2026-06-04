@@ -253,7 +253,8 @@ export const botLogger = {
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} 📩 ${C.bold}MSG${C.reset}   ${isGroup ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId}${C.reset}` : `${C.green}[DM]${C.reset}   ${C.dim}${sender}${C.reset}`} ${C.dim}type=${type}${C.reset} ${C.white}"${bodyPreview}"${C.reset}\n`
         )
-        sendWhatsAppLog(`📩 *[MSG]* ${from} | *type=*${type} | "${bodyPreview}"`)
+        // Jangan kirim log percakapan biasa ke WhatsApp channel log
+        // sendWhatsAppLog(`📩 *[MSG]* ${from} | *type=*${type} | "${bodyPreview}"`)
     },
 
     /** Command execution */

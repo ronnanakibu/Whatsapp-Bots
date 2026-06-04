@@ -55,11 +55,9 @@ export default {
         await react('⏳')
         try {
             await sock.sendMessage(chatId, {
-                pin: {
-                    type,
-                    time,
-                    key
-                }
+                pin: key,
+                type,
+                time
             })
             await react('✅')
             
