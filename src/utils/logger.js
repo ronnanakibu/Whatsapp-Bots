@@ -152,6 +152,33 @@ async function flushLogs() {
     }
 }
 
+export async function flushLogsImmediately() {
+    if (logBuffer.length === 0 || !sockInstance) return
+
+    if (flushTimeout) {
+        clearTimeout(flushTimeout)
+        flushTimeout = null
+    }
+
+    isFlushing = true
+    const currentBatch = [...logBuffer]
+    logBuffer = []
+
+    isLogging = true
+    try {
+        const logJid = process.env.LOG_CHANNEL_JID
+        if (logJid) {
+            const messageText = currentBatch.join('\n')
+            await sockInstance.sendMessage(logJid, { text: messageText })
+        }
+    } catch (err) {
+        console.error('❌ [ChannelLogger] Gagal flush cepat log ke channel:', err.message)
+    } finally {
+        isLogging = false
+        isFlushing = false
+    }
+}
+
 // ─────────────────────────────────────────────
 // CORE RAW LOGGER — langsung ke stdout, tanpa pino
 // Dipakai untuk log yang butuh format custom & warna

@@ -187,6 +187,15 @@ async function startBot() {
     
     const shutdown = async (signal) => {
         botLogger.warn('bot', `Received ${signal}. Gracefully shutting down...`)
+
+        // Flush log terakhir ke channel WhatsApp secara instan sebelum koneksi terputus
+        try {
+            const { flushLogsImmediately } = await import('../utils/logger.js')
+            await flushLogsImmediately()
+        } catch (e) {
+            console.error('❌ Gagal mengirim log shutdown:', e)
+        }
+
         try {
             sock.end(undefined)
         } catch (_) {}
