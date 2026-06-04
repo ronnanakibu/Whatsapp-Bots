@@ -42,7 +42,7 @@ export async function downloadYtdlp(url, options = {}) {
         args.push(
             '--extract-audio',
             '--audio-format', 'mp3',
-            '--audio-quality', '128K'
+            '--audio-quality', '320K'
         )
     } else {
         // Video MP4
