@@ -7,6 +7,7 @@ import { useAccentColor } from '@/hooks/useAccentColor'
 import { useAudioPlayer } from '@/hooks/useAudioAnalyzer'
 import { Users, Zap, Radio, Play, Pause, Volume2, VolumeX } from 'lucide-react'
 import dynamic from 'next/dynamic'
+import LiveLyrics from '@/components/player/LiveLyrics'
 
 const Visualizer = dynamic(() => import('@/components/player/Visualizer'), { ssr: false })
 
@@ -59,8 +60,10 @@ export default function StreamPage() {
                 />
             </div>
 
-            <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-6 gap-6 overflow-hidden">
-                {/* Album art — large, centered */}
+            <div className="relative z-10 flex-1 flex flex-col md:flex-row items-center justify-center p-6 gap-8 md:gap-16 overflow-hidden max-w-[1400px] w-full mx-auto">
+                {/* Left side: Player */}
+                <div className="flex flex-col items-center justify-center gap-6 w-full md:w-[400px] flex-shrink-0">
+                    {/* Album art — large, centered */}
                 <motion.div
                     className="relative cursor-pointer group"
                     onClick={togglePlay}
@@ -189,6 +192,12 @@ export default function StreamPage() {
                     <span className="text-[10px] font-mono text-white/30 w-8 text-right">
                         {Math.round((isMuted ? 0 : volume) * 100)}%
                     </span>
+                </div>
+                </div>
+
+                {/* Right side: Live Lyrics */}
+                <div className="w-full md:w-[500px] h-[300px] md:h-full md:max-h-[600px] flex-shrink-0">
+                    <LiveLyrics />
                 </div>
             </div>
 

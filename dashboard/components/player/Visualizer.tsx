@@ -40,9 +40,13 @@ export default function Visualizer({ compact, fullPage }: Props) {
         if (!ctx) return
 
         const resize = () => {
-            canvas.width = canvas.offsetWidth * window.devicePixelRatio
-            canvas.height = canvas.offsetHeight * window.devicePixelRatio
-            ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+            const w = canvas.offsetWidth
+            const h = canvas.offsetHeight
+            if (w === 0 || h === 0) return
+            const dpr = window.devicePixelRatio || 1
+            canvas.width = w * dpr
+            canvas.height = h * dpr
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
         }
         resize()
         const ro = new ResizeObserver(resize)
@@ -54,6 +58,10 @@ export default function Visualizer({ compact, fullPage }: Props) {
 
         const draw = (timestamp: number) => {
             const w = W(), h = H()
+            if (w === 0 || h === 0) {
+                animRef.current = requestAnimationFrame(draw)
+                return
+            }
             ctx.clearRect(0, 0, w, h)
 
             const isPlaying = nowPlaying.isPlaying && localIsPlaying

@@ -62,9 +62,10 @@ function useWaveformBars(active: boolean, barCount = 40) {
 export default function FFmpegReactor() {
     const { metrics, accentColor } = useDashboardStore()
     const ffmpegStatus = metrics.ffmpegStatus as string
-    const isActive = ffmpegStatus === 'active'
+    const isActive = ffmpegStatus === 'active' || ffmpegStatus === 'online'
     const isError = ffmpegStatus === 'error'
     const waveCanvasRef = useWaveformBars(isActive)
+    const { nowPlaying } = useDashboardStore()
 
     const coreColor = isError ? '#EF4444' : isActive ? accentColor : '#8B5CF6'
 
@@ -146,7 +147,7 @@ export default function FFmpegReactor() {
 
                         {/* Stats row */}
                         <div className="flex gap-3">
-                            <Stat label="BITRATE" value={isActive ? '128k' : '—'} color={coreColor} />
+                            <Stat label="BITRATE" value={isActive ? `${nowPlaying.bitrate}k` : '—'} color={coreColor} />
                             <Stat label="CPU" value={`${metrics.cpuUsage.toFixed(0)}%`} />
                             <Stat label="MEM" value={`${metrics.memoryUsage.toFixed(0)}%`} />
                         </div>

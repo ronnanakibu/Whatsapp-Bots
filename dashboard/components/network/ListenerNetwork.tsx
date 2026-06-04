@@ -17,19 +17,19 @@ interface NodeDot {
 }
 
 export default function ListenerNetwork() {
-    const { listeners, accentColor, nowPlaying } = useDashboardStore()
+    const { listeners, accentColor, nowPlaying, metrics } = useDashboardStore()
     const svgRef = useRef<SVGSVGElement>(null)
     const nodeMap = useRef<Map<string, NodeDot>>(new Map())
 
-    // Place nodes in a circle around center
+    // Place nodes in a semi-circle around broadcast node
     useEffect(() => {
-        const w = 260, h = 200
-        const cx = w / 2, cy = h / 2
-        const r = Math.min(w, h) * 0.32
+        const cx = 280, cy = 120
+        const r = 70
 
         listeners.forEach((l, i) => {
             if (!nodeMap.current.has(l.id)) {
-                const angle = (i / Math.max(listeners.length, 1)) * Math.PI * 2 - Math.PI / 2
+                // semi circle on the right side
+                const angle = -Math.PI/2 + (i / Math.max(listeners.length - 1 || 1, 1)) * Math.PI
                 nodeMap.current.set(l.id, {
                     id: l.id,
                     x: cx + Math.cos(angle) * r,
@@ -49,7 +49,12 @@ export default function ListenerNetwork() {
     }, [listeners])
 
     const dots = Array.from(nodeMap.current.values())
-    const cx = 130, cy = 100
+    const pipelineNodes = [
+        { id: 'wa', icon: '📱', label: 'WhatsApp', detail: `${metrics.connectedUsers} users`, x: 40, y: 120, active: metrics.connectedUsers > 0 },
+        { id: 'cmd', icon: '⚡', label: 'Engine', detail: 'Active', x: 120, y: 120, active: true },
+        { id: 'ffmpeg', icon: '⚙️', label: 'FFmpeg', detail: metrics.ffmpegStatus, x: 200, y: 120, active: metrics.ffmpegStatus === 'active' || metrics.ffmpegStatus === 'online' },
+        { id: 'radio', icon: '📡', label: 'Broadcast', detail: nowPlaying.isPlaying ? 'Live' : 'Idle', x: 280, y: 120, active: nowPlaying.isPlaying }
+    ]
 
     return (
         <div
@@ -62,13 +67,7 @@ export default function ListenerNetwork() {
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.05] flex-shrink-0">
                 <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-semibold text-white uppercase tracking-wide">Listener Network</span>
-                    <span
-                        className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
-                        style={{ background: `${accentColor}20`, color: accentColor }}
-                    >
-                        {listeners.length}
-                    </span>
+                    <span className="text-[11px] font-semibold text-white uppercase tracking-wide">Ecosystem Network</span>
                 </div>
                 <span className="text-[10px] text-muted-foreground">
                     {nowPlaying.isPlaying ? '📻 Live' : '⏸ Idle'}
@@ -79,21 +78,37 @@ export default function ListenerNetwork() {
             <div className="flex-1 relative overflow-hidden">
                 <svg
                     ref={svgRef}
-                    viewBox="0 0 260 200"
+                    viewBox="0 0 400 240"
                     className="w-full h-full"
                     style={{ overflow: 'visible' }}
                 >
-                    {/* Connection lines from center to each listener */}
+                    {/* Pipeline lines */}
+                    {pipelineNodes.map((node, i) => {
+                        if (i === pipelineNodes.length - 1) return null
+                        const next = pipelineNodes[i + 1]
+                        return (
+                            <line
+                                key={`pl-${node.id}`}
+                                x1={node.x} y1={node.y}
+                                x2={next.x} y2={next.y}
+                                stroke={node.active && next.active ? accentColor : 'rgba(255,255,255,0.2)'}
+                                strokeWidth={1}
+                                strokeDasharray={node.active && next.active ? "none" : "3 3"}
+                            />
+                        )
+                    })}
+
+                    {/* Connection lines from Broadcast to Listeners */}
                     <AnimatePresence>
                         {dots.map((dot) => (
                             <motion.line
                                 key={`line-${dot.id}`}
-                                x1={cx} y1={cy}
+                                x1={280} y1={120}
                                 x2={dot.x} y2={dot.y}
                                 stroke={accentColor}
                                 strokeWidth={0.5}
-                                strokeOpacity={0.3}
-                                strokeDasharray="3 3"
+                                strokeOpacity={0.4}
+                                strokeDasharray="2 2"
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 exit={{ opacity: 0 }}
@@ -101,38 +116,39 @@ export default function ListenerNetwork() {
                         ))}
                     </AnimatePresence>
 
-                    {/* Central broadcast node */}
-                    <g>
-                        {/* Pulse rings */}
-                        {nowPlaying.isPlaying && [1, 2, 3].map((i) => (
-                            <motion.circle
-                                key={i}
-                                cx={cx} cy={cy}
-                                r={16}
-                                fill="none"
-                                stroke={accentColor}
-                                strokeWidth={0.5}
-                                initial={{ scale: 0.5, opacity: 0.8 }}
-                                animate={{ scale: 1 + i * 0.5, opacity: 0 }}
-                                transition={{ duration: 2.5, repeat: Infinity, delay: i * 0.7, ease: 'easeOut' }}
-                                style={{ transformOrigin: `${cx}px ${cy}px` }}
+                    {/* Pipeline nodes */}
+                    {pipelineNodes.map((node) => (
+                        <g key={`pn-${node.id}`}>
+                            {node.active && (
+                                <motion.circle
+                                    cx={node.x} cy={node.y}
+                                    r={14}
+                                    fill="none"
+                                    stroke={accentColor}
+                                    strokeWidth={0.5}
+                                    initial={{ scale: 0.8, opacity: 0.8 }}
+                                    animate={{ scale: 1.6, opacity: 0 }}
+                                    transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+                                    style={{ transformOrigin: `${node.x}px ${node.y}px` }}
+                                />
+                            )}
+                            <circle
+                                cx={node.x} cy={node.y} r={14}
+                                fill={node.active ? `${accentColor}25` : 'rgba(255,255,255,0.05)'}
+                                stroke={node.active ? accentColor : 'rgba(255,255,255,0.2)'}
+                                strokeWidth={1}
                             />
-                        ))}
-                        <circle
-                            cx={cx} cy={cy} r={16}
-                            fill={`${accentColor}25`}
-                            stroke={accentColor}
-                            strokeWidth={1}
-                        />
-                        <text
-                            x={cx} y={cy + 1}
-                            textAnchor="middle"
-                            dominantBaseline="middle"
-                            fontSize={10}
-                        >
-                            📡
-                        </text>
-                    </g>
+                            <text x={node.x} y={node.y + 1} textAnchor="middle" dominantBaseline="middle" fontSize={10}>
+                                {node.icon}
+                            </text>
+                            <text x={node.x} y={node.y + 24} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.8)" className="font-mono">
+                                {node.label}
+                            </text>
+                            <text x={node.x} y={node.y + 34} textAnchor="middle" fontSize={7} fill="rgba(255,255,255,0.4)" className="font-mono">
+                                {node.detail}
+                            </text>
+                        </g>
+                    ))}
 
                     {/* Listener nodes */}
                     <AnimatePresence>
@@ -144,7 +160,6 @@ export default function ListenerNetwork() {
                                 exit={{ opacity: 0, scale: 0 }}
                                 style={{ transformOrigin: `${dot.x}px ${dot.y}px` }}
                             >
-                                {/* Pulse ring for active listeners */}
                                 {nowPlaying.isPlaying && (
                                     <motion.circle
                                         cx={dot.x} cy={dot.y} r={8}
@@ -162,24 +177,10 @@ export default function ListenerNetwork() {
                                     stroke={accentColor}
                                     strokeWidth={0.8}
                                 />
-                                <text
-                                    x={dot.x} y={dot.y + 1}
-                                    textAnchor="middle"
-                                    dominantBaseline="middle"
-                                    fontSize={7}
-                                    fill="rgba(255,255,255,0.8)"
-                                    className="font-mono select-none"
-                                >
+                                <text x={dot.x} y={dot.y + 1} textAnchor="middle" dominantBaseline="middle" fontSize={7} fill="rgba(255,255,255,0.8)" className="font-mono select-none">
                                     🎧
                                 </text>
-                                <text
-                                    x={dot.x}
-                                    y={dot.y + 14}
-                                    textAnchor="middle"
-                                    fontSize={5.5}
-                                    fill="rgba(148,163,184,0.7)"
-                                    className="font-mono select-none"
-                                >
+                                <text x={dot.x} y={dot.y + 14} textAnchor="middle" fontSize={5.5} fill="rgba(148,163,184,0.7)" className="font-mono select-none">
                                     {dot.name.slice(0, 8)}
                                 </text>
                             </motion.g>
@@ -187,12 +188,6 @@ export default function ListenerNetwork() {
                     </AnimatePresence>
                 </svg>
 
-                {/* Empty state */}
-                {listeners.length === 0 && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                        <p className="text-[11px] text-muted-foreground">No listeners connected</p>
-                    </div>
-                )}
             </div>
 
             {/* Listener list */}
