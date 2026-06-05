@@ -46,7 +46,8 @@ export default {
         const totalCmds = Object.values(categories).flat().length
 
         let text = `🌐 *${botName.toUpperCase()} WEB DASHBOARD:*\n`
-        text += `http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard\n\n`
+        text += `http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard\n`
+        text += `Kalau Gabisa, pas di browser, hapus http:// nya ya..\n\n`
         text += `┌───────────────────────\n`
         text += `│  🤖 *${botName.toUpperCase()} SERVICES*\n`
         text += `│  ⚡ *Prefix:*  \`[ ${prefix} ]\`\n`
@@ -54,17 +55,17 @@ export default {
         text += `└───────────────────────\n\n`
         text += `Berikut daftar perintah yang tersedia di sistem kami:\n\n`
 
-        const categoryEmoji = { 
-            general: '🔧', 
-            ai: '🤖', 
-            media: '🎨', 
-            owner: '👑', 
-            group: '👥', 
+        const categoryEmoji = {
+            general: '🔧',
+            ai: '🤖',
+            media: '🎨',
+            owner: '👑',
+            group: '👥',
             admin: '🛡️',
             utility: '🛠️',
             radio: '📻',
             entertainments: '🎮',
-            misc: '📦' 
+            misc: '📦'
         }
 
         for (const [cat, cmds] of Object.entries(categories)) {
