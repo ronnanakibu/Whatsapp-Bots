@@ -7,6 +7,18 @@ let discordClient = null
 let currentConnection = null
 let audioPlayer = null
 
+function playStream() {
+    if (!currentConnection || !audioPlayer) return
+    const radioPort = process.env.RADIO_PORT || 8080
+    logger.info(`[Discord] Memutar/menghubungkan kembali stream dari port ${radioPort}`)
+    try {
+        const resource = createAudioResource(`http://127.0.0.1:${radioPort}/stream`)
+        audioPlayer.play(resource)
+    } catch (err) {
+        logger.error(`[Discord] Gagal memutar stream: ${err.message}`)
+    }
+}
+
 export function startDiscordBot() {
     const token = process.env.DISCORD_TOKEN
     if (!token) {
@@ -21,6 +33,14 @@ export function startDiscordBot() {
             GatewayIntentBits.MessageContent,
             GatewayIntentBits.GuildVoiceStates,
         ]
+    })
+
+    // Register radioService event listener once
+    radioService.on('track:start', (track) => {
+        if (currentConnection && audioPlayer) {
+            logger.info(`[Discord] Radio started track: "${track.title}". Refreshing audio resource.`)
+            playStream()
+        }
     })
 
     discordClient.on('clientReady', () => {
@@ -52,19 +72,38 @@ export function startDiscordBot() {
 
                 audioPlayer.on(AudioPlayerStatus.Idle, () => {
                     logger.debug('[Discord] AudioPlayer Idle.')
+                    if (currentConnection && radioService.isPlaying) {
+                        logger.info('[Discord] AudioPlayer Idle while radio is playing. Reconnecting stream in 1s...')
+                        setTimeout(() => {
+                            if (currentConnection && audioPlayer && audioPlayer.state.status === AudioPlayerStatus.Idle && radioService.isPlaying) {
+                                playStream()
+                            }
+                        }, 1000)
+                    }
                 })
 
                 audioPlayer.on('error', error => {
                     logger.error(`[Discord] AudioPlayer Error: ${error.message}`)
+                    if (currentConnection && radioService.isPlaying) {
+                        logger.info('[Discord] Recovering from AudioPlayer error in 2s...')
+                        setTimeout(() => {
+                            if (currentConnection && audioPlayer && radioService.isPlaying) {
+                                playStream()
+                            }
+                        }, 2000)
+                    }
                 })
 
-                const radioPort = process.env.RADIO_PORT || 8080
-                const resource = createAudioResource(`http://127.0.0.1:${radioPort}/stream`)
-                audioPlayer.play(resource)
+                playStream()
                 
                 message.reply('Sudah mendarat di Voice Channel & standby muter siaran radio WA! 📻')
             } else {
-                message.reply('Bot udah ada di Voice Channel kamu kok.')
+                if (audioPlayer && audioPlayer.state.status === AudioPlayerStatus.Idle) {
+                    playStream()
+                    message.reply('Bot diaktifkan kembali dan memutar stream radio! 📻')
+                } else {
+                    message.reply('Bot udah ada di Voice Channel kamu kok.')
+                }
             }
             return
         }
@@ -88,20 +127,34 @@ export function startDiscordBot() {
                 currentConnection.subscribe(audioPlayer)
 
                 audioPlayer.on(AudioPlayerStatus.Idle, () => {
-                    // Ketika stream berhenti, coba resubscribe jika radio masih main
                     logger.debug('[Discord] AudioPlayer Idle, tapi radioService jalan terus.')
+                    if (currentConnection && radioService.isPlaying) {
+                        logger.info('[Discord] AudioPlayer Idle while radio is playing. Reconnecting stream in 1s...')
+                        setTimeout(() => {
+                            if (currentConnection && audioPlayer && audioPlayer.state.status === AudioPlayerStatus.Idle && radioService.isPlaying) {
+                                playStream()
+                            }
+                        }, 1000)
+                    }
                 })
 
                 audioPlayer.on('error', error => {
                     logger.error(`[Discord] AudioPlayer Error: ${error.message}`)
+                    if (currentConnection && radioService.isPlaying) {
+                        logger.info('[Discord] Recovering from AudioPlayer error in 2s...')
+                        setTimeout(() => {
+                            if (currentConnection && audioPlayer && radioService.isPlaying) {
+                                playStream()
+                            }
+                        }, 2000)
+                    }
                 })
 
-                // Ambil stream HTTP dari radioService WA
-                const radioPort = process.env.RADIO_PORT || 8080
-                const resource = createAudioResource(`http://127.0.0.1:${radioPort}/stream`)
-                audioPlayer.play(resource)
+                playStream()
 
                 message.reply('Masuk ke Voice Channel & menyambungkan siaran radio WA! 📻')
+            } else if (audioPlayer && audioPlayer.state.status === AudioPlayerStatus.Idle) {
+                playStream()
             }
 
             try {
