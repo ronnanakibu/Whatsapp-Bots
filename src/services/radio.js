@@ -511,7 +511,9 @@ class RadioService extends EventEmitter {
             this.emit('track:error', { track: this.#currentTrack, error: err.message })
         }
 
-        if (!this.#skipRequested) await this.#playNext()
+        if (this.#isPlaying) {
+            await this.#playNext()
+        }
     }
 
     /**
@@ -546,14 +548,60 @@ class RadioService extends EventEmitter {
                 if (isYoutubeTrack) {
                     try {
                         botLogger.info('radio', `[yt-dlp] Membuka stdout pipe untuk: ${track.url}`)
-                        ytProc = ytdlpStream(track.url)
-
-                        inputStream = ytProc.stdout
-                        streamType = 'yt-dlp-pipe'
-                        botLogger.info('radio', `[yt-dlp] Pipe siap → passing to ffmpeg stdin`)
+                        const tempYtProc = ytdlpStream(track.url)
+                        
+                        // Tunggu sampai ada data pertama, atau proses exit
+                        const ok = await new Promise((resolve) => {
+                            let hasData = false
+                            const onData = () => {
+                                hasData = true
+                                cleanup()
+                                resolve(true)
+                            }
+                            const onClose = (code) => {
+                                if (!hasData) {
+                                    cleanup()
+                                    resolve(false)
+                                }
+                            }
+                            const onError = () => {
+                                if (!hasData) {
+                                    cleanup()
+                                    resolve(false)
+                                }
+                            }
+                            
+                            tempYtProc.stdout.once('data', onData)
+                            tempYtProc.on('close', onClose)
+                            tempYtProc.on('error', onError)
+                            
+                            // Timeout 3 detik jika tidak ada data sama sekali
+                            const timer = setTimeout(() => {
+                                cleanup()
+                                resolve(false)
+                            }, 3000)
+                            
+                            function cleanup() {
+                                clearTimeout(timer)
+                                tempYtProc.stdout.off('data', onData)
+                                tempYtProc.off('close', onClose)
+                                tempYtProc.off('error', onError)
+                            }
+                        })
+                        
+                        if (ok) {
+                            ytProc = tempYtProc
+                            inputStream = ytProc.stdout
+                            streamType = 'yt-dlp-pipe'
+                            botLogger.info('radio', `[yt-dlp] Pipe siap → passing to ffmpeg stdin`)
+                        } else {
+                            botLogger.warn('radio', `[yt-dlp] Gagal memproduksi data stream`)
+                            tempYtProc.kill()
+                        }
                     } catch (ytErr) {
                         botLogger.warn('radio', `[yt-dlp] Gagal: ${ytErr.message}`)
                         botLogger.info('radio', `[yt-dlp] Falling back to play-dl stream...`)
+                        if (ytProc) { ytProc.kill(); ytProc = null }
                     }
                 }
 
@@ -623,7 +671,7 @@ class RadioService extends EventEmitter {
                     '-i', isDirectUrl ? inputStream : 'pipe:0',
                     '-vn',
                     '-acodec', 'libmp3lame',
-                    '-ab', '320k',
+                    '-ab', process.env.RADIO_BITRATE || '128k',
                     '-ar', '44100',
                     '-ac', '2',
                 ]
@@ -675,8 +723,9 @@ class RadioService extends EventEmitter {
                     }
                 })
 
-                // Timeout safety
-                const maxMs = Math.min((track.duration || 600) + 60, 720) * 1000
+                // Timeout safety (Megamix & Live Stream friendly)
+                const duration = track.duration || 43200 // Default 12 jam jika live/unknown
+                const maxMs = Math.min(duration + 180, 86400) * 1000 // Maks 24 jam
                 this.#playTimeout = setTimeout(() => {
                     botLogger.warn('radio', `Timeout: ${track.title}`)
                     this.#killProcesses()
@@ -715,8 +764,16 @@ class RadioService extends EventEmitter {
         if (!this.#isPlaying) return false
         this.#skipRequested = true
         this.#killProcesses()
-        await new Promise(r => setTimeout(r, 300))
-        await this.#playNext()
+        await new Promise(r => setTimeout(r, 200))
+        return true
+    }
+
+    async restartCurrent() {
+        if (!this.#isPlaying || !this.#currentTrack) return false
+        this.#queue.unshift(this.#currentTrack)
+        this.#skipRequested = true
+        this.#killProcesses()
+        await new Promise(r => setTimeout(r, 200))
         return true
     }
 

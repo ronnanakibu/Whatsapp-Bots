@@ -152,6 +152,18 @@ function downloadFile(url, dest) {
 }
 
 // ─────────────────────────────────────────────
+// COOKIES HELPER
+// ─────────────────────────────────────────────
+
+function getCookieArgs() {
+    const cookieFile = process.env.YOUTUBE_COOKIE_FILE || path.resolve('./storage/youtube-cookies.json')
+    if (fs.existsSync(cookieFile)) {
+        return ['--cookies', cookieFile]
+    }
+    return []
+}
+
+// ─────────────────────────────────────────────
 // EXTRACT AUDIO URL
 // ─────────────────────────────────────────────
 
@@ -172,6 +184,7 @@ export function ytdlpGetAudioUrl(youtubeUrl) {
             '--no-playlist',
             '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
             '--get-url',
+            ...getCookieArgs(),
             '--no-warnings',
             '--quiet',
             youtubeUrl
@@ -223,6 +236,7 @@ export function ytdlpStream(youtubeUrl) {
         '--no-playlist',
         '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
         '--output', '-', // stream ke stdout
+        ...getCookieArgs(),
         '--no-warnings',
         '--quiet',
         youtubeUrl

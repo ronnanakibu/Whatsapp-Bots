@@ -15,13 +15,14 @@ export default {
         if (!radioService.isPlaying) return reply('📻 Radio tidak sedang memutar lagu.')
 
         const skipped = radioService.currentTrack
+        const nextTrack = radioService.queue[0] // Look ahead in queue
         await react('⏭️')
         const ok = await radioService.skip()
 
         if (ok) {
             let text = `⏭️ *Diskip:* ${skipped.title}\n`
-            if (radioService.currentTrack) {
-                text += `▶️ *Sekarang:* ${radioService.currentTrack.title}`
+            if (nextTrack) {
+                text += `▶️ *Sekarang:* ${nextTrack.title}`
             } else {
                 text += `📋 Queue habis.`
             }

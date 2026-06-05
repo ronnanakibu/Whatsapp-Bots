@@ -1,6 +1,6 @@
 import { Client, GatewayIntentBits } from 'discord.js'
 import { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } from '@discordjs/voice'
-import { radioService } from '../services/radio.js'
+import { radioService, AVAILABLE_FX, AVAILABLE_EQ } from '../services/radio.js'
 import { logger } from '../utils/logger.js'
 
 let discordClient = null
@@ -174,8 +174,23 @@ export function startDiscordBot() {
         }
 
         if (command === 'skip') {
-            radioService.skipTrack()
-            message.reply('⏭️ Lagu di-skip!')
+            if (!radioService.isPlaying) {
+                return message.reply('📻 Radio tidak sedang memutar lagu.')
+            }
+            const skipped = radioService.currentTrack
+            const nextTrack = radioService.queue[0] // Look ahead
+            const ok = await radioService.skip()
+            if (ok) {
+                let text = `⏭️ **Diskip:** ${skipped.title}\n`
+                if (nextTrack) {
+                    text += `▶️ **Sekarang:** ${nextTrack.title}`
+                } else {
+                    text += `📋 Queue habis.`
+                }
+                message.reply(text)
+            } else {
+                message.reply('❌ Gagal skip.')
+            }
         }
 
         if (command === 'queue') {
@@ -194,6 +209,93 @@ export function startDiscordBot() {
                 })
             }
             message.reply(text)
+        }
+
+        if (command === 'np' || command === 'nowplaying') {
+            const info = radioService.getNowPlayingInfo()
+            if (!info) return message.reply('📻 Radio tidak sedang memutar lagu. Ketik `!play [judul]` untuk mulai.')
+
+            const { track, queue, listeners, fx, eq } = info
+            const text = `**📻 Now Playing**\n\n` +
+                         `📀 **${track.title}**\n` +
+                         `⏱️ Durasi: \`${track.durationFormatted}\`\n` +
+                         `👥 Pendengar aktif: \`${listeners}\`\n` +
+                         `📋 Antrean: \`${queue} lagu\`\n` +
+                         `🎚️ FX: \`${fx}\` | EQ: \`${eq}\`\n\n` +
+                         `_Ketik \`!queue\` untuk antrean · \`!skip\` untuk skip_`
+
+            if (track.thumbnail) {
+                message.reply({
+                    content: text,
+                    embeds: [{ image: { url: track.thumbnail } }]
+                })
+            } else {
+                message.reply(text)
+            }
+        }
+
+        if (command === 'listener' || command === 'listeners') {
+            const count = radioService.listenerCount
+            const isPlaying = radioService.isPlaying
+            const port = process.env.RADIO_PORT ?? '8080'
+
+            message.reply(
+                `**📻 Radio Status**\n\n` +
+                `👥 Pendengar aktif: **${count}**\n` +
+                `▶️ Status: ${isPlaying ? '**ON AIR** 🔴' : '**OFF** ⚫'}\n` +
+                `🔗 Stream: \`http://[host]:${port}/stream\`\n\n` +
+                `_Gunakan URL stream di media player favoritmu!_`
+            )
+        }
+
+        if (command === 'fx' || command === 'effect') {
+            if (!args.length) {
+                const current = radioService.activeFx
+                const list = AVAILABLE_FX.map(f => f === current ? `**${f} (active)**` : `\`${f}\``).join(', ')
+                return message.reply(`🎚️ **Radio Audio Effects**\n\nEfek saat ini: **${current}**\n\nEfek tersedia: ${list}\n\n_Contoh: \`!fx bass\`_`)
+            }
+
+            const effect = args[0].toLowerCase()
+            if (!AVAILABLE_FX.includes(effect)) {
+                return message.reply(`❌ Efek "${effect}" tidak ditemukan. Tersedia: ${AVAILABLE_FX.map(f => `\`${f}\``).join(', ')}`)
+            }
+
+            try {
+                radioService.setFx(effect)
+                let suffix = ''
+                if (radioService.isPlaying) {
+                    await radioService.restartCurrent()
+                    suffix = '\n_(Melakukan restart stream agar efek langsung aktif)_'
+                }
+                message.reply(`✅ Efek audio berhasil diubah ke: **${effect}**${suffix}`)
+            } catch (err) {
+                message.reply(`❌ Gagal mengubah efek: ${err.message}`)
+            }
+        }
+
+        if (command === 'eq' || command === 'equalizer') {
+            if (!args.length) {
+                const current = radioService.activeEq
+                const list = AVAILABLE_EQ.map(e => e === current ? `**${e} (active)**` : `\`${e}\``).join(', ')
+                return message.reply(`🛛️ **Radio Equalizer Presets**\n\nPreset saat ini: **${current}**\n\nPreset tersedia: ${list}\n\n_Contoh: \`!eq rock\`_`)
+            }
+
+            const preset = args[0].toLowerCase()
+            if (!AVAILABLE_EQ.includes(preset)) {
+                return message.reply(`❌ Preset "${preset}" tidak ditemukan. Tersedia: ${AVAILABLE_EQ.map(e => `\`${e}\``).join(', ')}`)
+            }
+
+            try {
+                radioService.setEq(preset)
+                let suffix = ''
+                if (radioService.isPlaying) {
+                    await radioService.restartCurrent()
+                    suffix = '\n_(Melakukan restart stream agar equalizer langsung aktif)_'
+                }
+                message.reply(`✅ Equalizer berhasil diubah ke: **${preset}**${suffix}`)
+            } catch (err) {
+                message.reply(`❌ Gagal mengubah equalizer: ${err.message}`)
+            }
         }
 
         if (command === 'stop') {
