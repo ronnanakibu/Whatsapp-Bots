@@ -75,9 +75,13 @@ export default function ThreeBackground() {
 
       draw() {
         if (!ctx) return
+        const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
         ctx.beginPath()
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2)
-        ctx.fillStyle = this.color
+        const activeColor = isLight 
+          ? (this.color.includes('102, 241') ? 'rgba(99, 102, 241, 0.22)' : 'rgba(15, 23, 42, 0.05)')
+          : this.color
+        ctx.fillStyle = activeColor
         ctx.fill()
       }
     }
@@ -90,6 +94,7 @@ export default function ThreeBackground() {
     // Connect particles with thin gradient lines (constellation effect)
     function drawConnections() {
       if (!ctx) return
+      const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
       const maxDistance = 120
       for (let a = 0; a < particles.length; a++) {
         for (let b = a + 1; b < particles.length; b++) {
@@ -98,7 +103,7 @@ export default function ThreeBackground() {
           const distance = Math.sqrt(dx * dx + dy * dy)
 
           if (distance < maxDistance) {
-            const opacity = (1 - distance / maxDistance) * 0.08
+            const opacity = (1 - distance / maxDistance) * (isLight ? 0.05 : 0.08)
             ctx.strokeStyle = `rgba(99, 102, 241, ${opacity})`
             ctx.lineWidth = 0.5
             ctx.beginPath()
@@ -115,13 +120,22 @@ export default function ThreeBackground() {
       if (!ctx) return
       ctx.clearRect(0, 0, width, height)
       
+      const isLight = typeof document !== 'undefined' && document.documentElement.classList.contains('light')
+      
       // Ambient radial dark glow in the center
       const gradient = ctx.createRadialGradient(
         width / 2, height / 2, 50,
         width / 2, height / 2, Math.max(width, height)
       )
-      gradient.addColorStop(0, '#0a0a0c')
-      gradient.addColorStop(1, '#020203')
+      
+      if (isLight) {
+        gradient.addColorStop(0, '#f8fafc')
+        gradient.addColorStop(1, '#e2e8f0')
+      } else {
+        gradient.addColorStop(0, '#0a0a0c')
+        gradient.addColorStop(1, '#020203')
+      }
+      
       ctx.fillStyle = gradient
       ctx.fillRect(0, 0, width, height)
 

@@ -26,6 +26,20 @@
     --font-display: 'Inter', sans-serif;
     --font-body: 'Inter', sans-serif;
   }
+
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --surface: 240 5% 96%;
+    --surface-elevated: 240 5% 93%;
+    --border: 240 5.9% 88%;
+    --border-subtle: 240 5.9% 93%;
+    --muted: 240 4.8% 95%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 250 95% 60%;
+    --accent-foreground: 0 0% 100%;
+    --accent-subtle: 250 95% 95%;
+  }
 }
 
 @layer base {
@@ -58,10 +72,23 @@
   background: rgba(10, 10, 12, 0.45);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.light .glassmorphism {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .text-gradient {
   background: linear-gradient(135deg, #ffffff 0%, #a1a1aa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  transition: background 0.3s ease;
+}
+
+.light .text-gradient {
+  background: linear-gradient(135deg, #09090b 0%, #52525b 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }

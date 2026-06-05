@@ -28,8 +28,10 @@ import LogsCenter from '../components/pages/LogsCenter'
 import Deployments from '../components/pages/Deployments'
 import Developer from '../components/pages/Developer'
 import Settings from '../components/pages/Settings'
+import PublicSummary from '../components/pages/PublicSummary'
 
 export default function DashboardPage() {
+  const [viewMode, setViewMode] = useState<'public' | 'admin'>('public')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState('')
   const [password, setPassword] = useState('')
@@ -68,6 +70,7 @@ export default function DashboardPage() {
     setIsAuthenticated(false)
     setPhoneNumber('')
     setPassword('')
+    setViewMode('public')
     toast.success('Logged Out')
   }
 
@@ -109,6 +112,10 @@ export default function DashboardPage() {
         <RefreshCw size={24} className="text-accent animate-spin" />
       </div>
     )
+  }
+
+  if (viewMode === 'public') {
+    return <PublicSummary setViewMode={setViewMode} />
   }
 
   if (!isAuthenticated) {
@@ -161,6 +168,15 @@ export default function DashboardPage() {
               Sign In
             </button>
           </form>
+          
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => setViewMode('public')}
+              className="text-xs text-muted-foreground hover:text-white transition-colors"
+            >
+              ← Back to Public Summary
+            </button>
+          </div>
         </div>
       </main>
     )
