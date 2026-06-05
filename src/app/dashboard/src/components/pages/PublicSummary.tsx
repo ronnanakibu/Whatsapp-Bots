@@ -85,6 +85,11 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       localStorage.setItem('summary_theme', 'dark')
     }
 
+    // Enable scrolling for landing page
+    document.body.classList.remove('overflow-hidden')
+    document.body.classList.add('overflow-y-auto')
+    document.documentElement.classList.add('scroll-smooth')
+
     // Ctrl+K Listener
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -99,7 +104,13 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
     }
 
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      // Restore overflow-hidden for admin dashboard on unmount
+      document.body.classList.remove('overflow-y-auto')
+      document.body.classList.add('overflow-hidden')
+      document.documentElement.classList.remove('scroll-smooth')
+    }
   }, [])
 
   // Theme Toggler
@@ -681,7 +692,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
             { name: 'AI Gateways', desc: 'Fallback orchestrator', status: isConnected ? 'online' : 'degraded' },
             { name: 'SQLite DB', desc: 'Context Cache writes', status: isConnected ? 'online' : 'offline' },
             { name: 'Downloader', desc: 'Compression services', status: 'online' },
-            { name: 'Radio Station', desc: 'Icecast stream host', status: radioDetails?.isPlaying ? 'online' : 'degraded' },
+            { name: 'Radio Station', desc: 'Icecast stream host', status: radioDetails ? 'online' : isConnected ? 'online' : 'offline' },
             { name: 'API Server', desc: 'REST Telemetry APIs', status: isConnected ? 'online' : 'offline' }
           ].map((item, idx) => (
             <div 
@@ -827,15 +838,23 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 pt-6 border-t border-border/80">
+            <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 pt-6 border-t border-border/80 w-full">
+              <button
+                onClick={toggleRadioAudio}
+                className="h-10 px-5 bg-white hover:bg-neutral-200 text-black text-[11px] font-bold rounded-lg transition-all flex items-center justify-center gap-2 w-full sm:w-auto hover:scale-[1.02] active:scale-[0.98] shrink-0"
+              >
+                {radioIsPlaying ? <Pause size={12} /> : <Play size={12} fill="currentColor" />}
+                <span>{radioIsPlaying ? 'Pause Audio' : 'Listen Live (In-Browser)'}</span>
+              </button>
+
               <a
-                href="http://ap2.nzb.zelpstore.id:25637/stream"
+                href={typeof window !== 'undefined' ? `${window.location.origin}/stream` : 'http://ap2.nzb.zelpstore.id:25637/stream'}
                 target="_blank"
                 rel="noreferrer"
-                className="h-10 px-5 bg-white hover:bg-neutral-200 text-black text-[11px] font-bold rounded-lg transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
+                className="text-[10.5px] text-muted-foreground hover:text-white transition-colors flex items-center gap-1.5 ml-0 sm:ml-2"
               >
-                <Music size={12} />
-                Listen Live (Direct Stream)
+                <span>Direct Audio Link</span>
+                <ExternalLink size={10} />
               </a>
 
               <p className="text-[9.5px] text-muted-foreground text-center sm:text-left leading-tight">
