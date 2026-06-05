@@ -28,7 +28,7 @@ export default {
         text += `• *Base Engine:* WhiskeySockets Baileys (WebSocket Connection)\n`
         text += `• *Database Cache:* Better-SQLite3 (High Performance SQL)\n`
         text += `• *Timezone:* Asia/Jakarta (GMT+7)\n`
-        text += `• *BotOS Dashboard:* http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard\n`
+        text += `• *RonnBot Dashboard:* http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard\n`
         text += `• *Radio Dashboard:* http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/radio\n\n`
 
         text += `──────────────────────────────\n\n`

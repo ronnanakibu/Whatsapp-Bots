@@ -20,14 +20,15 @@ export default {
             if (!cmd) return reply(`❌ Command *${args[0]}* tidak ditemukan.`)
 
             return reply(
-                `╭━━━〔 *Command Info* 〕━━━\n` +
-                `┃ 📌 *Name:* ${cmd.name.toUpperCase()}\n` +
-                `┃ 📝 *Description:* ${cmd.description}\n` +
-                `┃ 💡 *Usage:* ${cmd.usage ?? '—'}\n` +
-                `┃ 🔗 *Aliases:* ${cmd.aliases?.join(', ') ?? '—'}\n` +
-                `┃ ⏳ *Cooldown:* ${cmd.cooldown ?? 0}s\n` +
-                `┃ 📁 *Category:* ${cmd.category ?? '—'}\n` +
-                `╰━━━━━━━━━━━━━━━━━━━━━━`
+                `📊 *COMMAND DETAILS: ${cmd.name.toUpperCase()}*\n` +
+                `────────────────────────\n` +
+                `📌 *Name:*  \`${cmd.name}\`\n` +
+                `📝 *Description:*  ${cmd.description}\n` +
+                `💡 *Usage:*  \`${cmd.usage ?? '—'}\`\n` +
+                `🔗 *Aliases:*  ${cmd.aliases?.map(a => `\`${a}\``).join(', ') ?? '—'}\n` +
+                `⏳ *Cooldown:*  *${cmd.cooldown ?? 0}s*\n` +
+                `📁 *Category:*  *${cmd.category ?? '—'}*\n` +
+                `────────────────────────`
             )
         }
 
@@ -44,11 +45,14 @@ export default {
 
         const totalCmds = Object.values(categories).flat().length
 
-        let text = `╭━━━〔 *${botName.toUpperCase()} MENU* 〕━━━\n`
-        text += `┃ 🤖 *Bot Name:* ${botName}\n`
-        text += `┃ ⚡ *Prefix:* [ ${prefix} ]\n`
-        text += `┃ 📦 *Total Commands:* ${totalCmds}\n`
-        text += `╰━━━━━━━━━━━━━━━━━━━━━━\n\n`
+        let text = `🌐 *${botName.toUpperCase()} WEB DASHBOARD:*\n`
+        text += `http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard\n\n`
+        text += `┌───────────────────────\n`
+        text += `│  🤖 *${botName.toUpperCase()} SERVICES*\n`
+        text += `│  ⚡ *Prefix:*  \`[ ${prefix} ]\`\n`
+        text += `│  📦 *Commands:*  *${totalCmds} total*\n`
+        text += `└───────────────────────\n\n`
+        text += `Berikut daftar perintah yang tersedia di sistem kami:\n\n`
 
         const categoryEmoji = { 
             general: '🔧', 
@@ -65,12 +69,12 @@ export default {
 
         for (const [cat, cmds] of Object.entries(categories)) {
             const emoji = categoryEmoji[cat] ?? '📦'
-            text += `╭── ❲ ${emoji} *${cat.toUpperCase()}* ❳ ──\n`
-            text += cmds.map(c => `│ • ${prefix}${c.name}`).join('\n')
-            text += `\n╰─────────────\n\n`
+            text += `*${emoji} ${cat.toUpperCase()}*\n`
+            text += `└─ ` + cmds.map(c => `\`${prefix}${c.name}\``).join('  ') + `\n\n`
         }
 
-        text += `💡 *Tip:* Ketik *${prefix}help [command]* untuk melihat detail.`
+        text += `────────────────────────\n`
+        text += `💡 *Tip:* Ketik *${prefix}help [nama_command]* untuk panduan detail.`
 
         await reply(text.trim())
     }
