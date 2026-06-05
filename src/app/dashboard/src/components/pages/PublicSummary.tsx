@@ -364,7 +364,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
   const contactsList = [
     { label: 'GitHub Profile', value: 'ronnanakibu', url: 'https://github.com/ronnanakibu', icon: Github },
     { label: 'Instagram', value: '@ronnlbtrn_', url: 'https://www.instagram.com/ronnlbtrn_/', icon: Instagram },
-    { label: 'Developer Email', value: 'ronnsihombing2007@gmail.com', url: 'mailto:ronnsihombing2007@gmail.com', icon: Mail },
+    { label: 'Developer Email', value: 'ronysihombing07@gmail.com', url: 'mailto:ronysihombing07@gmail.com', icon: Mail },
     { label: 'Creative Portfolio', value: 'Coming Soon', url: '#', icon: Globe }
   ]
 
@@ -875,12 +875,12 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
               <div className="h-20 w-20 rounded-full overflow-hidden border border-white/10 shadow-lg mb-6">
                 <img 
                   src="https://github.com/ronnanakibu.png" 
-                  alt="Ronn Imanuel Sihombing" 
+                  alt="Rony Imanuel Sihombing" 
                   className="h-full w-full object-cover"
                 />
               </div>
 
-              <h3 className="text-lg font-extrabold text-white leading-tight">Ronn Imanuel Sihombing</h3>
+              <h3 className="text-lg font-extrabold text-white leading-tight">Rony Imanuel Sihombing</h3>
               <p className="text-[10px] font-mono text-accent mt-1 uppercase tracking-wider font-semibold">Computer Engineering Student</p>
               
               <div className="space-y-4 mt-6">
@@ -1102,7 +1102,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
                         </thead>
                         <tbody>
                           <tr className="border-b border-border/20 text-white">
-                            <td className="p-0.5 font-semibold">Ronn Anakibu</td>
+                            <td className="p-0.5 font-semibold">Rony Imanuel Sihombing</td>
                             <td className="p-0.5 text-right">154</td>
                           </tr>
                           <tr className="text-white/80">
@@ -1160,7 +1160,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
           <span>Version v3.1.0-stable</span>
         </div>
         <p className="text-center md:text-right">
-          © {new Date().getFullYear()} Ronn Imanuel Sihombing. Designed with premium Stripe & Linear aesthetics.
+          © {new Date().getFullYear()} Rony Imanuel Sihombing. Designed with premium Stripe & Linear aesthetics.
         </p>
       </footer>
 

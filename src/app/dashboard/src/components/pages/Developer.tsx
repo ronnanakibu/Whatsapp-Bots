@@ -49,7 +49,7 @@ export default function Developer() {
             <div className="h-24 w-24 rounded-full overflow-hidden shadow-xl shadow-accent/10 border border-white/10">
               <img 
                 src="https://github.com/ronnanakibu.png" 
-                alt="Ronn" 
+                alt="Rony Imanuel Sihombing" 
                 className="h-full w-full object-cover"
               />
             </div>
@@ -60,7 +60,7 @@ export default function Developer() {
 
           <div className="flex-1 text-center md:text-left min-w-0">
             <div className="flex flex-col sm:flex-row sm:items-center justify-center md:justify-start gap-2">
-              <h2 className="text-xl font-extrabold text-white">Ronn (Ronn Anakibu)</h2>
+              <h2 className="text-xl font-extrabold text-white">Rony Imanuel Sihombing</h2>
               <span className="self-center px-2 py-0.5 rounded-full border border-accent/30 bg-accent/10 text-[9px] font-mono text-accent uppercase tracking-wider font-semibold">
                 Core Developer
               </span>

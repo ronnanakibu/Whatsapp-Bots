@@ -65,7 +65,7 @@ export default function Sidebar({ onLogout, isOpen = false, onClose }: SidebarPr
           </div>
           <div>
             <h1 className="text-sm font-semibold tracking-tight text-white">RonnBot</h1>
-            <p className="text-[10px] text-muted-foreground font-mono">v3.1.5</p>
+            <p className="text-[10px] text-muted-foreground font-mono">v3.1.6</p>
           </div>
         </div>
         

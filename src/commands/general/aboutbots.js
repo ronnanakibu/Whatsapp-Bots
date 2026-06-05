@@ -19,7 +19,7 @@ export default {
         let text = `🤖 *ROBOT PROFILE & SYSTEM ARCHITECTURE*\n\n`
 
         text += `*👤 OWNER & DEVELOPER:*\n`
-        text += `• *Nama Creator:* ${ownerName} (Ronn Anakibu)\n`
+        text += `• *Nama Creator:* ${ownerName} (Rony Imanuel Sihombing)\n`
         text += `• *GitHub:* https://github.com/ronnanakibu\n`
         text += `• *Vibe:* JavaScript / TypeScript Backend Developer\n\n`
 
