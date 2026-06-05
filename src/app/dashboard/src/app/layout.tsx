@@ -5,8 +5,8 @@ import { ThemeProvider } from 'next-themes'
 import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
-  title: 'BotOS - RonnBot Dashboard',
-  description: 'Premium real-time Operating System dashboard for WABOT 2.0',
+  title: 'RonnBot Dashboard',
+  description: 'Premium real-time dashboard for WABOT 2.0',
 }
 
 export default function RootLayout({

@@ -57,8 +57,8 @@ export default function Sidebar({ onLogout }: SidebarProps) {
             <Radio size={18} className="animate-pulse-soft" />
           </div>
           <div>
-            <h1 className="text-sm font-semibold tracking-tight text-white">BotOS</h1>
-            <p className="text-[10px] text-muted-foreground font-mono">v3.1.1</p>
+            <h1 className="text-sm font-semibold tracking-tight text-white">RonnBot</h1>
+            <p className="text-[10px] text-muted-foreground font-mono">v3.1.2</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 px-2 py-1 bg-muted rounded-full border border-border text-[10px] text-muted-foreground font-medium">

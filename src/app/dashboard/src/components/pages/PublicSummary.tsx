@@ -228,7 +228,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       icon: Shield,
       desc: 'Automated threat filters, warning registers, and toxic message scans.',
       color: 'text-rose-500 bg-rose-500/10 border-rose-500/20',
-      longDesc: 'Maintains toxic speech filtering, anti-link rules, and warning strikes automatically inside group channels. Fully editable via BotOS panels with zero hot-restarts required.',
+      longDesc: 'Maintains toxic speech filtering, anti-link rules, and warning strikes automatically inside group channels. Fully editable via RonnBot panels with zero hot-restarts required.',
       details: [
         { label: 'Real-time Listeners', val: 'Intercepts messages dynamically prior to command handlers' },
         { label: 'Sanctions', val: 'Configurable limits (Warn ➔ Temporary Mute ➔ Kick)' },
@@ -290,7 +290,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       icon: Music,
       desc: 'Liquidsoap and Icecast stream pipelines for live music sharing.',
       color: 'text-teal-500 bg-teal-500/10 border-teal-500/20',
-      longDesc: 'Embeds a dedicated web stream audio station directly within BotOS. Serves low-latency streams at `/stream` and details current audio metadata over REST status APIs.',
+      longDesc: 'Embeds a dedicated web stream audio station directly within RonnBot. Serves low-latency streams at `/stream` and details current audio metadata over REST status APIs.',
       details: [
         { label: 'Format Output', val: '128kbps stereo MP3 stream chunking' },
         { label: 'Integrations', val: 'Queue tracking, upcoming schedule layouts, SSE hooks' }
@@ -342,7 +342,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
     },
     {
       status: 'progress',
-      title: 'BotOS Dashboard Control Center',
+      title: 'RonnBot Dashboard Control Center',
       desc: 'Real-time telemetry control panel, interactive command toggler, and database inspection drawer.',
       items: ['Socket.IO Live Synchronization', 'Interactive SQLite Executor', 'Dynamic Moderation Switcher']
     },
@@ -363,9 +363,9 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
   // Contact list
   const contactsList = [
     { label: 'GitHub Profile', value: 'ronnanakibu', url: 'https://github.com/ronnanakibu', icon: Github },
-    { label: 'Instagram', value: '@ronn.imnl', url: 'https://instagram.com/ronn.imnl', icon: Instagram },
+    { label: 'Instagram', value: '@ronnlbtrn_', url: 'https://www.instagram.com/ronnlbtrn_/', icon: Instagram },
     { label: 'Developer Email', value: 'ronnsihombing2007@gmail.com', url: 'mailto:ronnsihombing2007@gmail.com', icon: Mail },
-    { label: 'Creative Portfolio', value: 'ronn.dev', url: 'https://ronn.dev', icon: Globe }
+    { label: 'Creative Portfolio', value: 'Coming Soon', url: '#', icon: Globe }
   ]
 
   // Command palette items based on query
@@ -888,7 +888,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
                   'Multimedia Enthusiast',
                   'AI Explorer & Researcher',
                   'High-Performance Systems Builder',
-                  'BotOS Creator'
+                  'RonnBot Creator'
                 ].map((spec, index) => (
                   <div key={index} className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="h-1.5 w-1.5 rounded-full bg-accent" />
@@ -907,15 +907,15 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
                     href={contact.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center justify-between p-2.5 bg-muted/20 hover:bg-muted/40 border border-border/80 rounded-lg hover:border-accent/40 text-[10.5px] transition-colors"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 bg-muted/20 hover:bg-muted/40 border border-border/80 rounded-lg hover:border-accent/40 text-[10.5px] transition-colors gap-1 sm:gap-0"
                   >
-                    <div className="flex items-center gap-2 text-muted-foreground">
+                    <div className="flex items-center gap-2 text-muted-foreground shrink-0">
                       <Icon size={12} />
                       <span>{contact.label}</span>
                     </div>
-                    <span className="font-mono text-white font-semibold flex items-center gap-1">
-                      <span>{contact.value}</span>
-                      <ExternalLink size={9} className="opacity-60" />
+                    <span className="font-mono text-white font-semibold flex items-center gap-1 max-w-full truncate">
+                      <span className="truncate">{contact.value}</span>
+                      {contact.url !== '#' && <ExternalLink size={9} className="opacity-60 shrink-0" />}
                     </span>
                   </a>
                 )
@@ -945,7 +945,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
                 {[
                   { date: '2024', title: 'Exploration Phase', desc: 'Explored multimedia libraries, encoding codecs, and automated communication sockets.' },
                   { date: '2025', title: 'Systems Experimentation', desc: 'Built automation microservices and integrated lightweight persistency buffers.' },
-                  { date: '2026', title: 'WABOT 2.0 Ecosystem', desc: 'Designed the unified BotOS runtime pipeline, SQLite handlers, and real-time Socket.IO panels.' },
+                  { date: '2026', title: 'WABOT 2.0 Ecosystem', desc: 'Designed the unified RonnBot runtime pipeline, SQLite handlers, and real-time Socket.IO panels.' },
                   { date: 'Future', title: 'Platform Abstraction', desc: 'Expanding framework to support decentralized clustering and a developer marketplace.' }
                 ].map((mil, idx) => (
                   <div key={idx} className="relative">
@@ -1023,7 +1023,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
           {[
             {
-              title: 'BotOS Control Panel',
+              title: 'RonnBot Control Panel',
               desc: 'Live telemetry indicators, CPU loading indexes, and console output logs.',
               gradient: 'from-indigo-950/40 to-slate-900/60 border-indigo-500/20',
               img: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80'
@@ -1052,8 +1052,100 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
                 <h3 className="text-sm font-extrabold text-white mt-1 leading-snug">{item.title}</h3>
                 <p className="text-[10.5px] text-muted-foreground mt-2 leading-normal">{item.desc}</p>
               </div>
-              <div className="h-40 rounded-xl overflow-hidden border border-border bg-neutral-950/50 mt-4 relative z-10 flex items-center justify-center">
-                <span className="text-[9px] font-mono text-muted-foreground/60 group-hover:text-white transition-colors">Click to expand preview</span>
+              <div className="h-40 rounded-xl overflow-hidden border border-border bg-neutral-950/50 mt-4 relative z-10 flex items-center justify-center group/mockup">
+                {/* RonnBot Control Panel Mockup */}
+                {idx === 0 && (
+                  <div className="w-full h-full p-3 flex flex-col justify-between text-[8px] font-mono text-left select-none">
+                    <div className="flex items-center justify-between border-b border-border/40 pb-1.5 mb-1 text-[7px]">
+                      <span className="text-white font-bold">RonnBot Control Panel</span>
+                      <span className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[6px]">Syncing</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 my-1">
+                      <div className="p-1 bg-surface border border-border/50 rounded flex flex-col">
+                        <span className="text-[6px] text-muted-foreground">CPU</span>
+                        <span className="text-white font-bold text-[7px] mt-0.5">1.4%</span>
+                      </div>
+                      <div className="p-1 bg-surface border border-border/50 rounded flex flex-col">
+                        <span className="text-[6px] text-muted-foreground">RAM</span>
+                        <span className="text-white font-bold text-[7px] mt-0.5">142MB</span>
+                      </div>
+                      <div className="p-1 bg-surface border border-border/50 rounded flex flex-col">
+                        <span className="text-[6px] text-muted-foreground">UPTIME</span>
+                        <span className="text-white font-bold text-[7px] mt-0.5">2d 14h</span>
+                      </div>
+                    </div>
+                    <div className="flex-1 bg-black/40 border border-border/30 rounded p-1.5 text-[6px] text-muted-foreground space-y-0.5 overflow-hidden">
+                      <div className="text-accent">[SYS] Socket synchronization established.</div>
+                      <div className="text-emerald-400">[MSG] Message successfully received: .menu</div>
+                      <div className="text-white">[CMD] Command executor .menu executed in 45ms.</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SQLite Inspect Drawer Mockup */}
+                {idx === 1 && (
+                  <div className="w-full h-full p-3 flex flex-col justify-between text-[8px] font-mono text-left select-none">
+                    <div className="flex items-center justify-between border-b border-border/40 pb-1.5 mb-1 text-[7px]">
+                      <span className="text-white font-bold">Database Inspector</span>
+                      <span className="text-muted-foreground text-[6px]">better-sqlite3</span>
+                    </div>
+                    <div className="bg-surface/50 border border-border/40 rounded p-1 text-accent text-[6px] my-1 truncate">
+                      SELECT name, commands_count FROM users ORDER BY commands_count DESC LIMIT 2;
+                    </div>
+                    <div className="flex-1 bg-black/40 border border-border/30 rounded overflow-hidden">
+                      <table className="w-full text-left text-[5.5px] border-collapse">
+                        <thead>
+                          <tr className="border-b border-border/50 bg-muted/40 text-muted-foreground">
+                            <th className="p-0.5 font-bold">name</th>
+                            <th className="p-0.5 font-bold text-right">commands</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="border-b border-border/20 text-white">
+                            <td className="p-0.5 font-semibold">Ronn Anakibu</td>
+                            <td className="p-0.5 text-right">154</td>
+                          </tr>
+                          <tr className="text-white/80">
+                            <td className="p-0.5 font-semibold">Test Account</td>
+                            <td className="p-0.5 text-right">42</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Command Toggler Matrix Mockup */}
+                {idx === 2 && (
+                  <div className="w-full h-full p-3 flex flex-col justify-between text-[8px] font-mono text-left select-none">
+                    <div className="flex items-center justify-between border-b border-border/40 pb-1.5 mb-1 text-[7px]">
+                      <span className="text-white font-bold">Command Registry</span>
+                      <span className="text-emerald-400 text-[6px] font-bold">Live Synced</span>
+                    </div>
+                    <div className="flex-1 space-y-1 mt-1">
+                      {[
+                        { name: '.downloader', category: 'utility', enabled: true },
+                        { name: '.sound', category: 'entertainment', enabled: true },
+                        { name: '.broadcast', category: 'owner', enabled: false }
+                      ].map((cmd, cIdx) => (
+                        <div key={cIdx} className="p-1 bg-surface border border-border/40 rounded flex items-center justify-between">
+                          <div className="flex items-center gap-1">
+                            <span className="text-white font-bold text-[6.5px]">{cmd.name}</span>
+                            <span className="px-1 py-0.2 bg-muted rounded text-[5px] text-muted-foreground lowercase">{cmd.category}</span>
+                          </div>
+                          <div className={`w-4 h-2 rounded-full flex items-center p-0.5 transition-colors ${cmd.enabled ? 'bg-accent' : 'bg-muted-foreground/35'}`}>
+                            <div className={`w-1 h-1 rounded-full bg-white transition-transform ${cmd.enabled ? 'translate-x-2' : 'translate-x-0'}`} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Bouncing hover cue overlay */}
+                <div className="absolute inset-0 bg-neutral-950/80 opacity-0 group-hover/mockup:opacity-100 transition-opacity duration-300 flex items-center justify-center text-[9px] font-mono text-white">
+                  Click to expand preview
+                </div>
               </div>
             </div>
           ))}

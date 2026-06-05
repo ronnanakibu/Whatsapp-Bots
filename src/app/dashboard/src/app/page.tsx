@@ -128,7 +128,7 @@ export default function DashboardPage() {
             <div className="p-3 bg-accent/10 border border-accent/20 rounded-xl text-accent mb-4">
               <Lock size={20} className="animate-pulse-soft" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-white">Authenticate BotOS</h1>
+            <h1 className="text-xl font-bold tracking-tight text-white">Authenticate RonnBot</h1>
             <p className="text-xs text-muted-foreground mt-1.5">
               Enter your credentials to view the real-time panel
             </p>
