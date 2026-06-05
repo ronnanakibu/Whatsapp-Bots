@@ -249,7 +249,7 @@ export default function Settings() {
 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-[10px] font-mono text-muted-foreground uppercase mb-1.5">BotOS Web Access Token</label>
+                    <label className="block text-[10px] font-mono text-muted-foreground uppercase mb-1.5">RonnBot Web Access Token</label>
                     <div className="relative">
                       <input
                         type={showToken ? "text" : "password"}

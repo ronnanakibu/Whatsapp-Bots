@@ -11,7 +11,7 @@ export default function Developer() {
   const milestones = [
     {
       date: 'June 2026',
-      title: 'BotOS v2.0 Launch',
+      title: 'RonnBot v2.0 Launch',
       desc: 'Complete architectural migration to unified Express & Socket.IO server with high-fidelity WebGL real-time dashboard panel.',
       status: 'completed'
     },
@@ -71,7 +71,7 @@ export default function Developer() {
             
             <p className="text-xs text-muted-foreground/90 mt-4 leading-relaxed max-w-2xl">
               Building lightweight, high-performance automated systems, bot pipelines, and unified real-time panels. 
-              WABOT 2.0 (BotOS) is designed to be a premium Bot Operating System with modular providers, SQLite memory context limits, and instant telemetry dashboard monitors.
+              WABOT 2.0 (RonnBot) is designed to be a premium Bot Operating System with modular providers, SQLite memory context limits, and instant telemetry dashboard monitors.
             </p>
 
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 mt-6">
@@ -99,14 +99,14 @@ export default function Developer() {
         <div className="p-6 bg-surface/20 border border-border rounded-xl glassmorphism md:col-span-2 space-y-4">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-accent" />
-            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">The BotOS Odyssey</h4>
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">The RonnBot Odyssey</h4>
           </div>
           <div className="text-xs text-muted-foreground/95 space-y-3 leading-relaxed">
             <p>
               WABOT 2.0 began as a modular command loader configured with basic whatsapp sockets. As bot logic started parsing multi-model API fallbacks and context cache files, a simple command processor was no longer sufficient. 
             </p>
             <p>
-              We envisioned **BotOS**: a self-contained, enterprise-grade Bot Operating System. This dashboard eliminates double-port deployment configurations, serves dashboard files directly from Express, and feeds live WhatsApp stream telemetry instantly without page updates.
+              We envisioned **RonnBot**: a self-contained, enterprise-grade Bot Operating System. This dashboard eliminates double-port deployment configurations, serves dashboard files directly from Express, and feeds live WhatsApp stream telemetry instantly without page updates.
             </p>
             <p className="flex items-center gap-1.5 text-accent mt-4">
               <Heart size={12} fill="currentColor" /> Crafted with extreme detail, premium aesthetics, and clean architecture.
@@ -118,7 +118,7 @@ export default function Developer() {
         <div className="p-6 bg-surface/20 border border-border rounded-xl glassmorphism space-y-4">
           <div className="flex items-center gap-2">
             <Cpu size={16} className="text-accent" />
-            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">BotOS Version Metadata</h4>
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">RonnBot Version Metadata</h4>
           </div>
           
           <div className="divide-y divide-border/60 text-[11px]">

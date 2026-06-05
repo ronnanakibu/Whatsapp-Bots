@@ -5,16 +5,18 @@ import { motion } from 'framer-motion'
 import { 
   LayoutDashboard, MessageSquare, BarChart3, Bot, Users2, ShieldAlert,
   FolderLock, RefreshCw, Terminal, Settings, UserSquare2, SlidersHorizontal,
-  Compass, Radio, Power, Cloud, Lock, HardDrive, HelpCircle
+  Compass, Radio, Power, Cloud, Lock, HardDrive, HelpCircle, X
 } from 'lucide-react'
 import { TabType, useDashboardStore } from '../store/dashboard'
 import { cn } from '../utils/cn'
 
 interface SidebarProps {
   onLogout?: () => void
+  isOpen?: boolean
+  onClose?: () => void
 }
 
-export default function Sidebar({ onLogout }: SidebarProps) {
+export default function Sidebar({ onLogout, isOpen = false, onClose }: SidebarProps) {
   const { activeTab, setActiveTab, isConnected, botStatus } = useDashboardStore()
 
   const navItems = [
@@ -49,7 +51,12 @@ export default function Sidebar({ onLogout }: SidebarProps) {
   }
 
   return (
-    <aside className="w-64 h-screen border-r border-border bg-surface/50 backdrop-blur-md flex flex-col justify-between select-none z-10">
+    <aside 
+      className={cn(
+        "fixed inset-y-0 left-0 w-64 h-screen border-r border-border bg-surface/95 md:bg-surface/50 backdrop-blur-md flex flex-col justify-between select-none z-50 transition-transform duration-300 md:relative md:translate-x-0 shrink-0",
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      )}
+    >
       {/* Brand Logo & Connection status */}
       <div className="p-6 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -58,12 +65,24 @@ export default function Sidebar({ onLogout }: SidebarProps) {
           </div>
           <div>
             <h1 className="text-sm font-semibold tracking-tight text-white">RonnBot</h1>
-            <p className="text-[10px] text-muted-foreground font-mono">v3.1.2</p>
+            <p className="text-[10px] text-muted-foreground font-mono">v3.1.4</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 px-2 py-1 bg-muted rounded-full border border-border text-[10px] text-muted-foreground font-medium">
-          {getStatusBadge()}
-          <span className="capitalize">{botStatus === 'open' ? 'Active' : botStatus === 'qr' ? 'Pairing' : botStatus}</span>
+        
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-muted rounded-full border border-border text-[10px] text-muted-foreground font-medium">
+            {getStatusBadge()}
+            <span className="capitalize">{botStatus === 'open' ? 'Active' : botStatus === 'qr' ? 'Pairing' : botStatus}</span>
+          </div>
+          {onClose && (
+            <button 
+              onClick={onClose}
+              className="p-1.5 text-muted-foreground hover:text-white hover:bg-muted rounded md:hidden border border-transparent hover:border-border transition-colors"
+              title="Close menu"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -76,7 +95,10 @@ export default function Sidebar({ onLogout }: SidebarProps) {
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => {
+                setActiveTab(item.id)
+                if (onClose) onClose()
+              }}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-xs font-medium transition-all duration-200 relative group",
                 isActive 

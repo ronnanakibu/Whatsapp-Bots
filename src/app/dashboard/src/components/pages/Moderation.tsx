@@ -47,7 +47,7 @@ export default function Moderation({ emit }: ModerationProps) {
 
       <div className="border border-border/80 bg-surface/10 rounded-xl glassmorphism overflow-hidden">
         {/* Table Header */}
-        <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-border/60 text-[9px] uppercase font-bold tracking-wider text-muted-foreground/80 font-mono">
+        <div className="hidden sm:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border/60 text-[9px] uppercase font-bold tracking-wider text-muted-foreground/80 font-mono">
           <div className="col-span-1">Time</div>
           <div className="col-span-3">User Profile</div>
           <div className="col-span-4">Violation Detected</div>
@@ -66,26 +66,39 @@ export default function Moderation({ emit }: ModerationProps) {
             logs.map((log) => (
               <div 
                 key={log.id}
-                className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-muted/10 transition-colors"
+                className="flex flex-col sm:grid sm:grid-cols-12 gap-3 sm:gap-4 px-6 py-4 items-start sm:items-center hover:bg-muted/10 transition-colors"
               >
-                {/* Time */}
-                <div className="col-span-1 text-[10px] text-muted-foreground">
-                  {formatTime(log.timestamp)}
+                {/* Time & Details grouping row for mobile */}
+                <div className="flex sm:contents items-center justify-between w-full">
+                  {/* Time */}
+                  <div className="sm:col-span-1 text-[10px] text-muted-foreground">
+                    <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">Time</span>
+                    {formatTime(log.timestamp)}
+                  </div>
+
+                  {/* Info details */}
+                  <div className="sm:col-span-2 sm:text-right text-[10px] text-muted-foreground">
+                    <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5 text-right">Violation ID</span>
+                    ID: #{log.id}
+                  </div>
                 </div>
 
                 {/* User */}
-                <div className="col-span-3 truncate text-white">
+                <div className="sm:col-span-3 truncate text-white w-full">
+                  <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">User Profile</span>
                   <span className="font-semibold font-sans">{log.name}</span>
                   <span className="block text-[9px] text-muted-foreground/80 truncate mt-0.5">{log.JID}</span>
                 </div>
 
                 {/* Violation */}
-                <div className="col-span-4 font-sans text-white/90">
+                <div className="sm:col-span-4 font-sans text-white/90 w-full">
+                  <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">Violation Detected</span>
                   {log.reason}
                 </div>
 
                 {/* Action Badge */}
-                <div className="col-span-2">
+                <div className="sm:col-span-2 w-full">
+                  <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">Enforcement Action</span>
                   <span className={cn(
                     "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border",
                     log.action.includes('KICK') 
@@ -95,11 +108,6 @@ export default function Moderation({ emit }: ModerationProps) {
                     {log.action.includes('KICK') ? <UserMinus size={9} /> : <AlertTriangle size={9} />}
                     <span>{log.action}</span>
                   </span>
-                </div>
-
-                {/* Info details */}
-                <div className="col-span-2 text-right text-[10px] text-muted-foreground">
-                  ID: #{log.id}
                 </div>
               </div>
             ))

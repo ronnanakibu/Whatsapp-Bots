@@ -60,7 +60,7 @@ export default function Users({ emit }: UsersProps) {
 
       <div className="border border-border/80 bg-surface/10 rounded-xl glassmorphism overflow-hidden">
         {/* Table Header */}
-        <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-border/60 text-[9px] uppercase font-bold tracking-wider text-muted-foreground/80 font-mono">
+        <div className="hidden sm:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border/60 text-[9px] uppercase font-bold tracking-wider text-muted-foreground/80 font-mono">
           <div className="col-span-3">User Profile</div>
           <div className="col-span-4">JID Identifier</div>
           <div className="col-span-2">Used Commands</div>
@@ -78,42 +78,56 @@ export default function Users({ emit }: UsersProps) {
             sortedUsers.map((user) => (
               <div 
                 key={user.jid}
-                className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-muted/10 transition-colors"
+                className="flex flex-col sm:grid sm:grid-cols-12 gap-3 sm:gap-4 px-6 py-4 items-start sm:items-center hover:bg-muted/10 transition-colors"
               >
                 {/* User Profile name */}
-                <div className="col-span-3 font-sans text-white font-semibold truncate">
+                <div className="col-span-3 font-sans text-white font-semibold truncate w-full">
+                  <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">User Profile</span>
                   {user.name}
                 </div>
 
                 {/* JID Identifier */}
-                <div className="col-span-4 text-muted-foreground truncate">
+                <div className="col-span-4 text-muted-foreground truncate w-full">
+                  <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">JID Identifier</span>
                   {user.jid}
                 </div>
 
                 {/* Used Commands */}
-                <div className="col-span-2 flex items-center gap-1.5 font-sans">
-                  <Award size={13} className="text-amber-500" />
-                  <span className="text-white font-bold">{user.commandsCount ?? user.xp ?? 0} runs</span>
+                <div className="col-span-2 flex flex-col sm:flex-row sm:items-center gap-1.5 font-sans w-full">
+                  <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">Used Commands</span>
+                  <div className="flex items-center gap-1.5">
+                    <Award size={13} className="text-amber-500" />
+                    <span className="text-white font-bold">{user.commandsCount ?? user.xp ?? 0} runs</span>
+                  </div>
                 </div>
 
                 {/* Warnings count badge */}
-                <div className="col-span-2 flex items-center gap-2">
-                  <ShieldAlert size={13} className={user.warnings > 0 ? "text-rose-500 animate-pulse-soft" : "text-muted-foreground/50"} />
-                  <span className={user.warnings > 0 ? "text-rose-500 font-bold" : "text-muted-foreground"}>
-                    {user.warnings}
-                  </span>
+                <div className="col-span-2 flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+                  <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">Warnings</span>
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert size={13} className={user.warnings > 0 ? "text-rose-500 animate-pulse-soft" : "text-muted-foreground/50"} />
+                    <span className={user.warnings > 0 ? "text-rose-500 font-bold" : "text-muted-foreground"}>
+                      {user.warnings}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Action button */}
-                <div className="col-span-1 text-right">
-                  {user.warnings > 0 && (
-                    <button
-                      onClick={() => handleResetWarnings(user.jid)}
-                      className="p-1.5 hover:bg-muted border border-border/80 hover:border-border text-muted-foreground hover:text-white rounded-lg transition-colors inline-flex"
-                      title="Reset Warnings"
-                    >
-                      <RefreshCw size={12} />
-                    </button>
+                <div className="col-span-1 text-left sm:text-right w-full sm:w-auto">
+                  {user.warnings > 0 ? (
+                    <>
+                      <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-1">Action</span>
+                      <button
+                        onClick={() => handleResetWarnings(user.jid)}
+                        className="p-1.5 hover:bg-muted border border-border/80 hover:border-border text-muted-foreground hover:text-white rounded-lg transition-colors inline-flex items-center gap-1 text-[10px]"
+                        title="Reset Warnings"
+                      >
+                        <RefreshCw size={12} />
+                        <span className="sm:hidden">Reset Warnings</span>
+                      </button>
+                    </>
+                  ) : (
+                    <span className="sm:hidden text-[9px] uppercase font-mono text-muted-foreground/30 block">No Actions</span>
                   )}
                 </div>
               </div>

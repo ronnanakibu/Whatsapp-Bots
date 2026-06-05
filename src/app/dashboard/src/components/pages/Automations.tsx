@@ -61,15 +61,15 @@ export default function Automations() {
               </div>
 
               {/* Node-Builder style visualization */}
-              <div className="flex items-center gap-3 mt-6 bg-muted/20 border border-border/60 p-3 rounded-lg text-[10px] font-mono text-muted-foreground">
-                <div className="flex items-center gap-1.5 bg-muted border border-border/40 px-2 py-1 rounded text-white">
-                  <Zap size={10} className="text-amber-500 animate-pulse-soft" />
-                  <span>{flow.trigger}</span>
+              <div className="flex flex-wrap items-center gap-3 mt-6 bg-muted/20 border border-border/60 p-3 rounded-lg text-[10px] font-mono text-muted-foreground">
+                <div className="flex items-center gap-1.5 bg-muted border border-border/40 px-2 py-1 rounded text-white max-w-full truncate">
+                  <Zap size={10} className="text-amber-500 animate-pulse-soft shrink-0" />
+                  <span className="truncate">{flow.trigger}</span>
                 </div>
                 <ArrowRight size={12} className="text-muted-foreground/45 shrink-0" />
-                <div className="flex items-center gap-1.5 bg-muted border border-border/40 px-2 py-1 rounded text-white">
-                  <Play size={10} className="text-accent" />
-                  <span>{flow.action}</span>
+                <div className="flex items-center gap-1.5 bg-muted border border-border/40 px-2 py-1 rounded text-white max-w-full truncate">
+                  <Play size={10} className="text-accent shrink-0" />
+                  <span className="truncate">{flow.action}</span>
                 </div>
               </div>
             </div>

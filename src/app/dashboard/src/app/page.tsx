@@ -2,7 +2,7 @@
 'use client'
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Lock, AlertCircle, RefreshCw } from 'lucide-react'
+import { Lock, AlertCircle, RefreshCw, Menu } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import Sidebar from '../components/Sidebar'
@@ -37,6 +37,7 @@ export default function DashboardPage() {
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState(false)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   const { activeTab, isConnected } = useDashboardStore()
   
@@ -183,17 +184,38 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="h-screen w-screen flex overflow-hidden bg-background relative">
+    <main className="h-screen w-screen flex overflow-hidden bg-background relative animate-fade-in">
       <ThreeBackground />
       <CommandPalette onAction={handleCommandPaletteAction} />
       
+      {/* Backdrop overlay for mobile menu */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+          />
+        )}
+      </AnimatePresence>
+      
       {/* Sidebar navigation */}
-      <Sidebar onLogout={handleLogout} />
+      <Sidebar onLogout={handleLogout} isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       {/* Main content display */}
       <div className="flex-1 flex flex-col h-full overflow-hidden z-10">
-        <header className="h-14 border-b border-border bg-surface/20 backdrop-blur-sm px-8 flex items-center justify-between text-xs text-muted-foreground font-mono">
+        <header className="h-14 border-b border-border bg-surface/20 backdrop-blur-sm px-4 md:px-8 flex items-center justify-between text-xs text-muted-foreground font-mono">
           <div className="flex items-center gap-2">
+            {/* Hamburger menu trigger */}
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-1.5 -ml-1 mr-2 rounded hover:bg-muted text-muted-foreground hover:text-white md:hidden transition-colors border border-transparent hover:border-border"
+              title="Open menu"
+            >
+              <Menu size={16} />
+            </button>
             <span className="capitalize text-white font-semibold">{activeTab.replace('-', ' ')}</span>
             <span className="text-border-subtle">/</span>
             <span>RonnBot Session</span>
@@ -210,7 +232,7 @@ export default function DashboardPage() {
         </header>
 
         {/* Content Tabs Container */}
-        <div className="flex-1 overflow-y-auto p-8 relative">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 relative">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}

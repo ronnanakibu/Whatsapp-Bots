@@ -92,7 +92,7 @@ export default function MessageObservatory() {
       {/* Message Stream */}
       <div className="flex-1 border border-border/80 bg-surface/10 rounded-xl glassmorphism flex flex-col overflow-hidden min-h-[400px]">
         {/* Table Header */}
-        <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-border/60 text-[9px] uppercase font-bold tracking-wider text-muted-foreground/80 font-mono">
+        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 border-b border-border/60 text-[9px] uppercase font-bold tracking-wider text-muted-foreground/80 font-mono">
           <div className="col-span-1">Time</div>
           <div className="col-span-1">Context</div>
           <div className="col-span-3">Sender JID</div>
@@ -111,40 +111,48 @@ export default function MessageObservatory() {
             filteredMessages.map((msg) => (
               <div 
                 key={msg.id}
-                className="grid grid-cols-12 gap-4 px-6 py-3 items-center hover:bg-muted/10 transition-colors animate-fade-in"
+                className="flex flex-col md:grid md:grid-cols-12 gap-2.5 md:gap-4 px-6 py-4 md:py-3 items-start md:items-center hover:bg-muted/10 transition-colors animate-fade-in"
               >
-                {/* Time */}
-                <div className="col-span-1 text-[10px] text-muted-foreground/80 font-mono">
-                  {formatTime(msg.timestamp)}
-                </div>
+                {/* Time & Context grouping row for mobile */}
+                <div className="flex md:contents items-center justify-between w-full">
+                  {/* Time */}
+                  <div className="md:col-span-1 text-[10px] text-muted-foreground/80 font-mono">
+                    <span className="md:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">Time</span>
+                    {formatTime(msg.timestamp)}
+                  </div>
 
-                {/* Context badge */}
-                <div className="col-span-1">
-                  {msg.isGroup ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[9px] font-semibold text-amber-500">
-                      <Globe size={8} />
-                      <span>GRP</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-semibold text-emerald-500">
-                      <User size={8} />
-                      <span>DM</span>
-                    </span>
-                  )}
+                  {/* Context badge */}
+                  <div className="md:col-span-1">
+                    <span className="md:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5 text-right">Context</span>
+                    {msg.isGroup ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[9px] font-semibold text-amber-500">
+                        <Globe size={8} />
+                        <span>GRP</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-semibold text-emerald-500">
+                        <User size={8} />
+                        <span>DM</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Sender JID */}
-                <div className="col-span-3 text-[11px] text-muted-foreground truncate hover:text-white transition-colors" title={msg.sender}>
+                <div className="md:col-span-3 text-[11px] text-muted-foreground truncate hover:text-white transition-colors w-full" title={msg.sender}>
+                  <span className="md:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">Sender JID</span>
                   {msg.sender.split('@')[0]}
                 </div>
 
                 {/* Message type */}
-                <div className="col-span-1 text-[10px] text-muted-foreground/70 uppercase">
+                <div className="md:col-span-1 text-[10px] text-muted-foreground/70 uppercase w-full">
+                  <span className="md:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">Type</span>
                   {msg.type.replace('Message', '')}
                 </div>
 
                 {/* Message body content */}
-                <div className="col-span-6 font-sans text-white truncate pr-4" title={msg.body}>
+                <div className="md:col-span-6 font-sans text-white truncate pr-4 w-full" title={msg.body}>
+                  <span className="md:hidden text-[9px] uppercase font-mono text-muted-foreground/50 block mb-0.5">Message Body</span>
                   {msg.body || <span className="text-[10px] text-muted-foreground/50 italic">(empty or media message)</span>}
                 </div>
               </div>
