@@ -58,7 +58,7 @@ export default {
             }
 
             text += `\n📋 Queue: ${radioService.queue.length} lagu`
-            
+
             if (!notifiedUsers.has(sender)) {
                 notifiedUsers.add(sender)
                 const port = process.env.RADIO_PORT ?? '8080'
@@ -81,7 +81,7 @@ export default {
                 if (!notifiedUsers.has(sender)) {
                     notifiedUsers.add(sender)
                     const port = process.env.RADIO_PORT ?? '8080'
-                    linkMsg = `\n\n🎧 *Dengarkan radio di sini:*\nhttp://ap2.nzb.zelpstore.id:${port}`
+                    linkMsg = `\n\n🎧 *Dengarkan radio di sini:*\nap2.nzb.zelpstore.id:${port}/radio`
                 }
 
                 await reply(
