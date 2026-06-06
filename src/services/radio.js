@@ -569,40 +569,53 @@ class RadioService extends EventEmitter {
                         botLogger.info('radio', `[yt-dlp] Membuka stdout pipe untuk: ${track.url}`)
                         const tempYtProc = ytdlpStream(track.url)
                         
-                        // Tunggu sampai ada data pertama, atau proses exit
+                        // Tunggu sampai ada data pertama, atau proses exit (menggunakan 'readable' agar data tidak dikonsumsi)
                         const ok = await new Promise((resolve) => {
-                            let hasData = false
-                            const onData = () => {
-                                hasData = true
-                                cleanup()
-                                resolve(true)
+                            let resolved = false
+                            const onReadable = () => {
+                                if (!resolved && tempYtProc.stdout.readableLength > 0) {
+                                    resolved = true
+                                    cleanup()
+                                    resolve(true)
+                                }
                             }
                             const onClose = (code) => {
-                                if (!hasData) {
+                                if (!resolved) {
+                                    resolved = true
                                     cleanup()
                                     resolve(false)
                                 }
                             }
                             const onError = () => {
-                                if (!hasData) {
+                                if (!resolved) {
+                                    resolved = true
                                     cleanup()
                                     resolve(false)
                                 }
                             }
                             
-                            tempYtProc.stdout.once('data', onData)
+                            if (tempYtProc.stdout.readableLength > 0) {
+                                resolved = true
+                                resolve(true)
+                                return
+                            }
+                            
+                            tempYtProc.stdout.on('readable', onReadable)
                             tempYtProc.on('close', onClose)
                             tempYtProc.on('error', onError)
                             
                             // Timeout 3 detik jika tidak ada data sama sekali
                             const timer = setTimeout(() => {
-                                cleanup()
-                                resolve(false)
+                                if (!resolved) {
+                                    resolved = true
+                                    cleanup()
+                                    resolve(false)
+                                }
                             }, 3000)
                             
                             function cleanup() {
                                 clearTimeout(timer)
-                                tempYtProc.stdout.off('data', onData)
+                                tempYtProc.stdout.off('readable', onReadable)
                                 tempYtProc.off('close', onClose)
                                 tempYtProc.off('error', onError)
                             }
@@ -685,13 +698,13 @@ class RadioService extends EventEmitter {
                 const isDirectUrl = typeof inputStream === 'string'
                 
                 const ffArgs = [
-                    // Jika direct URL, pakai fitur auto-reconnect dari FFmpeg (sangat kebal putus)
+                    // Jika direct URL, pakai fitur auto-reconnect & realtime read dari FFmpeg (sangat kebal putus)
                     ...(isDirectUrl ? [
                         '-reconnect', '1',
                         '-reconnect_streamed', '1',
-                        '-reconnect_delay_max', '5'
+                        '-reconnect_delay_max', '5',
+                        '-re'
                     ] : []),
-                    '-re',
                     '-i', isDirectUrl ? inputStream : 'pipe:0',
                     '-vn',
                     '-acodec', 'libmp3lame',
