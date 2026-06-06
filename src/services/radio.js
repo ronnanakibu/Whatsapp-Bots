@@ -710,6 +710,7 @@ class RadioService extends EventEmitter {
                         '-reconnect_delay_max', '5',
                         '-re'
                     ] : []),
+                    '-re',
                     '-i', isDirectUrl ? inputStream : 'pipe:0',
                     '-vn',
                     '-acodec', 'libmp3lame',
