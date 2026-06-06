@@ -3,7 +3,7 @@ import { radioService, AVAILABLE_EQ } from '../../services/radio.js'
 
 export default {
     name: 'eq',
-    aliases: ['equalizer', 'sound'],
+    aliases: ['equalizer', 'eq'],
     category: 'radio',
     description: 'Ubah preset equalizer audio radio',
     usage: '.eq [nama_preset]',
@@ -26,14 +26,14 @@ export default {
 
         try {
             radioService.setEq(preset)
-            
+
             // Restart current track agar EQ langsung aktif
             let suffix = ''
             if (radioService.isPlaying) {
                 await radioService.restartCurrent()
                 suffix = '\n_(Melakukan restart stream agar equalizer langsung aktif)_'
             }
-            
+
             await reply(`✅ Equalizer berhasil diubah ke: *${preset}*${suffix}`)
         } catch (err) {
             await reply(`❌ Gagal mengubah equalizer: ${err.message}`)
