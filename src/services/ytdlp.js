@@ -178,7 +178,7 @@ function getCookieArgs() {
                         needConvert = false
                     }
                 }
-                
+
                 if (needConvert) {
                     const arr = JSON.parse(raw)
                     const lines = [
@@ -269,8 +269,7 @@ export function ytdlpGetAudioUrl(youtubeUrl) {
 }
 
 // ─────────────────────────────────────────────
-// STREAM AUDIO LANGSUNG (PIPE)
-// Memanfaatkan yt-dlp python untuk stream dan DNS resolve
+// STREAM AUDIO LANGSUNG (PIPE) WITH DETAIL LOGS
 // ─────────────────────────────────────────────
 
 export function ytdlpStream(youtubeUrl) {
@@ -282,17 +281,23 @@ export function ytdlpStream(youtubeUrl) {
         '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
         '--output', '-', // stream ke stdout
         ...getCookieArgs(),
-        '--no-warnings',
-        '--quiet',
+        '--no-warnings', // Menghilangkan warning bawaan yang tidak perlu
         youtubeUrl
     ]
 
     botLogger.info('ytdlp', `Membuka stream yt-dlp: ${youtubeUrl}`)
     const proc = spawn(ytdlpPath, args)
 
+    // Sediakan properti array internal baru untuk menampung log error
+    proc.ytdlpLogs = []
+
     proc.stderr.on('data', d => {
         const msg = d.toString().trim()
-        if (msg) botLogger.debug('ytdlp', msg)
+        if (msg) {
+            // Naikkan level ke warn agar langsung tercetak di konsol panel kamu
+            botLogger.warn('ytdlp-stderr', msg)
+            proc.ytdlpLogs.push(msg)
+        }
     })
 
     return proc

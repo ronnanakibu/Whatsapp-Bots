@@ -411,7 +411,7 @@ class RadioService extends EventEmitter {
             botLogger.warn('radio', `Gagal set SC Client ID: ${e.message}. Menggunakan default client_id.`)
             try {
                 await playdl.setToken({ soundcloud: { client_id: 'Yks9HNwSpw5Bo7goMq3jv8cyDYgoLpZr' } })
-            } catch (_) {}
+            } catch (_) { }
         }
 
         let searchQuery = query
@@ -544,10 +544,10 @@ class RadioService extends EventEmitter {
         return new Promise(async (resolve, reject) => {
             try {
                 const filters = [FX_PRESETS[this.#activeFx], EQ_PRESETS[this.#activeEq]].filter(Boolean)
-                
+
                 // Tambahkan efek Fade In selama 3 detik di awal lagu
                 filters.push('afade=t=in:st=0:d=3')
-                
+
                 // Tambahkan efek Fade Out selama 3 detik di akhir lagu (jika durasinya diketahui)
                 if (track.duration && track.duration > 6) {
                     filters.push(`afade=t=out:st=${track.duration - 3}:d=3`)
@@ -568,7 +568,7 @@ class RadioService extends EventEmitter {
                     try {
                         botLogger.info('radio', `[yt-dlp] Membuka stdout pipe untuk: ${track.url}`)
                         const tempYtProc = ytdlpStream(track.url)
-                        
+
                         // Tunggu sampai ada data pertama, atau proses exit (menggunakan 'readable' agar data tidak dikonsumsi)
                         const ok = await new Promise((resolve) => {
                             let resolved = false
@@ -593,17 +593,17 @@ class RadioService extends EventEmitter {
                                     resolve(false)
                                 }
                             }
-                            
+
                             if (tempYtProc.stdout.readableLength > 0) {
                                 resolved = true
                                 resolve(true)
                                 return
                             }
-                            
+
                             tempYtProc.stdout.on('readable', onReadable)
                             tempYtProc.on('close', onClose)
                             tempYtProc.on('error', onError)
-                            
+
                             // Timeout 3 detik jika tidak ada data sama sekali
                             const timer = setTimeout(() => {
                                 if (!resolved) {
@@ -612,7 +612,7 @@ class RadioService extends EventEmitter {
                                     resolve(false)
                                 }
                             }, 3000)
-                            
+
                             function cleanup() {
                                 clearTimeout(timer)
                                 tempYtProc.stdout.off('readable', onReadable)
@@ -620,14 +620,19 @@ class RadioService extends EventEmitter {
                                 tempYtProc.off('error', onError)
                             }
                         })
-                        
+
                         if (ok) {
                             ytProc = tempYtProc
                             inputStream = ytProc.stdout
                             streamType = 'yt-dlp-pipe'
                             botLogger.info('radio', `[yt-dlp] Pipe siap → passing to ffmpeg stdin`)
                         } else {
-                            botLogger.warn('radio', `[yt-dlp] Gagal memproduksi data stream`)
+                            // Ambil seluruh log yang sempat ditangkap dari stderr sebelum proses dimatikan
+                            const detailError = tempYtProc.ytdlpLogs && tempYtProc.ytdlpLogs.length > 0
+                                ? tempYtProc.ytdlpLogs.join('\n')
+                                : 'Tidak ada output dari stderr. Kemungkinan masalah alokasi memory kontainer atau IP Hard-ban.'
+
+                            botLogger.warn('radio', `[yt-dlp] Gagal memproduksi data stream.\n====== DETAIL YT-DLP ERROR ======\n${detailError}\n=================================`)
                             tempYtProc.kill()
                         }
                     } catch (ytErr) {
@@ -642,7 +647,7 @@ class RadioService extends EventEmitter {
                     try {
                         const playdl = await getPlayDl()
                         botLogger.info('radio', `[SC-fallback] YouTube gagal, cari "${track.title}" di SoundCloud...`)
-                        
+
                         // Setup SC client ID
                         try {
                             const clientId = await playdl.getFreeClientID()
@@ -651,7 +656,7 @@ class RadioService extends EventEmitter {
                             botLogger.warn('radio', `Gagal set SC Client ID: ${e.message}. Menggunakan default client_id.`)
                             try {
                                 await playdl.setToken({ soundcloud: { client_id: 'Yks9HNwSpw5Bo7goMq3jv8cyDYgoLpZr' } })
-                            } catch (_) {}
+                            } catch (_) { }
                         }
 
                         const scResults = await playdl.search(track.title, { source: { soundcloud: 'tracks' }, limit: 1 })
@@ -696,7 +701,7 @@ class RadioService extends EventEmitter {
                 // ── 3. FFmpeg: stdin pipe / direct URL → MP3 stdout ──
                 const ffmpegBin = getFfmpegPath()
                 const isDirectUrl = typeof inputStream === 'string'
-                
+
                 const ffArgs = [
                     // Jika direct URL, pakai fitur auto-reconnect & realtime read dari FFmpeg (sangat kebal putus)
                     ...(isDirectUrl ? [
@@ -728,7 +733,7 @@ class RadioService extends EventEmitter {
                         ffProc.kill()
                     })
                 }
-                
+
                 ffProc.stdin.on('error', () => { /* normal saat skip */ })
 
                 // ── 4. Broadcast stdout ──
