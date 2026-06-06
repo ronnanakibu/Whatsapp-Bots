@@ -156,8 +156,53 @@ function downloadFile(url, dest) {
 // ─────────────────────────────────────────────
 
 function getCookieArgs() {
+    // 1. Check YOUTUBE_COOKIE env var (header string)
+    const envCookie = process.env.YOUTUBE_COOKIE
+    if (envCookie && envCookie.length > 20 && !envCookie.startsWith('[')) {
+        return ['--add-header', `Cookie: ${envCookie.trim()}`]
+    }
+
+    // 2. Check cookie file (JSON or Netscape format)
     const cookieFile = process.env.YOUTUBE_COOKIE_FILE || path.resolve('./storage/youtube-cookies.json')
     if (fs.existsSync(cookieFile)) {
+        try {
+            const raw = fs.readFileSync(cookieFile, 'utf-8').trim()
+            if (raw.startsWith('[')) {
+                // It is JSON. Convert to Netscape format dynamically
+                const txtFile = path.resolve('./storage/youtube-cookies.txt')
+                let needConvert = true
+                if (fs.existsSync(txtFile)) {
+                    const jsonStat = fs.statSync(cookieFile)
+                    const txtStat = fs.statSync(txtFile)
+                    if (txtStat.mtimeMs > jsonStat.mtimeMs) {
+                        needConvert = false
+                    }
+                }
+                
+                if (needConvert) {
+                    const arr = JSON.parse(raw)
+                    const lines = [
+                        '# Netscape HTTP Cookie File',
+                        '# This file is generated automatically from youtube-cookies.json. Do not edit directly.',
+                        ''
+                    ]
+                    for (const c of arr) {
+                        if (!c.name || !c.value) continue
+                        const domain = c.domain || '.youtube.com'
+                        const sub = domain.startsWith('.') ? 'TRUE' : 'FALSE'
+                        const path = c.path || '/'
+                        const secure = c.secure === false ? 'FALSE' : 'TRUE'
+                        const expiry = c.expirationDate ? Math.round(c.expirationDate) : (c.expiry ? Math.round(c.expiry) : 2147483647)
+                        lines.push([domain, sub, path, secure, expiry, c.name, c.value].join('\t'))
+                    }
+                    fs.writeFileSync(txtFile, lines.join('\n') + '\n', 'utf-8')
+                    botLogger.info('ytdlp', `Converted youtube-cookies.json to Netscape format at youtube-cookies.txt`)
+                }
+                return ['--cookies', txtFile]
+            }
+        } catch (e) {
+            botLogger.warn('ytdlp', `Gagal memproses cookie file: ${e.message}`)
+        }
         return ['--cookies', cookieFile]
     }
     return []

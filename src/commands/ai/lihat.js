@@ -8,7 +8,7 @@ import { downloadMediaMessage } from '@whiskeysockets/baileys'
 
 export default {
     name: 'lihat',
-    aliases: ['vision', 'analisa', 'describe', 'ocr'],
+    aliases: ['vision', 'analisa', 'describe'],
     category: 'ai',
     description: 'Analisa gambar dengan AI. Kirim foto + caption command.',
     usage: '.lihat [pertanyaan tentang gambar]',

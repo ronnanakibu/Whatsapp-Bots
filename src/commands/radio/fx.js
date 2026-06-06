@@ -26,14 +26,14 @@ export default {
 
         try {
             radioService.setFx(effect)
-            
+
             // Restart current track agar efek langsung aktif
             let suffix = ''
             if (radioService.isPlaying) {
                 await radioService.restartCurrent()
                 suffix = '\n_(Melakukan restart stream agar efek langsung aktif)_'
             }
-            
+
             await reply(`✅ Efek audio berhasil diubah ke: *${effect}*${suffix}`)
         } catch (err) {
             await reply(`❌ Gagal mengubah efek: ${err.message}`)

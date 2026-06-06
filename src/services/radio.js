@@ -40,7 +40,7 @@ async function initPlayDl() {
 
     let cookieStr = null
 
-    // Source 1: File JSON
+    // Source 1: File JSON atau Netscape
     if (fs.existsSync(cookieFile)) {
         try {
             const raw = fs.readFileSync(cookieFile, 'utf-8').trim()
@@ -51,6 +51,22 @@ async function initPlayDl() {
                     .map(c => `${c.name}=${c.value}`)
                     .join('; ')
                 botLogger.info('radio', `Cookie loaded from ${path.basename(cookieFile)} (${arr.length} cookies)`)
+            } else if (raw.startsWith('#')) {
+                // Netscape format cookie file
+                const lines = raw.split('\n')
+                const cookies = []
+                for (let line of lines) {
+                    line = line.trim()
+                    if (!line || line.startsWith('#')) continue
+                    const parts = line.split('\t')
+                    if (parts.length >= 7) {
+                        const name = parts[5]
+                        const value = parts[6]
+                        cookies.push(`${name}=${value}`)
+                    }
+                }
+                cookieStr = cookies.join('; ')
+                botLogger.info('radio', `Cookie loaded from Netscape file ${path.basename(cookieFile)} (${cookies.length} cookies)`)
             } else {
                 // Sudah format header string
                 cookieStr = raw
@@ -392,7 +408,10 @@ class RadioService extends EventEmitter {
             const clientId = await playdl.getFreeClientID()
             await playdl.setToken({ soundcloud: { client_id: clientId } })
         } catch (e) {
-            botLogger.warn('radio', `Gagal set SC Client ID: ${e.message}`)
+            botLogger.warn('radio', `Gagal set SC Client ID: ${e.message}. Menggunakan default client_id.`)
+            try {
+                await playdl.setToken({ soundcloud: { client_id: 'Yks9HNwSpw5Bo7goMq3jv8cyDYgoLpZr' } })
+            } catch (_) {}
         }
 
         let searchQuery = query
@@ -615,7 +634,12 @@ class RadioService extends EventEmitter {
                         try {
                             const clientId = await playdl.getFreeClientID()
                             await playdl.setToken({ soundcloud: { client_id: clientId } })
-                        } catch (_) { }
+                        } catch (e) {
+                            botLogger.warn('radio', `Gagal set SC Client ID: ${e.message}. Menggunakan default client_id.`)
+                            try {
+                                await playdl.setToken({ soundcloud: { client_id: 'Yks9HNwSpw5Bo7goMq3jv8cyDYgoLpZr' } })
+                            } catch (_) {}
+                        }
 
                         const scResults = await playdl.search(track.title, { source: { soundcloud: 'tracks' }, limit: 1 })
                         if (scResults?.length > 0) {
