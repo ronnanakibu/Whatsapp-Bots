@@ -611,7 +611,7 @@ class RadioService extends EventEmitter {
                                     cleanup()
                                     resolve(false)
                                 }
-                            }, 3000)
+                            }, 10000)
 
                             function cleanup() {
                                 clearTimeout(timer)
