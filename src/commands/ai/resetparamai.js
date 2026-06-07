@@ -2,7 +2,7 @@ import { memoryService } from '../../services/memory.js'
 
 export default {
     name: 'resetparamai',
-    aliases: ['resetai'],
+    aliases: ['resetparam'],
     category: 'ai',
     description: 'Mengembalikan settingan engine AI chat ini ke default (Groq).',
     usage: '.resetparamai',
@@ -10,7 +10,7 @@ export default {
     permissions: ['admin', 'owner'],
     async execute(ctx) {
         const { reply, react, chatId } = ctx
-        
+
         try {
             await react('⏳')
             memoryService.setAiProvider(chatId, null)

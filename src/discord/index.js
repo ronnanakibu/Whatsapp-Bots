@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from 'discord.js'
+import { Client, GatewayIntentBits, ActivityType } from 'discord.js'
 import { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } from '@discordjs/voice'
 import { radioService, AVAILABLE_FX, AVAILABLE_EQ } from '../services/radio.js'
 import { logger } from '../utils/logger.js'
@@ -6,6 +6,20 @@ import { logger } from '../utils/logger.js'
 let discordClient = null
 let currentConnection = null
 let audioPlayer = null
+
+// TAMBAHKAN FUNGSI INI:
+function setBotPresence(trackName = null) {
+    if (!discordClient || !discordClient.user) return
+
+    if (trackName) {
+        // Jika ada lagu berjalan -> "Listening to Judul Lagu"
+        discordClient.user.setActivity(trackName, { type: ActivityType.Listening })
+    } else {
+        // Jika radio sedang kosong -> "Listening to !help" atau status default pilihanmu
+        const prefix = process.env.BOT_PREFIX || '!'
+        discordClient.user.setActivity(`${prefix}help | Standby 📻`, { type: ActivityType.Listening })
+    }
+}
 
 function playStream() {
     if (!currentConnection || !audioPlayer) return
@@ -34,17 +48,31 @@ export function startDiscordBot() {
             GatewayIntentBits.GuildVoiceStates,
         ]
     })
-
     // Register radioService event listener once
     radioService.on('track:start', (track) => {
         if (currentConnection && audioPlayer) {
             logger.info(`[Discord] Radio started track: "${track.title}". Refreshing audio resource.`)
             playStream()
         }
+        // Pasang judul lagu di status saat lagu mulai main
+        setBotPresence(track.title)
     })
 
+    // Ketika antrean habis / di-stop, kembalikan status ke standby
+    radioService.on('radio:idle', () => setBotPresence())
+    radioService.on('radio:stop', () => setBotPresence())
+
+    // Untuk djs v14 standard menggunakan 'ready', namun sesuaikan jika wrapper server kamu memakai 'clientReady'
+    discordClient.on('ready', () => {
+        logger.info(`[Discord] Bot online sebagai ${discordClient.user.tag}`)
+        // Set status awal pas bot baru login online
+        setBotPresence()
+    })
+
+    // Backup jika di struktur kodemu sebelumnya wajib pakai 'clientReady'
     discordClient.on('clientReady', () => {
         logger.info(`[Discord] Bot online sebagai ${discordClient.user.tag}`)
+        setBotPresence()
     })
 
     discordClient.on('messageCreate', async (message) => {
@@ -95,7 +123,7 @@ export function startDiscordBot() {
                 })
 
                 playStream()
-                
+
                 message.reply('Sudah mendarat di Voice Channel & standby muter siaran radio WA! 📻')
             } else {
                 if (audioPlayer && audioPlayer.state.status === AudioPlayerStatus.Idle) {
@@ -162,11 +190,11 @@ export function startDiscordBot() {
                 const msg = await message.reply(`🔍 Mencari \`${query}\`...`)
                 const track = await radioService.search(query, message.author.username)
                 radioService.addToQueue(track)
-                
+
                 if (!radioService.isPlaying) {
                     radioService.start().catch(e => logger.error('[Radio] Start error: ' + e.message))
                 }
-                
+
                 msg.edit(`✅ **Ditambahkan ke antrean:** ${track.title}\nRequested by: ${track.requestedBy}`)
             } catch (err) {
                 message.reply(`❌ Gagal menambahkan lagu: ${err.message}`)
@@ -217,12 +245,12 @@ export function startDiscordBot() {
 
             const { track, queue, listeners, fx, eq } = info
             const text = `**📻 Now Playing**\n\n` +
-                         `📀 **${track.title}**\n` +
-                         `⏱️ Durasi: \`${track.durationFormatted}\`\n` +
-                         `👥 Pendengar aktif: \`${listeners}\`\n` +
-                         `📋 Antrean: \`${queue} lagu\`\n` +
-                         `🎚️ FX: \`${fx}\` | EQ: \`${eq}\`\n\n` +
-                         `_Ketik \`!queue\` untuk antrean · \`!skip\` untuk skip_`
+                `📀 **${track.title}**\n` +
+                `⏱️ Durasi: \`${track.durationFormatted}\`\n` +
+                `👥 Pendengar aktif: \`${listeners}\`\n` +
+                `📋 Antrean: \`${queue} lagu\`\n` +
+                `🎚️ FX: \`${fx}\` | EQ: \`${eq}\`\n\n` +
+                `_Ketik \`!queue\` untuk antrean · \`!skip\` untuk skip_`
 
             if (track.thumbnail) {
                 message.reply({

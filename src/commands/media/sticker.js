@@ -12,7 +12,7 @@ export default {
     cooldown: 5,
     permissions: ['user'],
     async execute(ctx) {
-        const { msg, messageContent, type, args, reply, react, from, pushName, sender } = ctx
+        const { msg, messageContent, type, args, reply, react, from, pushName, sender, sock } = ctx
 
         // Cek Apakah pesan berupa gambar/video/stiker langsung atau meng-quote gambar/video/stiker
         let isMedia = type === 'imageMessage' || type === 'videoMessage' || type === 'stickerMessage'
@@ -37,18 +37,39 @@ export default {
         logger.info('⏳ Sedang di-masak Dik, stiker teks meme lu lagi diproses...')
 
         try {
-            const targetMessage = isMedia ? msg : { message: quotedMsg, key: msg.key }
-
-            // Unduh buffer biner media dari server WA
-            const buffer = await downloadMediaMessage(
-                targetMessage,
-                'buffer',
-                {},
-                {
-                    logger: console,
-                    reconnectCount: 3
+            let buffer
+            if (isMedia) {
+                buffer = await downloadMediaMessage(
+                    msg,
+                    'buffer',
+                    {},
+                    {
+                        logger: console,
+                        reconnectCount: 3,
+                        reuploadRequest: sock.updateMediaMessage
+                    }
+                )
+            } else {
+                const quotedKey = messageContent?.extendedTextMessage?.contextInfo
+                const reconstructedQuotedMsg = {
+                    key: {
+                        remoteJid: from,
+                        id: quotedKey?.stanzaId ?? '',
+                        fromMe: quotedKey?.participant === sock.user?.id,
+                    },
+                    message: finalQuotedMsg,
                 }
-            )
+                buffer = await downloadMediaMessage(
+                    reconstructedQuotedMsg,
+                    'buffer',
+                    {},
+                    {
+                        logger: console,
+                        reconnectCount: 3,
+                        reuploadRequest: sock.updateMediaMessage
+                    }
+                )
+            }
 
             // 🌟 LOGIKA SPLITTER PARSER: Ambil teks setelah command dan bagi berdasarkan karakter "|"
             const fullText = args.join(' ')

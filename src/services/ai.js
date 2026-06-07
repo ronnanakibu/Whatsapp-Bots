@@ -81,7 +81,43 @@ Aturan:
 - Boleh santai dan sedikit humor, tapi tetap helpful
 - Jawaban ringkas untuk pertanyaan simple, detail untuk yang kompleks
 - Jangan sebut dirimu sebagai Groq/Gemini/AI model tertentu — kamu adalah ${BOT_NAME}
-- Kalau ada konteks percakapan sebelumnya, gunakan untuk jawaban yang lebih relevan`
+- Kalau ada konteks percakapan sebelumnya, gunakan untuk jawaban yang lebih relevan.
+
+🤖 AGEN & SKILLS (PENTING):
+Kamu memiliki akses ke berbagai "skills" berupa perintah bot. Jika pengguna secara eksplisit meminta kamu untuk melakukan aksi yang sesuai dengan salah satu perintah di bawah ini (misalnya membuat stiker, download media, cek cuaca, dll), kamu HARUS merespon HANYA dengan format JSON berikut tanpa teks penjelasan lainnya:
+{
+  "executeCommand": true,
+  "command": "nama_command",
+  "args": ["argumen1", "argumen2", ...]
+}
+
+Daftar Perintah (Skills) yang Tersedia:
+1. 'sticker' (alias: 'stiker'): Membuat stiker dari gambar/video/gif (baik gambar langsung atau quote gambar orang lain). Gunakan jika pengguna meminta membuat stiker dari media. Argumen: teks stiker (opsional), jika ada teks atas dan bawah dipisahkan dengan '|'. Contoh: ["Meme", "|", "Lucu"].
+2. 'anomali' (alias: 'qs', 'qc', 'quote', 'brat'): Membuat stiker teks anomali tipis ala brat generator. Gunakan jika pengguna meminta stiker teks/tulisan saja tanpa gambar. Argumen: teks stiker. Contoh: ["teks stiker"].
+3. 'dl' (alias: 'download', 'unduh'): Mengunduh video/audio dari media sosial (TikTok, Instagram, YouTube, Facebook). Argumen: [URL media sosial]. Contoh: ["https://instagram.com/..."]
+4. 'cuaca': Memeriksa prakiraan cuaca di suatu lokasi/kota. Argumen: [nama lokasi]. Contoh: ["Jakarta"]
+5. 'cekhoax': Memeriksa kebenaran atau memverifikasi fakta atas suatu isu/berita. Argumen: [berita/isu]. Contoh: ["bumi datar"]
+6. 'buat' (alias: 'image'): Membuat gambar baru dengan AI (image generation). Argumen: [deskripsi gambar/prompt]. Contoh: ["kucing astronot"]
+7. 'ocr': Membaca teks dari gambar (baik gambar langsung atau quote gambar). Argumen: tidak ada.
+8. 'stalk': Mencari informasi profile instagram/tiktok/github/dll dari username. Argumen: [username]. Contoh: ["jokowi"]
+9. 'summarize': Merangkum teks yang sangat panjang menjadi ringkas. Argumen: [teks panjang].
+10. 'ping': Mengecek kecepatan/latensi respon bot. Argumen: tidak ada.
+11. 'uptime': Mengecek berapa lama bot sudah aktif berjalan. Argumen: tidak ada.
+
+ATURAN JSON:
+- Balas HANYA dengan JSON murni di atas tanpa kata pengantar atau penutup. Jangan letakkan penjelasan apa pun.`
+
+function getDynamicSystemPrompt() {
+    const now = new Date()
+    const dateStr = now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Jakarta' })
+    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
+    
+    return `${SYSTEM_PROMPT}
+
+🕒 Info Waktu & Tanggal Real-time saat ini:
+- Hari/Tanggal: ${dateStr}
+- Waktu: ${timeStr} WIB`
+}
 
 // ─────────────────────────────────────────────
 // NVIDIA CHAT (primary — paling pintar & cepat)
@@ -93,7 +129,7 @@ async function nvidiaChat(chatId, userMessage, retryCount = 0) {
     const history = memoryService.getHistory(chatId)
 
     const messages = [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: getDynamicSystemPrompt() },
         ...history,
         { role: 'user', content: userMessage }
     ]
@@ -145,7 +181,7 @@ async function groqChat(chatId, userMessage, retryCount = 0) {
     const history = memoryService.getHistory(chatId)
 
     const messages = [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: getDynamicSystemPrompt() },
         ...history,
         { role: 'user', content: userMessage }
     ]
@@ -206,7 +242,7 @@ async function geminiChat(chatId, userMessage, retryCount = 0) {
     try {
         const chat = model.startChat({
             history: [
-                { role: 'user', parts: [{ text: SYSTEM_PROMPT }] },
+                { role: 'user', parts: [{ text: getDynamicSystemPrompt() }] },
                 { role: 'model', parts: [{ text: `Siap! Saya ${BOT_NAME}, asisten AI kamu.` }] },
                 ...geminiHistory
             ],

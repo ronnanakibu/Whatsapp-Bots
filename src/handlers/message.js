@@ -13,6 +13,7 @@ import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { normalizeNumber } from '../utils/permissions.js'
 import { metricsService } from '../services/metrics.js'
 import { interactiveService } from '../services/interactive.js'
+import { processAiResponse } from '../utils/aiRouter.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
     try {
@@ -265,9 +266,8 @@ export async function handleIncomingMessage(sock, { messages }) {
             try {
                 const result = await aiService.chat(from, body)
                 botLogger.ai(result.provider, result.model, from, Date.now() - startMs)
-                const sent = await reply(result.text)
-                if (sent?.key?.id) seamlessTracker.track(sent.key.id)
-                await react('✅')
+                const executed = await processAiResponse(ctx, result)
+                if (!executed) await react('✅')
             } catch (err) {
                 await react('❌')
                 botLogger.err('seamless', err)
@@ -289,9 +289,8 @@ export async function handleIncomingMessage(sock, { messages }) {
             try {
                 const result = await aiService.chat(from, bodyWithoutMention)
                 botLogger.ai(result.provider, result.model, from, Date.now() - startMs)
-                const sent = await reply(result.text)
-                if (sent?.key?.id) seamlessTracker.track(sent.key.id)
-                await react('✅')
+                const executed = await processAiResponse(ctx, result)
+                if (!executed) await react('✅')
             } catch (err) {
                 await react('❌')
                 botLogger.err('mention', err)
@@ -322,9 +321,8 @@ export async function handleIncomingMessage(sock, { messages }) {
             try {
                 const result = await aiService.chat(from, body)
                 botLogger.ai(result.provider, result.model, from, Date.now() - startMs)
-                const sent = await reply(result.text)
-                if (sent?.key?.id) seamlessTracker.track(sent.key.id)
-                await react('✅')
+                const executed = await processAiResponse(ctx, result)
+                if (!executed) await react('✅')
             } catch (err) {
                 await react('❌')
                 botLogger.err('dm', err)

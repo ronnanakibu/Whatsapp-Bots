@@ -5,6 +5,7 @@
 import { aiService } from '../../services/ai.js'
 import { memoryService } from '../../services/memory.js'
 import { seamlessTracker } from '../../services/seamless.js'
+import { processAiResponse } from '../../utils/aiRouter.js'
 
 export default {
     name: 'q',
@@ -47,16 +48,8 @@ export default {
 
         try {
             const result = await aiService.chat(chatId, question, forcedProvider)
-
-            const text = result.text
-            const sent = await reply(text)
-
-            // Daftarkan ke seamless tracker
-            // sent bisa berupa { key: { id: '...' } } tergantung Baileys version
-            const sentId = sent?.key?.id
-            if (sentId) seamlessTracker.track(sentId)
-
-            await react('✅')
+            const executed = await processAiResponse(ctx, result)
+            if (!executed) await react('✅')
 
         } catch (err) {
             await react('❌')
