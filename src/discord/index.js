@@ -62,16 +62,10 @@ export function startDiscordBot() {
     radioService.on('radio:idle', () => setBotPresence())
     radioService.on('radio:stop', () => setBotPresence())
 
-    // Untuk djs v14 standard menggunakan 'ready', namun sesuaikan jika wrapper server kamu memakai 'clientReady'
-    discordClient.on('ready', () => {
+    // discord.js v14+ menggunakan 'clientReady' (renamed dari 'ready' di v15)
+    discordClient.once('clientReady', () => {
         logger.info(`[Discord] Bot online sebagai ${discordClient.user.tag}`)
         // Set status awal pas bot baru login online
-        setBotPresence()
-    })
-
-    // Backup jika di struktur kodemu sebelumnya wajib pakai 'clientReady'
-    discordClient.on('clientReady', () => {
-        logger.info(`[Discord] Bot online sebagai ${discordClient.user.tag}`)
         setBotPresence()
     })
 
