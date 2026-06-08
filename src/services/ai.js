@@ -14,9 +14,9 @@ import { logger } from '../utils/logger.js'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-const nvidiaClient = process.env.NVIDIA_API_KEY ? new OpenAI({ 
-    apiKey: process.env.NVIDIA_API_KEY, 
-    baseURL: 'https://integrate.api.nvidia.com/v1' 
+const nvidiaClient = process.env.NVIDIA_API_KEY ? new OpenAI({
+    apiKey: process.env.NVIDIA_API_KEY,
+    baseURL: 'https://integrate.api.nvidia.com/v1'
 }) : null
 
 // ─────────────────────────────────────────────
@@ -73,12 +73,12 @@ function setCooldown(model, durationMs = 60_000) {
 const BOT_NAME = process.env.BOT_NAME ?? 'RonnBot'
 const OWNER_NAME = process.env.OWNER_NAME ?? 'Owner'
 
-const SYSTEM_PROMPT = `Kamu adalah ${BOT_NAME}, asisten AI yang cerdas, helpful, dan sedikit nyantai.
+const DEFAULT_SYSTEM_PROMPT = `Kamu adalah ${BOT_NAME}, asisten AI yang cerdas, helpful, dan sedikit nyantai.
 Dibuat oleh ${OWNER_NAME}. Kamu berjalan di WhatsApp sebagai bot.
 
 Aturan:
 - Jawab dalam bahasa yang sama dengan user (Indonesia/English/campur = ikuti)
-- Boleh santai dan sedikit humor, tapi tetap helpful
+- Boleh santai , tapi tetap helpful dan jangan cringe
 - Jawaban ringkas untuk pertanyaan simple, detail untuk yang kompleks
 - Jangan sebut dirimu sebagai Groq/Gemini/AI model tertentu — kamu adalah ${BOT_NAME}
 - Kalau ada konteks percakapan sebelumnya, gunakan untuk jawaban yang lebih relevan.
@@ -111,8 +111,10 @@ function getDynamicSystemPrompt() {
     const now = new Date()
     const dateStr = now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Jakarta' })
     const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
-    
-    return `${SYSTEM_PROMPT}
+
+    const basePrompt = process.env.SYSTEM_PROMPT || DEFAULT_SYSTEM_PROMPT
+
+    return `${basePrompt}
 
 🕒 Info Waktu & Tanggal Real-time saat ini:
 - Hari/Tanggal: ${dateStr}
@@ -368,7 +370,7 @@ async function generateImage(rawPrompt) {
             const errData = await res.json().catch(() => ({}))
             throw new Error(errData.error || `HTTP error ${res.status}`)
         }
-        
+
         const arrayBuffer = await res.arrayBuffer()
         return {
             buffer: Buffer.from(arrayBuffer),
@@ -487,11 +489,11 @@ async function chat(chatId, userMessage, forcedProvider = null) {
 
 async function geminiFactCheck(query) {
     const modelName = getAvailableModel(GEMINI_MODELS)
-    const model = genAI.getGenerativeModel({ 
+    const model = genAI.getGenerativeModel({
         model: modelName,
         systemInstruction: "Anda adalah sistem verifikasi fakta otomatis. Anda BUKAN asisten obrolan santai. JANGAN menggunakan kata sapaan, basa-basi, atau intro seperti 'Baiklah', 'Siap', 'Mari kita bedah'. Output Anda HARUS murni berupa laporan faktual yang objektif, analitis, rinci, dan langsung pada intinya."
     })
-    
+
     const prompt = `Lakukan riset di internet untuk memverifikasi kebenaran informasi/berita berikut:\n\n"${query}"\n\nJawab LANGSUNG tanpa basa-basi menggunakan format persis seperti di bawah ini:\n\n*1. STATUS:* [Fakta / Hoax / Konteks Keliru / Disinformasi]\n\n*2. RINGKASAN SUMBER & KLAIM:* [Jelaskan secara detail apa inti dari informasi/klaim tersebut dan dari mana asalnya]\n\n*3. ANALISIS FAKTA:* [Berikan penjelasan mendalam, uraikan fakta sebenarnya yang terjadi di lapangan berdasarkan sumber kredibel yang Anda temukan]\n\n*4. DAFTAR REFERENSI:* [Berikan daftar bullet point berisi link/URL sumber berita terpercaya yang memvalidasi analisis Anda]`
 
     try {
