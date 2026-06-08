@@ -3,11 +3,11 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { 
-  Terminal, Activity, Cpu, Clock, Compass, Users2, MessageSquare, 
-  Music, Volume2, Play, Pause, Calendar, ChevronRight, Sparkles, 
-  Search, ExternalLink, Lock, Settings, Sun, Moon, Github, Instagram, 
-  Mail, BookOpen, Info, Globe, Database, Bot, Zap, Workflow, Shield, 
+import {
+  Terminal, Activity, Cpu, Clock, Compass, Users2, MessageSquare,
+  Music, Volume2, Play, Pause, Calendar, ChevronRight, Sparkles,
+  Search, ExternalLink, Lock, Settings, Sun, Moon, Github, Instagram,
+  Mail, BookOpen, Info, Globe, Database, Bot, Zap, Workflow, Shield,
   History, Send, VolumeX, AlertCircle, HelpCircle, Layers
 } from 'lucide-react'
 import { useDashboardStore } from '../../store/dashboard'
@@ -28,13 +28,13 @@ function AnimatedCounter({ value }: { value: number }) {
     const duration = 1.0 // seconds
     const totalFrames = 60 * duration
     let frame = 0
-    
+
     const counter = setInterval(() => {
       frame++
       const progress = frame / totalFrames
       const current = Math.round(end * (1 - (1 - progress) * (1 - progress))) // Ease out
       setCount(current)
-      
+
       if (frame >= totalFrames) {
         clearInterval(counter)
         setCount(end)
@@ -49,7 +49,7 @@ function AnimatedCounter({ value }: { value: number }) {
 
 export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
   const { metrics, uptime, botStatus, isConnected } = useDashboardStore()
-  
+
   // Theme state
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
 
@@ -67,7 +67,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
   const [radioMuted, setRadioMuted] = useState(false)
   const [radioDetails, setRadioDetails] = useState<any>(null)
   const [radioLoading, setRadioLoading] = useState(false)
-  
+
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // Initialize Theme and Ctrl+K handlers
@@ -365,7 +365,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
     { label: 'GitHub Profile', value: 'ronnanakibu', url: 'https://github.com/ronnanakibu', icon: Github },
     { label: 'Instagram', value: '@ronnlbtrn_', url: 'https://www.instagram.com/ronnlbtrn_/', icon: Instagram },
     { label: 'Developer Email', value: 'ronysihombing07@gmail.com', url: 'mailto:ronysihombing07@gmail.com', icon: Mail },
-    { label: 'Creative Portfolio', value: 'Coming Soon', url: '#', icon: Globe }
+    { label: 'Creative Portfolio', value: 'RonnAnakIbu Portfolio', url: 'https://portonyaronnanakibu.vercel.app/', icon: Globe }
   ]
 
   // Command palette items based on query
@@ -405,7 +405,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
 
   return (
     <div className="min-h-screen text-foreground relative overflow-x-hidden selection:bg-accent/20 selection:text-accent font-body bg-background transition-colors duration-300">
-      
+
       {/* Background Interactive canvas */}
       <ThreeBackground />
 
@@ -423,8 +423,8 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
         {/* Desktop links */}
         <div className="hidden md:flex items-center gap-6 text-[10.5px] font-medium text-muted-foreground">
           {['home', 'features', 'status', 'radio', 'developer', 'roadmap'].map((sec) => (
-            <button 
-              key={sec} 
+            <button
+              key={sec}
               onClick={() => scrollToSection(sec)}
               className="capitalize hover:text-white hover:font-semibold transition-all"
             >
@@ -436,7 +436,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
         {/* Actions buttons */}
         <div className="flex items-center gap-3">
           {/* CTRL+K Search visual indicators */}
-          <button 
+          <button
             onClick={() => setIsCommandPaletteOpen(true)}
             className="hidden sm:flex items-center gap-1.5 h-8 px-2.5 bg-muted/30 border border-border/60 hover:border-border rounded-full text-[10px] text-muted-foreground font-mono transition-colors"
           >
@@ -446,7 +446,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
           </button>
 
           {/* Theme switcher */}
-          <button 
+          <button
             onClick={toggleTheme}
             className="p-2 bg-muted/40 hover:bg-muted border border-border/60 hover:border-accent/40 rounded-full text-muted-foreground hover:text-accent transition-colors"
             title="Toggle Theme"
@@ -455,7 +455,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
           </button>
 
           {/* Admin console trigger */}
-          <button 
+          <button
             onClick={() => setViewMode('admin')}
             className="h-8 px-4 bg-white hover:bg-neutral-200 text-black text-[10px] font-bold rounded-full transition-all hover:scale-[1.03] flex items-center gap-1.5"
           >
@@ -468,7 +468,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       {/* HERO SECTION */}
       <header id="home" className="pt-32 pb-16 px-6 max-w-5xl mx-auto flex flex-col items-center text-center relative z-10 min-h-[90vh] justify-center">
         {/* Floating Tag */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
@@ -479,7 +479,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
         </motion.div>
 
         {/* Hero Title */}
-        <motion.h1 
+        <motion.h1
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.6 }}
@@ -489,7 +489,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
         </motion.h1>
 
         {/* Hero Description */}
-        <motion.p 
+        <motion.p
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.6 }}
@@ -499,26 +499,26 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
         </motion.p>
 
         {/* Hero CTAs */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3, duration: 0.6 }}
           className="flex flex-wrap items-center justify-center gap-4 mt-10"
         >
-          <button 
+          <button
             onClick={() => scrollToSection('features')}
             className="h-10 px-6 bg-accent text-white text-[11px] font-bold rounded-lg hover:bg-accent/90 transition-all hover:scale-[1.02]"
           >
             Explore Features
           </button>
-          <button 
+          <button
             onClick={() => scrollToSection('radio')}
             className="h-10 px-6 bg-surface/40 hover:bg-surface border border-border text-white text-[11px] font-semibold rounded-lg transition-all hover:scale-[1.02] flex items-center gap-2"
           >
             <Music size={12} className="text-accent" />
             <span>Live Radio</span>
           </button>
-          <button 
+          <button
             onClick={() => scrollToSection('developer')}
             className="h-10 px-6 bg-muted/40 hover:bg-muted border border-border text-muted-foreground hover:text-white text-[11px] font-semibold rounded-lg transition-all"
           >
@@ -527,7 +527,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
         </motion.div>
 
         {/* Scroll indicator */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: [0, 1, 0], y: [0, 6, 0] }}
           transition={{ repeat: Infinity, duration: 2, delay: 1 }}
@@ -555,7 +555,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
           ].map((m, idx) => {
             const Icon = m.icon
             return (
-              <div 
+              <div
                 key={idx}
                 className="p-4 bg-surface/20 border border-border/80 rounded-xl flex flex-col justify-between hover:border-border transition-colors duration-300"
               >
@@ -625,7 +625,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       {/* FEATURE SPOTLIGHT PANEL */}
       <section className="py-12 px-6 max-w-5xl mx-auto relative z-10">
         <div className="p-8 bg-surface/30 border border-border rounded-2xl glassmorphism overflow-hidden relative">
-          
+
           <div className="absolute top-0 right-0 p-6 opacity-[0.02] pointer-events-none text-white">
             <Sparkles size={260} />
           </div>
@@ -695,7 +695,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
             { name: 'Radio Station', desc: 'Icecast stream host', status: radioDetails ? 'online' : isConnected ? 'online' : 'offline' },
             { name: 'API Server', desc: 'REST Telemetry APIs', status: isConnected ? 'online' : 'offline' }
           ].map((item, idx) => (
-            <div 
+            <div
               key={idx}
               className="p-5 bg-surface/20 border border-border rounded-xl flex flex-col justify-between h-32 text-center"
             >
@@ -705,16 +705,14 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
               </div>
 
               <div className="flex items-center justify-center gap-1.5 mt-4">
-                <span className={`h-1.5 w-1.5 rounded-full ${
-                  item.status === 'online' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' :
+                <span className={`h-1.5 w-1.5 rounded-full ${item.status === 'online' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' :
                   item.status === 'degraded' ? 'bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]' :
-                  'bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
-                }`} />
-                <span className={`text-[9.5px] font-semibold uppercase font-mono ${
-                  item.status === 'online' ? 'text-emerald-500' :
+                    'bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+                  }`} />
+                <span className={`text-[9.5px] font-semibold uppercase font-mono ${item.status === 'online' ? 'text-emerald-500' :
                   item.status === 'degraded' ? 'text-amber-500' :
-                  'text-rose-500'
-                }`}>
+                    'text-rose-500'
+                  }`}>
                   {item.status}
                 </span>
               </div>
@@ -726,7 +724,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       {/* RADIO SECTION */}
       <section id="radio" className="py-20 px-6 max-w-5xl mx-auto relative z-10 border-t border-border-subtle">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
-          
+
           {/* Main Visual artwork card */}
           <div className="p-8 bg-surface/30 border border-border rounded-2xl flex flex-col justify-between items-center text-center relative overflow-hidden glassmorphism">
             {/* Visual background vinyl */}
@@ -824,7 +822,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
                   const heights = [3, 6, 8, 12, 18, 14, 10, 6, 8, 14, 18, 22, 16, 12, 8, 10, 14, 18, 12, 8, 6, 4, 3, 2]
                   const duration = 0.5 + Math.random() * 0.8
                   return (
-                    <div 
+                    <div
                       key={idx}
                       className="w-1 bg-accent/60 rounded-t-sm"
                       style={{
@@ -868,27 +866,27 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       {/* MEET THE DEVELOPER SECTION */}
       <section id="developer" className="py-20 px-6 max-w-5xl mx-auto relative z-10 border-t border-border-subtle">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
-          
+
           {/* Avatar Details block */}
           <div className="p-8 bg-surface/30 border border-border rounded-2xl flex flex-col justify-between relative overflow-hidden glassmorphism">
             <div>
               <div className="h-20 w-20 rounded-full overflow-hidden border border-white/10 shadow-lg mb-6">
-                <img 
-                  src="https://github.com/ronnanakibu.png" 
-                  alt="Rony Imanuel Sihombing" 
+                <img
+                  src="https://github.com/ronnanakibu.png"
+                  alt="Rony Imanuel Sihombing"
                   className="h-full w-full object-cover"
                 />
               </div>
 
               <h3 className="text-lg font-extrabold text-white leading-tight">Rony Imanuel Sihombing</h3>
               <p className="text-[10px] font-mono text-accent mt-1 uppercase tracking-wider font-semibold">Computer Engineering Student</p>
-              
+
               <div className="space-y-4 mt-6">
                 {[
                   'Multimedia Enthusiast',
                   'AI Explorer & Researcher',
                   'High-Performance Systems Builder',
-                  'RonnBot Creator'
+                  'RonnBot (WABOT 2.0) Creator'
                 ].map((spec, index) => (
                   <div key={index} className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="h-1.5 w-1.5 rounded-full bg-accent" />
@@ -986,7 +984,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
 
               <div className="space-y-4">
                 {col.items.map((item, idx) => (
-                  <div 
+                  <div
                     key={idx}
                     className="p-5 bg-surface/20 border border-border rounded-xl space-y-3"
                   >
@@ -1041,7 +1039,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
               img: 'https://images.unsplash.com/photo-1629654297299-c8506221ca97?w=800&auto=format&fit=crop&q=80'
             }
           ].map((item, idx) => (
-            <div 
+            <div
               key={idx}
               onClick={() => setGalleryImgUrl(item.img)}
               className={`p-4 bg-gradient-to-br ${item.gradient} border rounded-2xl hover:border-accent/40 hover:scale-[1.01] cursor-pointer group transition-all duration-300 flex flex-col justify-between h-80 overflow-hidden relative`}
@@ -1160,7 +1158,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
           <span>Version v3.1.0-stable</span>
         </div>
         <p className="text-center md:text-right">
-          © {new Date().getFullYear()} Rony Imanuel Sihombing. Designed with premium Stripe & Linear aesthetics.
+          © {new Date().getFullYear()} Rony Imanuel Sihombing.
         </p>
       </footer>
 
@@ -1168,13 +1166,13 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       <AnimatePresence>
         {activeModalFeature && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               className="w-full max-w-lg p-8 bg-surface border border-border rounded-2xl shadow-2xl relative overflow-hidden"
             >
-              <button 
+              <button
                 onClick={() => setActiveModalFeature(null)}
                 className="absolute top-6 right-6 text-muted-foreground hover:text-white transition-colors text-xs font-mono"
               >
@@ -1223,11 +1221,11 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       {/* COMMAND PALETTE MODAL */}
       <AnimatePresence>
         {isCommandPaletteOpen && (
-          <div 
+          <div
             className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-start justify-center pt-24 px-6"
             onClick={() => setIsCommandPaletteOpen(false)}
           >
-            <motion.div 
+            <motion.div
               initial={{ y: -20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -20, opacity: 0 }}
@@ -1277,25 +1275,25 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
       {/* GALLERY EXPAND PREVIEW MODAL */}
       <AnimatePresence>
         {galleryImgUrl && (
-          <div 
+          <div
             className="fixed inset-0 bg-black/95 backdrop-blur-sm z-50 flex items-center justify-center p-6"
             onClick={() => setGalleryImgUrl(null)}
           >
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               className="max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-border shadow-2xl relative bg-neutral-950"
               onClick={(e) => e.stopPropagation()}
             >
-              <img 
-                src={galleryImgUrl} 
-                alt="UI Expanded Preview" 
+              <img
+                src={galleryImgUrl}
+                alt="UI Expanded Preview"
                 className="w-full h-auto max-h-[80vh] object-contain"
               />
               <div className="p-4 bg-surface/80 border-t border-border flex items-center justify-between text-xs text-muted-foreground font-mono">
                 <span>WABOT 2.0 Panel Illustration Preview</span>
-                <button 
+                <button
                   onClick={() => setGalleryImgUrl(null)}
                   className="hover:text-white"
                 >
