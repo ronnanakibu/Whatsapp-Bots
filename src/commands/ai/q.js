@@ -5,7 +5,7 @@
 import { aiService } from '../../services/ai.js'
 import { memoryService } from '../../services/memory.js'
 import { seamlessTracker } from '../../services/seamless.js'
-import { processAiResponse } from '../../utils/aiRouter.js'
+import { processAiResponse, tryDirectRoute } from '../../utils/aiRouter.js'
 
 export default {
     name: 'q',
@@ -47,6 +47,12 @@ export default {
         await react('🤔')
 
         try {
+            const isDirectRouted = await tryDirectRoute(question, ctx)
+            if (isDirectRouted) {
+                await react('✅')
+                return
+            }
+
             const result = await aiService.chat(chatId, question, forcedProvider)
             const executed = await processAiResponse(ctx, result)
             if (!executed) await react('✅')

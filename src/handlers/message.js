@@ -13,7 +13,7 @@ import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { normalizeNumber } from '../utils/permissions.js'
 import { metricsService } from '../services/metrics.js'
 import { interactiveService } from '../services/interactive.js'
-import { processAiResponse } from '../utils/aiRouter.js'
+import { processAiResponse, tryDirectRoute } from '../utils/aiRouter.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
     try {
@@ -264,6 +264,12 @@ export async function handleIncomingMessage(sock, { messages }) {
             const startMs = Date.now()
 
             try {
+                const isDirectRouted = await tryDirectRoute(body, ctx)
+                if (isDirectRouted) {
+                    await react('✅')
+                    return
+                }
+
                 const result = await aiService.chat(from, body)
                 botLogger.ai(result.provider, result.model, from, Date.now() - startMs)
                 const executed = await processAiResponse(ctx, result)
@@ -287,6 +293,12 @@ export async function handleIncomingMessage(sock, { messages }) {
             const startMs = Date.now()
 
             try {
+                const isDirectRouted = await tryDirectRoute(bodyWithoutMention, ctx)
+                if (isDirectRouted) {
+                    await react('✅')
+                    return
+                }
+
                 const result = await aiService.chat(from, bodyWithoutMention)
                 botLogger.ai(result.provider, result.model, from, Date.now() - startMs)
                 const executed = await processAiResponse(ctx, result)
@@ -319,6 +331,12 @@ export async function handleIncomingMessage(sock, { messages }) {
             const startMs = Date.now()
 
             try {
+                const isDirectRouted = await tryDirectRoute(body, ctx)
+                if (isDirectRouted) {
+                    await react('✅')
+                    return
+                }
+
                 const result = await aiService.chat(from, body)
                 botLogger.ai(result.provider, result.model, from, Date.now() - startMs)
                 const executed = await processAiResponse(ctx, result)
