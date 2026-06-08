@@ -6,6 +6,13 @@ This file documents the key milestones, architectural design patterns, and criti
 
 ## Key Milestones
 
+### v4.0.4 — Real-time Context & Agentic Command Router
+* **Achievement**: Enabled temporal query awareness and natural language command execution via an agentic routing system and a keyword pre-router.
+* **Technical Details**:
+  * Built `getDynamicSystemPrompt()` to append real-time Date/Time context (GMT+7, Asia/Jakarta) dynamically to AI system instructions.
+  * Implemented an agentic JSON parser (`processAiResponse`) to evaluate and execute command actions requested by AI.
+  * Implemented a `tryDirectRoute` pre-router to check matching regex patterns (e.g., sticker creation, weather requests) and route commands directly, bypassing AI entirely for guaranteed 100% execution success.
+
 ### v3.1.0 — Public Dashboard Summary
 * **Achievement**: Implemented a public-facing landing portal (`/dashboard` index route) served dynamically before admin credentials check.
 * **Technical Details**:
@@ -31,3 +38,7 @@ This file documents the key milestones, architectural design patterns, and criti
 2. **WebSocket Connection Lifetime**:
    * *Problem*: Allocating socket instances per React component mount leads to connection flooding on route transitions.
    * *Solution*: Cache the connection in a module-level singleton pointer and share the state globally via Zustand stores.
+
+3. **AI Formatting & Constraint Inconsistency**:
+   * *Problem*: Depending solely on LLM prompt constraints to enforce structured JSON outputs is unreliable (especially for smaller models like Llama-3-70b/8b instruct under Groq), occasionally resulting in conversational text instead of command executions.
+   * *Solution*: Deploy a keyword/regex-based pre-routing layer (`tryDirectRoute`) before the AI engine. If a message contains explicit keywords combined with the right context (e.g. "stiker" when replying to media), bypass the AI to execute the command directly. If it fails to match, fall back to agentic AI routing.
