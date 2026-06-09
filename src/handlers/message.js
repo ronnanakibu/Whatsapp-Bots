@@ -1,4 +1,5 @@
 // src/handlers/message.js
+import fs from 'fs' // Tambahkan import fs di paling atas
 import { commands } from '../core/loader.js'
 import { logger, botLogger } from '../utils/logger.js'
 import { aiService } from '../services/ai.js'
@@ -70,7 +71,7 @@ export async function handleIncomingMessage(sock, { messages }) {
         const isReplyToBot = seamlessTracker.isReplyToBot(quotedMsgId)
 
         const mentionedJids = messageContent?.extendedTextMessage?.contextInfo?.mentionedJid ?? []
-        
+
         // Collect all possible bot JID numbers (phone number, LID number, etc.)
         const botNumbers = new Set([
             normalizeNumber(rawBotId),
@@ -86,6 +87,21 @@ export async function handleIncomingMessage(sock, { messages }) {
         const prefix = process.env.BOT_PREFIX || '!'
         const isCommand = body.startsWith(prefix)
         const isDMTrigger = isDM && !isCommand && body.trim().length > 0
+
+        // ── 😴 GLOBAL SLEEP / DEAFEN MODE INTERCEPTOR ──
+        if (fs.existsSync('./storage/sleep.flag')) {
+            const { isOwner } = await import('../utils/permissions.js')
+            const masterOwner = isOwner(sender)
+
+            // Ekstrak nama command secara mentah untuk keperluan validasi bangun
+            const cmdName = isCommand ? body.slice(prefix.length).trim().split(/ +/)[0].toLowerCase() : ''
+            const wakeupCommands = ['wake', 'bangun', 'pagi', 'resume']
+
+            // JIKA bot tidur, matikan total seluruh respon KECUALI jika pemicunya adalah owner yang mau bangunin bot
+            if (!masterOwner || !isCommand || !wakeupCommands.includes(cmdName)) {
+                return // Drop event senyap tanpa log tambahan, emulasi status deafen
+            }
+        }
 
         const bodyWithoutMention = body
             .replace(/@\d+/g, '')
@@ -223,8 +239,7 @@ export async function handleIncomingMessage(sock, { messages }) {
 
             try {
                 metricsService.incrementCommands(commandName)
-                
-                // Track user details and command runs count in SQLite
+
                 try {
                     const db = memoryService.db
                     if (db) {

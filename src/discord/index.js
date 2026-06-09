@@ -7,15 +7,12 @@ let discordClient = null
 let currentConnection = null
 let audioPlayer = null
 
-// TAMBAHKAN FUNGSI INI:
 function setBotPresence(trackName = null) {
     if (!discordClient || !discordClient.user) return
 
     if (trackName) {
-        // Jika ada lagu berjalan -> "Listening to Judul Lagu"
         discordClient.user.setActivity(trackName, { type: ActivityType.Listening })
     } else {
-        // Jika radio sedang kosong -> "Listening to !help" atau status default pilihanmu
         const prefix = process.env.BOT_PREFIX || '!'
         discordClient.user.setActivity(`${prefix}help | Standby 📻`, { type: ActivityType.Listening })
     }
@@ -34,6 +31,12 @@ function playStream() {
 }
 
 export function startDiscordBot() {
+    // 🔥 1. ANTI-SPAM GUARD: Jika bot sudah diinisialisasi, jangan bind ulang listener-nya!
+    if (discordClient) {
+        logger.warn('[Discord] Bot Discord sudah berjalan sebelumnya. Mengabaikan inisialisasi ganda.')
+        return
+    }
+
     const token = process.env.DISCORD_TOKEN
     if (!token) {
         logger.info('[Discord] DISCORD_TOKEN tidak ditemukan di .env, Discord bot dinonaktifkan.')
@@ -48,24 +51,20 @@ export function startDiscordBot() {
             GatewayIntentBits.GuildVoiceStates,
         ]
     })
-    // Register radioService event listener once
+
     radioService.on('track:start', (track) => {
         if (currentConnection && audioPlayer) {
             logger.info(`[Discord] Radio started track: "${track.title}". Refreshing audio resource.`)
             playStream()
         }
-        // Pasang judul lagu di status saat lagu mulai main
         setBotPresence(track.title)
     })
 
-    // Ketika antrean habis / di-stop, kembalikan status ke standby
     radioService.on('radio:idle', () => setBotPresence())
     radioService.on('radio:stop', () => setBotPresence())
 
-    // discord.js v14+ menggunakan 'clientReady' (renamed dari 'ready' di v15)
     discordClient.once('clientReady', () => {
         logger.info(`[Discord] Bot online sebagai ${discordClient.user.tag}`)
-        // Set status awal pas bot baru login online
         setBotPresence()
     })
 
@@ -117,7 +116,6 @@ export function startDiscordBot() {
                 })
 
                 playStream()
-
                 message.reply('Sudah mendarat di Voice Channel & standby muter siaran radio WA! 📻')
             } else {
                 if (audioPlayer && audioPlayer.state.status === AudioPlayerStatus.Idle) {
@@ -137,7 +135,6 @@ export function startDiscordBot() {
             const voiceChannel = message.member?.voice?.channel
             if (!voiceChannel) return message.reply('Kamu harus masuk ke Voice Channel dulu!')
 
-            // Join Voice Channel jika belum join atau di channel berbeda
             if (!currentConnection || currentConnection.joinConfig.channelId !== voiceChannel.id) {
                 currentConnection = joinVoiceChannel({
                     channelId: voiceChannel.id,
@@ -173,14 +170,12 @@ export function startDiscordBot() {
                 })
 
                 playStream()
-
                 message.reply('Masuk ke Voice Channel & menyambungkan siaran radio WA! 📻')
             } else if (audioPlayer && audioPlayer.state.status === AudioPlayerStatus.Idle) {
                 playStream()
             }
 
             try {
-                // Tambahkan lagu ke antrean global WA
                 const msg = await message.reply(`🔍 Mencari \`${query}\`...`)
                 const track = await radioService.search(query, message.author.username)
                 radioService.addToQueue(track)
@@ -200,7 +195,7 @@ export function startDiscordBot() {
                 return message.reply('📻 Radio tidak sedang memutar lagu.')
             }
             const skipped = radioService.currentTrack
-            const nextTrack = radioService.queue[0] // Look ahead
+            const nextTrack = radioService.queue[0]
             const ok = await radioService.skip()
             if (ok) {
                 let text = `⏭️ **Diskip:** ${skipped.title}\n`
@@ -215,7 +210,31 @@ export function startDiscordBot() {
             }
         }
 
+        // 🛠️ 2. FITUR BARU: Hapus lagu dari Antrean (Sub-command queue)
         if (command === 'queue') {
+            const subCommand = args[0]?.toLowerCase()
+
+            if (['remove', 'hapus', 'r'].includes(subCommand)) {
+                const indexToRemove = parseInt(args[1])
+                if (isNaN(indexToRemove)) {
+                    return message.reply(`⚠️ Masukkan angka urutan playlist yang mau dihapus, cuy. Contoh: \`${prefix}queue r 2\``)
+                }
+
+                const queue = radioService.queue
+                if (!queue || queue.length === 0) {
+                    return message.reply('📭 Antrean playlist lagi kosong, nih.')
+                }
+
+                if (indexToRemove < 1 || indexToRemove > queue.length) {
+                    return message.reply(`❌ Urutan gak valid. Total antrean saat ini cuma ada ${queue.length} lagu.`)
+                }
+
+                // Hapus item dari array antrean berdasarkan index (dikurang 1 karena array mulai dari 0)
+                const removedTrack = queue.splice(indexToRemove - 1, 1)[0]
+                return message.reply(`🗑️ Berhasil menghapus **${removedTrack.title}** dari antrean playlist.`)
+            }
+
+            // Logic menampilkan antrean normal
             const current = radioService.currentTrack
             const queue = radioService.queue
 

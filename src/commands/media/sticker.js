@@ -7,14 +7,15 @@ export default {
     name: 'sticker',
     aliases: ['s', 'stiker'],
     category: 'media',
-    description: 'Convert image to a clean square-cropped meme sticker with text overlay',
-    usage: '.sticker Teks Atas | Teks Bawah',
+    description: 'Convert media to sticker (Original Ratio: --1 | Remove Background: --rmbg)',
+    usage: '.sticker [--1] [--rmbg] Teks Atas | Teks Bawah',
     cooldown: 5,
     permissions: ['user'],
+
     async execute(ctx) {
         const { msg, messageContent, type, args, reply, react, from, pushName, sender, sock } = ctx
 
-        // Cek Apakah pesan berupa gambar/video/stiker langsung atau meng-quote gambar/video/stiker
+        // 1. Cek validasi keberadaan media (langsung atau via quoted reply)
         let isMedia = type === 'imageMessage' || type === 'videoMessage' || type === 'stickerMessage'
         const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
 
@@ -39,16 +40,9 @@ export default {
         try {
             let buffer
             if (isMedia) {
-                buffer = await downloadMediaMessage(
-                    msg,
-                    'buffer',
-                    {},
-                    {
-                        logger: console,
-                        reconnectCount: 3,
-                        reuploadRequest: sock.updateMediaMessage
-                    }
-                )
+                buffer = await downloadMediaMessage(msg, 'buffer', {}, {
+                    logger: console, reconnectCount: 3, reuploadRequest: sock.updateMediaMessage
+                })
             } else {
                 const quotedKey = messageContent?.extendedTextMessage?.contextInfo
                 const reconstructedQuotedMsg = {
@@ -59,20 +53,31 @@ export default {
                     },
                     message: finalQuotedMsg,
                 }
-                buffer = await downloadMediaMessage(
-                    reconstructedQuotedMsg,
-                    'buffer',
-                    {},
-                    {
-                        logger: console,
-                        reconnectCount: 3,
-                        reuploadRequest: sock.updateMediaMessage
-                    }
-                )
+                buffer = await downloadMediaMessage(reconstructedQuotedMsg, 'buffer', {}, {
+                    logger: console, reconnectCount: 3, reuploadRequest: sock.updateMediaMessage
+                })
             }
 
-            // 🌟 LOGIKA SPLITTER PARSER: Ambil teks setelah command dan bagi berdasarkan karakter "|"
-            const fullText = args.join(' ')
+            // ── 🌟 LOGIKA PARSER PARAMETER (OR CONDITION / ANYWHERE PLACEMENT) ──
+            let fullText = args.join(' ').trim()
+            let noCrop = false
+            let removeBg = false
+
+            // Deteksi global flag --1 di mana saja dan bersihkan dari teks utama
+            if (fullText.includes('--1')) {
+                noCrop = true
+                fullText = fullText.replace(/--1/g, '').trim()
+            }
+
+            // Deteksi global flag --rmbg di mana saja dan bersihkan dari teks utama
+            if (fullText.includes('--rmbg')) {
+                removeBg = true
+                fullText = fullText.replace(/--rmbg/g, '').trim()
+            }
+
+            // Normalkan space yang ganda akibat proses replace regex di atas
+            fullText = fullText.replace(/\s+/g, ' ').trim()
+
             let topText = ''
             let bottomText = ''
 
@@ -82,6 +87,7 @@ export default {
                 bottomText = parts[1] ? parts[1].trim() : ''
             }
 
+            // 2. Deteksi status animasi media (Video / GIF / Sticker Animasi)
             let isAnimated = false
             if (isMedia) {
                 isAnimated = type === 'videoMessage' || msg.message?.videoMessage?.gifPlayback || (type === 'stickerMessage' && msg.message?.stickerMessage?.isAnimated)
@@ -89,37 +95,40 @@ export default {
                 isAnimated = finalQuotedType === 'videoMessage' || finalQuotedMsg[finalQuotedType]?.gifPlayback || (finalQuotedType === 'stickerMessage' && finalQuotedMsg[finalQuotedType]?.isAnimated)
             }
 
-            // FALLBACK: Kadang WA pembuat stiker bawaan gak nge-set isAnimated=true di metadata.
-            // Jadi kita cek langsung dari dalam struktur biner file WebP-nya!
+            // Fallback: Cek biner header WebP jika tipe datanya tidak terbaca langsung oleh Baileys
             if (!isAnimated && buffer.length > 12 && buffer.slice(8, 12).toString('ascii') === 'WEBP') {
                 isAnimated = buffer.includes(Buffer.from('ANIM'))
             }
 
+            // 3. Alirkan buffer ke core service pemrosesan masing-masing
             let stickerBuffer
             if (isAnimated) {
-                logger.info('⏳ Processing ANIMATED sticker with FFmpeg...')
-                stickerBuffer = await mediaService.toAnimatedMemeSticker(buffer, topText, bottomText)
+                logger.info(`⏳ Menjalankan rendering ANIMASI (noCrop: ${noCrop}, removeBg: ${removeBg})`)
+                if (removeBg) {
+                    await reply('🔥 *Siksa CPU Dimulai:* Memecah frame & memproses batch rmbg hulu animasi. Tunggu sebentar ya, cuy...')
+                }
+                stickerBuffer = await mediaService.toAnimatedMemeSticker(buffer, topText, bottomText, noCrop, removeBg)
             } else {
-                logger.info('⏳ Processing STATIC sticker with Sharp...')
-                stickerBuffer = await mediaService.toMemeSticker(buffer, topText, bottomText)
+                logger.info(`⏳ Menjalankan rendering STATIS (noCrop: ${noCrop}, removeBg: ${removeBg})`)
+                stickerBuffer = await mediaService.toMemeSticker(buffer, topText, bottomText, noCrop, removeBg)
             }
 
-            // Kirim balasan
+            // 4. Kirimkan stiker hasil komposit ke room obrolan
             await sock.sendMessage(from, { sticker: stickerBuffer }, { quoted: msg })
 
-            // Log ke channel
+            // Kirimkan salinan log ke channel internal jika dikonfigurasi
             if (process.env.LOG_CHANNEL_JID) {
                 const { logToChannel } = await import('../../utils/channelLogger.js')
                 await logToChannel(sock, { sticker: stickerBuffer })
-                await logToChannel(sock, { text: `[LOG STICKER]\nDibuat oleh: ${pushName} (@${sender.split('@')[0]})\nCommand: ${fullText || '(no text)'}` })
+                await logToChannel(sock, { text: `[LOG STICKER]\nDibuat oleh: ${pushName}\nCommand Text: ${fullText || '(tanpa teks)'}\nNoCrop: ${noCrop} | RemoveBg: ${removeBg}` })
             }
 
             await react('✅')
 
         } catch (err) {
-            logger.error('❌ [Sticker] Error:', err.message)
+            logger.error('❌ [Sticker Command Error]:', err.message)
             await react('❌')
-            await reply('❌ Waduh, gagal bikin stikernya. Pastikan gambarnya jelas atau coba teks yang lebih pendek.')
+            await reply(`❌ Gagal mengeksekusi stiker: ${err.message}`)
         }
     }
 }

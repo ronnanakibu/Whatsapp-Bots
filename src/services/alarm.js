@@ -51,3 +51,23 @@ export async function triggerAlarm(sock, chatId, message, _useCall = false, quot
             })()
     }
 }
+
+// ... kode triggerAlarm lu yang lama tetap di atas ...
+
+/**
+ * Fungsi untuk menghapus/reset reminder milik user tertentu
+ * @param {string} chatId - ID Group atau ID Chat JID
+ * @param {string} userId - ID Pengirim (sender JID)
+ */
+export async function clearUserReminders(chatId, userId) {
+    try {
+
+        console.log(`[Alarm] Memproses reset reminder untuk ${userId} di chat ${chatId}`)
+
+        // Sementara kita return true sebagai tanda fungsi berhasil dipanggil
+        return true
+    } catch (err) {
+        console.error('[Alarm] Gagal melakukan reset reminder:', err.message)
+        return false
+    }
+}

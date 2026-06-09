@@ -117,7 +117,6 @@ class MediaService {
     }
 
     #wrapText(text, maxCharsPerLine = 11) {
-        // Trik injeksi spasi: pisahkan paksa emoji dari kata agar tidak menyatu
         const spaced = text.replace(EMOJI_REGEX, (m) => ` ${m} `)
         const tokens = spaced.trim().split(/\s+/).filter(Boolean)
         const visualLen = str => [...str].reduce((n, ch) => n + (ch.codePointAt(0) > 0x2000 ? 2 : 1), 0)
@@ -134,7 +133,6 @@ class MediaService {
                     lines.push(currentLine.trim())
                     currentLine = ''
                 }
-                // Pecah kata yang terlampau panjang secara paksa sesuai limit karakter per baris
                 let tempWord = word
                 while (visualLen(tempWord) > maxCharsPerLine) {
                     let cutIndex = 0
@@ -199,14 +197,10 @@ class MediaService {
         return { lines, fontSize, startY, lineSpacing }
     }
 
-    // ─────────────────────────────────────────────
-    // CORE INLINE SVG RENDERER (MANUAL VECTOR PLOTTING ENGINE)
-    // ─────────────────────────────────────────────
-
     #renderLine(line, y, fontSize, opts) {
         const {
             x = 25,
-            textAnchor = 'start', // Start = Brat, Middle = Meme
+            textAnchor = 'start',
             fontFamily = "'Arial Narrow', Arial, sans-serif",
             fontWeight = 'normal',
             fill = '#000000',
@@ -216,14 +210,12 @@ class MediaService {
             letterSpacing = '-2px'
         } = opts
 
-        // Pisahkan kalimat jadi per kata/emoji mutlak
         const spaced = line.replace(EMOJI_REGEX, (m) => ` ${m} `)
         const tokens = spaced.trim().split(/\s+/).filter(Boolean)
 
         let elements = ''
         const strokeAttr = stroke ? `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill"` : ''
 
-        // 🌟 JALUR 1: STIKER MEME (RATA TENGAH NORMAL)
         if (textAnchor === 'middle') {
             const textOnly = tokens.filter(t => detectEmojis(t).length === 0).join(' ').trim()
             const emojisInLine = tokens.filter(t => detectEmojis(t).length > 0)
@@ -253,13 +245,10 @@ class MediaService {
             return elements
         }
 
-        // 🌟 JALUR 2: STIKER BRAT (HARDCORE MANUAL JUSTIFY)
-        // Di sini kita hitung paksa posisi X masing-masing kata agar melar rata kanan-kiri murni!
-        const justifyWidth = 462 // Lebar kanvas aktif (Margin Kiri 25px, Kanan 25px)
+        const justifyWidth = 462
         const emojiSize = fontSize * 1.05
 
         if (tokens.length === 1) {
-            // Kalau cuma 1 kata, normal rata kiri
             const token = tokens[0]
             const isEmoji = detectEmojis(token).length > 0
             if (isEmoji) {
@@ -269,24 +258,18 @@ class MediaService {
                 elements += `<text x="${x}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}">${this.#escapeXml(token)}</text>\n`
             }
         } else {
-            // Kalau > 1 kata: Bikin Jurang Spasi!
-            // 1. Estimasi lebar masing-masing token
             const tokenWidths = tokens.map(t => {
                 if (detectEmojis(t).length > 0) return emojiSize
-                // Ratio Arial Narrow = 0.44
                 return [...t].length * fontSize * 0.44
             })
 
-            // 2. Kalkulasi Sisa Spasi Kosong
             const totalContentWidth = tokenWidths.reduce((a, b) => a + b, 0)
             let gap = (justifyWidth - totalContentWidth) / (tokens.length - 1)
 
-            // Pengaman agar gap antar kata tidak terlampau menganga lebar (tetap rapat estetis khas brat)
             const maxGap = fontSize * 0.22
             if (gap > maxGap) gap = maxGap
             if (gap < 0) gap = fontSize * 0.15
 
-            // 3. Render satu per satu dengan plot koordinat mutlak!
             let currentX = x
             tokens.forEach((token, index) => {
                 const isEmoji = detectEmojis(token).length > 0
@@ -296,12 +279,33 @@ class MediaService {
                 } else {
                     elements += `<text x="${currentX}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}">${this.#escapeXml(token)}</text>\n`
                 }
-                // Lompat ke titik berikutnya sejauh lebar kata + spasi raksasa
                 currentX += tokenWidths[index] + gap
             })
         }
 
         return elements
+    }
+
+    // Helper eksklusif untuk mengeksekusi rembg CLI tunggal (Statis)
+    async #executeRembg(buffer) {
+        const tmpDir = path.resolve('./storage/media/tmp')
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+        const id = crypto.randomBytes(4).toString('hex')
+        const inputPath = path.join(tmpDir, `${id}_rb_in.png`)
+        const outputPath = path.join(tmpDir, `${id}_rb_out.png`)
+
+        fs.writeFileSync(inputPath, buffer)
+        try {
+            await execPromise(`rembg i "${inputPath}" "${outputPath}"`)
+            return fs.readFileSync(outputPath)
+        } catch (err) {
+            logger.error('❌ [Pterodactyl Rembg Error]:', err.message)
+            throw new Error('Gagal memproses hulu rmbg statis.')
+        } finally {
+            if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -311,36 +315,26 @@ class MediaService {
     async toQuoteSticker(rawText) {
         try {
             const cleanText = rawText.trim().toLowerCase()
-
-            // 🌟 LIMIT BARIS: Set ke 10 karakter agar teks terbungkus (wrap) lebih pendek, sehingga font size otomatis menjadi jauh lebih besar & padat khas stiker Brat!
             const lines = this.#wrapText(cleanText, 10)
 
-            // 🌟 FIX 2: Hitung font size adaptif biar teks panjang gak nabrak dinding/terpotong
             const maxVisualLen = Math.max(...lines.map(l => {
                 return [...l].reduce((n, ch) => n + (ch.codePointAt(0) > 0x2000 ? 2 : 1), 0)
             }))
 
-            // 462px = Lebar margin aman. 0.43 = Ratio kurus Arial Narrow
             let fontSize = Math.floor(462 / (maxVisualLen * 0.43))
-
-            // 🌟 FIT VERTIKAL: Batasi ukuran font berdasarkan jumlah baris agar tidak overflow ke atas/bawah kanvas
             const maxVerticalFontSize = Math.floor(400 / (lines.length * 1.05))
             fontSize = Math.min(fontSize, maxVerticalFontSize)
-
             fontSize = Math.max(46, Math.min(180, fontSize))
 
             const lineSpacing = fontSize * 1.05
-
-            // 🌟 FIX 3: Auto-Center Vertikal! Biar teksnya selalu cantik presisi di tengah kanvas
             const totalTextHeight = lines.length * lineSpacing
             const startY = (512 - totalTextHeight) / 2 + (fontSize * 0.75)
 
             const emojiMap = await prepareEmojiMap(cleanText)
-
             let svgContent = ''
+
             lines.forEach((line, i) => {
                 const y = startY + (i * lineSpacing)
-
                 svgContent += this.#renderLine(line, y, fontSize, {
                     x: 25,
                     textAnchor: 'start',
@@ -370,8 +364,13 @@ class MediaService {
             throw new Error('Gagal meracik stiker brat.')
         }
     }
-    async toMemeSticker(bufferImage, topText = '', bottomText = '') {
+
+    async toMemeSticker(bufferImage, topText = '', bottomText = '', noCrop = false, removeBg = false) {
         try {
+            if (removeBg) {
+                bufferImage = await this.#executeRembg(bufferImage)
+            }
+
             const cleanTop = topText.trim().toUpperCase()
             const cleanBottom = bottomText.trim().toUpperCase()
 
@@ -415,8 +414,12 @@ class MediaService {
                 ${svgContent}
             </svg>`)
 
+            const resizeOptions = noCrop
+                ? { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }
+                : { fit: 'cover', position: 'center' }
+
             const rawWebp = await sharp(bufferImage)
-                .resize(512, 512, { fit: 'cover', position: 'center' })
+                .resize(512, 512, resizeOptions)
                 .composite([{ input: svg, top: 0, left: 0 }])
                 .webp({ quality: 85 })
                 .toBuffer()
@@ -429,7 +432,31 @@ class MediaService {
         }
     }
 
-    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '') {
+    // ── 🔥 SIKSA CPU ENGINE: FULL MULTI-THREAD FRAME EXTRACER & BATCH REMBG FOR ANIMATION ──
+    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '', noCrop = false, removeBg = false) {
+        const tmpDir = path.resolve('./storage/media/tmp')
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+        const id = crypto.randomBytes(4).toString('hex')
+        const isWebp = bufferVideo.length > 12 && bufferVideo.slice(8, 12).toString('ascii') === 'WEBP'
+
+        let finalBufferVideo = bufferVideo
+        let extension = 'mp4'
+
+        if (isWebp) {
+            logger.info('⏳ Converting Animated WebP to GIF for FFmpeg processing...')
+            finalBufferVideo = await sharp(bufferVideo, { animated: true }).gif().toBuffer()
+            extension = 'gif'
+        }
+
+        const inputPath = path.join(tmpDir, `${id}_in.${extension}`)
+        const overlayPath = path.join(tmpDir, `${id}_overlay.png`)
+        const outputPath = path.join(tmpDir, `${id}_out.webp`)
+
+        // Inisialisasi folder frame sequence temporer jika removeBg aktif
+        const framesInDir = path.join(tmpDir, `${id}_frames_in`)
+        const framesOutDir = path.join(tmpDir, `${id}_frames_out`)
+
         try {
             const cleanTop = topText.trim().toUpperCase()
             const cleanBottom = bottomText.trim().toUpperCase()
@@ -474,7 +501,6 @@ class MediaService {
                 ${svgContent}
             </svg>`)
 
-            // Render SVG text to transparent PNG
             const overlayPng = await sharp({
                 create: { width: 512, height: 512, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
             })
@@ -482,51 +508,52 @@ class MediaService {
                 .png()
                 .toBuffer()
 
-            const tmpDir = path.resolve('./storage/media/tmp')
-            if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
-
-            const id = crypto.randomBytes(4).toString('hex')
-            const isWebp = bufferVideo.length > 12 && bufferVideo.slice(8, 12).toString('ascii') === 'WEBP'
-            
-            let finalBufferVideo = bufferVideo
-            let extension = 'mp4'
-
-            if (isWebp) {
-                // Konversi WebP ke GIF pakai Sharp karena FFmpeg sering gagal decode animated WebP (libwebp_anim missing)
-                logger.info('⏳ Converting Animated WebP to GIF for FFmpeg processing...')
-                finalBufferVideo = await sharp(bufferVideo, { animated: true }).gif().toBuffer()
-                extension = 'gif'
-            }
-
-            const inputPath = path.join(tmpDir, `${id}_in.${extension}`)
-            const overlayPath = path.join(tmpDir, `${id}_overlay.png`)
-            const outputPath = path.join(tmpDir, `${id}_out.webp`)
-
             fs.writeFileSync(inputPath, finalBufferVideo)
             fs.writeFileSync(overlayPath, overlayPng)
 
-            try {
-                // Resize video to 512x512 with padding, overlay the text, and output animated webp
-                // We use -loop 0 to loop infinitely, and -t 00:00:08 to cap at 8s max to avoid abuse
-                // Added fps=25, compression_level 6, and q:v 15, max 5s to keep it smooth but under 1MB
-                await execPromise(`ffmpeg -i ${inputPath} -i ${overlayPath} -filter_complex "[0:v]scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 15 -loop 0 -preset default -an -vsync 0 -t 00:00:05 ${outputPath}`)
-                
-                const finalWebpBuffer = fs.readFileSync(outputPath)
-                return await addExif(finalWebpBuffer)
-            } catch (ffmpegErr) {
-                logger.error('❌ [FFmpeg] Animated Meme Sticker Error:', ffmpegErr)
-                throw new Error('Gagal merender video menjadi stiker animasi.')
-            } finally {
-                if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
-                if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath)
-                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+            // Dynamic argument loader untuk FFmpeg input
+            let ffmpegInputArgs = `-i ${inputPath}`
+
+            if (removeBg) {
+                logger.info('🔥 [Siksa CPU] Memulai proses pemecahan frame video/gif...')
+                fs.mkdirSync(framesInDir, { recursive: true })
+                fs.mkdirSync(framesOutDir, { recursive: true })
+
+                // Pecah video asal menjadi sequence gambar PNG stabil di rate 25 FPS
+                await execPromise(`ffmpeg -i ${inputPath} -vf "fps=25" "${framesInDir}/%04d.png"`)
+
+                logger.info('🔥 [Siksa CPU] Menembak modul "rembg p" untuk memproses massal seluruh frame...')
+                // rembg p akan memakan seluruh sisa core CPU (500%) untuk menghapus background folder sekaligus!
+                await execPromise(`rembg p "${framesInDir}" "${framesOutDir}"`)
+
+                // Alihkan target input FFmpeg dari file video mentah ke folder sequence gambar transparan
+                ffmpegInputArgs = `-framerate 25 -i "${framesOutDir}/%04d.png"`
             }
+
+            const videoFilter = noCrop
+                ? `scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=25,format=rgba`
+                : `scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba`
+
+            // Gabungkan, resize, tumpuk text overlay, lalu render massal ke WebP Animasi
+            await execPromise(`ffmpeg ${ffmpegInputArgs} -i ${overlayPath} -filter_complex "[0:v]${videoFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 15 -loop 0 -preset default -an -vsync 0 -t 00:00:05 ${outputPath}`)
+
+            const finalWebpBuffer = fs.readFileSync(outputPath)
+            return await addExif(finalWebpBuffer)
 
         } catch (e) {
             logger.error('❌ toAnimatedMemeSticker error:', e.message)
-            throw new Error('Gagal memproses stiker animasi.')
+            throw new Error('Gagal mengeksekusi siksaan rembg animasi.')
+        } finally {
+            // Pembersihan berkas & folder temporer pasca siksaan berakhir
+            if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+            if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath)
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+
+            if (fs.existsSync(framesInDir)) fs.rmSync(framesInDir, { recursive: true, force: true })
+            if (fs.existsSync(framesOutDir)) fs.rmSync(framesOutDir, { recursive: true, force: true })
         }
     }
+
     async boostMediaVolume(buffer, ext = 'mp4', volumeMultiplier = 2.0) {
         let inputPath, outputPath
         try {
@@ -540,19 +567,17 @@ class MediaService {
             fs.writeFileSync(inputPath, buffer)
 
             const vcodec = ext === 'mp4' ? '-vcodec copy' : ''
-            
-            // Menggunakan volume=5.0 biar perbedaannya benar-benar terasa kencang
             await execPromise(`ffmpeg -y -i "${inputPath}" ${vcodec} -af "volume=${volumeMultiplier}" "${outputPath}"`)
-            
+
             return fs.readFileSync(outputPath)
         } catch (err) {
             logger.error('❌ [FFmpeg] Boost Volume Error:', err.message)
-            return buffer // Fallback ke file asli kalau gagal
+            return buffer
         } finally {
             try {
                 if (inputPath && fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
                 if (outputPath && fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
-            } catch (e) {}
+            } catch (e) { }
         }
     }
 }

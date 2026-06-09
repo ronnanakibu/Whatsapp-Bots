@@ -101,7 +101,7 @@ function cleanMessage(msg) {
 
 function parseReminder(inputStr) {
     let workStr = inputStr.trim()
-    
+
     const leadingPrep = /^(?:in|dalam|selama)\s+/i
     if (leadingPrep.test(workStr)) {
         workStr = workStr.replace(leadingPrep, '')
@@ -120,7 +120,7 @@ function parseReminder(inputStr) {
         const targetTs = targetTzToMs(year, month, day, hour, minute, 0)
         const now = Date.now()
         const diffMs = targetTs - now
-        
+
         if (diffMs > 0) {
             return {
                 timeMs: diffMs,
@@ -262,7 +262,7 @@ function parseReminder(inputStr) {
         }
 
         let targetTs = targetTzToMs(nowTz.year, nowTz.month, nowTz.day, hour, minute, 0)
-        
+
         if (dayOffset > 0) {
             targetTs += dayOffset * 86400000
         } else {
@@ -360,8 +360,8 @@ export default {
     aliases: ['remind', 'ingatkan', 'alarm', 'r', 'rme'],
     category: 'general',
     description: 'Set reminder — bot akan ping kamu tepat waktu.',
-    usage: '.remindme <waktu> <pesan>',
-    example: '.remindme 30m Minum obat | .remindme besok jam 9 Meeting | .remindme 5/06/2026 15:00',
+    usage: '.remindme <waktu> <pesan> atau .remindme --reset',
+    example: '.remindme 30m Minum obat | .remindme besok jam 9 Meeting | .remindme --reset',
     cooldown: 2,
     permissions: ['user'],
 
@@ -371,6 +371,22 @@ export default {
 
         const db = getDb()
         const sub = args[0]?.toLowerCase()
+
+        // ── 🛠️ FITUR BARU: !remindme --reset ─────────────────
+        if (sub === '--reset') {
+            const result = db.prepare(`
+                UPDATE reminders 
+                SET fired = 1 
+                WHERE user_jid = ? AND chat_id = ? AND fired = 0
+            `).run(sender, chatId)
+
+            if (result.changes === 0) {
+                return reply('📋 Lu gak punya pengingat (*remindme*) aktif di chat ini, cuy.')
+            }
+
+            await react('🔄')
+            return reply(`🔄 Berhasil mereset/membatalkan *${result.changes}* pengingat aktif milik lu di chat ini!`)
+        }
 
         // ── !remindme list ────────────────────────────
         if (!args.length || sub === 'list' || sub === 'ls') {
@@ -400,7 +416,7 @@ export default {
             return reply(
                 `⏰ *Reminder aktif (${reminders.length}):*\n\n` +
                 `${list}\n\n` +
-                `_Hapus: !remindme delete <id>_`
+                `_Hapus spesifik: !remindme delete <id>_`
             )
         }
 
@@ -430,7 +446,7 @@ export default {
         }
 
         let { timeMs, message: reminderMsg } = parsed
-        
+
         // Cek Quoted Message (pesan yang di-reply)
         const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
         const serializedQuoted = quotedMsg ? JSON.stringify(quotedMsg) : null
@@ -458,7 +474,7 @@ export default {
         return reply(
             `⏰ *Reminder diset!*\n\n` +
             `📌 *${reminderMsg}*\n` +
-            `🕐 ${formatDate(fireAt)}\n` +
+            `01000100 01010010 01001101 ${formatDate(fireAt)}\n` +
             `⏳ dalam *${formatMs(timeMs)}*\n\n` +
             `_Bot akan ping kamu saat waktunya tiba 🔔_`
         )
