@@ -286,7 +286,6 @@ class MediaService {
         return elements
     }
 
-    // Helper eksklusif untuk mengeksekusi rembg CLI tunggal (Statis)
     async #executeRembg(buffer) {
         const tmpDir = path.resolve('./storage/media/tmp')
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
@@ -432,7 +431,7 @@ class MediaService {
         }
     }
 
-    // ── 🔥 SIKSA CPU ENGINE: FULL MULTI-THREAD FRAME EXTRACER & BATCH REMBG FOR ANIMATION ──
+    // ── FIXED: RE-OPTIMIZED SIKSA CPU ENGINE (NO MORE GAIB FFMPEG FILTERS) ──
     async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '', noCrop = false, removeBg = false) {
         const tmpDir = path.resolve('./storage/media/tmp')
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
@@ -453,7 +452,6 @@ class MediaService {
         const overlayPath = path.join(tmpDir, `${id}_overlay.png`)
         const outputPath = path.join(tmpDir, `${id}_out.webp`)
 
-        // Inisialisasi folder frame sequence temporer jika removeBg aktif
         const framesInDir = path.join(tmpDir, `${id}_frames_in`)
         const framesOutDir = path.join(tmpDir, `${id}_frames_out`)
 
@@ -523,18 +521,17 @@ class MediaService {
                 await execPromise(`ffmpeg -i ${inputPath} -vf "fps=25" "${framesInDir}/%04d.png"`)
 
                 logger.info('🔥 [Siksa CPU] Menembak modul "rembg p" untuk memproses massal seluruh frame...')
-                // rembg p akan memakan seluruh sisa core CPU (500%) untuk menghapus background folder sekaligus!
                 await execPromise(`rembg p "${framesInDir}" "${framesOutDir}"`)
 
                 // Alihkan target input FFmpeg dari file video mentah ke folder sequence gambar transparan
                 ffmpegInputArgs = `-framerate 25 -i "${framesOutDir}/%04d.png"`
             }
 
+            // FIX: Di sini gua bersihkan seutuhnya dari string ${rembgFilter} agar FFmpeg berjalan normal murni!
             const videoFilter = noCrop
                 ? `scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=25,format=rgba`
                 : `scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba`
 
-            // Gabungkan, resize, tumpuk text overlay, lalu render massal ke WebP Animasi
             await execPromise(`ffmpeg ${ffmpegInputArgs} -i ${overlayPath} -filter_complex "[0:v]${videoFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 15 -loop 0 -preset default -an -vsync 0 -t 00:00:05 ${outputPath}`)
 
             const finalWebpBuffer = fs.readFileSync(outputPath)
@@ -544,7 +541,6 @@ class MediaService {
             logger.error('❌ toAnimatedMemeSticker error:', e.message)
             throw new Error('Gagal mengeksekusi siksaan rembg animasi.')
         } finally {
-            // Pembersihan berkas & folder temporer pasca siksaan berakhir
             if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
             if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath)
             if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
