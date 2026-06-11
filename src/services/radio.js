@@ -364,13 +364,14 @@ export function dbUpsertSong(track) {
 
 export function dbAddPlayHistory(songId, requestedByJid) {
     try {
-        if (requestedByJid && requestedByJid.includes('@')) {
-            dbEnsureUser(requestedByJid)
+        const jid = (requestedByJid && requestedByJid.includes('@')) ? requestedByJid : null
+        if (jid) {
+            dbEnsureUser(jid)
         }
         db.prepare(`
             INSERT INTO play_history (song_id, requested_by_jid, played_at)
             VALUES (?, ?, unixepoch())
-        `).run(songId, requestedByJid || null)
+        `).run(songId, jid)
     } catch (err) {
         botLogger.error('radio-db', `Failed to add play history: ${err.message}`)
     }
