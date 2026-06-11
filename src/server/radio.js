@@ -45,6 +45,19 @@ function verifyJwt(token) {
     }
 }
 
+function normalizeUserAgent(ua) {
+    const lower = (ua || '').toLowerCase().trim()
+    // Normalize Android clients, players, and okhttp libraries to a single standard string
+    if (lower.includes('android') || lower.includes('dalvik') || lower.includes('exoplayer') || lower.includes('stagefright') || lower.includes('okhttp')) {
+        return 'android-radio-client'
+    }
+    // Normalize iOS clients
+    if (lower.includes('iphone') || lower.includes('ipad') || lower.includes('ipod') || lower.includes('cfnetwork')) {
+        return 'ios-radio-client'
+    }
+    return lower
+}
+
 function authenticateJwt(req, res, next) {
     const isDev = process.env.NODE_ENV !== 'production'
     const bypassEnabled = process.env.DEV_BYPASS_AUTH === 'true'
@@ -777,9 +790,10 @@ export function startRadioServer() {
 
         // Validate UA Hash
         const incomingUa = req.headers['user-agent'] || ''
-        const incomingUaHash = crypto.createHash('sha256').update(incomingUa).digest('hex')
+        const incomingNormalized = normalizeUserAgent(incomingUa)
+        const incomingUaHash = crypto.createHash('sha256').update(incomingNormalized).digest('hex')
         if (incomingUaHash !== tokenObj.userAgentHash) {
-            logger.warn(`[Stream/Security] ALERT: User-Agent hash mismatch for token. Expected: ${tokenObj.userAgentHash}, got: ${incomingUaHash}`)
+            logger.warn(`[Stream/Security] ALERT: User-Agent hash mismatch for token. Expected: ${tokenObj.userAgentHash}, got: ${incomingUaHash} (Raw UA: ${incomingUa})`)
             return res.status(403).json({
                 success: false,
                 error: {
@@ -869,7 +883,8 @@ export function startRadioServer() {
     apiV2.post('/auth/stream-token', authenticateJwt, (req, res) => {
         const userId = req.user.jid
         const userAgent = req.headers['user-agent'] || ''
-        const userAgentHash = crypto.createHash('sha256').update(userAgent).digest('hex')
+        const normalizedUa = normalizeUserAgent(userAgent)
+        const userAgentHash = crypto.createHash('sha256').update(normalizedUa).digest('hex')
         const token = crypto.randomUUID()
         const createdAt = Date.now()
         const expiresAt = createdAt + 300000 // 5 minutes
