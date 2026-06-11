@@ -11,6 +11,7 @@ import https from 'https'
 import http from 'http'
 import { botLogger } from '../utils/logger.js'
 import { getYtdlpPath, ytdlpGetAudioUrl, ytdlpStream } from './ytdlp.js'
+import { db } from './db.js'
 
 // ─────────────────────────────────────────────
 // PLAY-DL — search + stream (no yt-dlp needed)
@@ -305,11 +306,117 @@ const EQ_PRESETS = {
 }
 
 // ─────────────────────────────────────────────
+// HELPER FUNCTIONS & DATABASE INTEGRATION
+// ─────────────────────────────────────────────
+
+export function getSongId(url, source) {
+    if (source === 'youtube' || /(?:youtube\.com|youtu\.be)/.test(url)) {
+        const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?\/\s]{11})/)
+        if (match) return `yt_${match[1]}`
+    }
+    if (source === 'soundcloud' || /soundcloud\.com/.test(url)) {
+        const slug = url.split('/').pop()
+        return `sc_${slug}`
+    }
+    let hash = 0
+    for (let i = 0; i < url.length; i++) {
+        hash = (hash << 5) - hash + url.charCodeAt(i)
+        hash |= 0
+    }
+    return `url_${Math.abs(hash)}`
+}
+
+export function dbEnsureUser(jid, name = null) {
+    try {
+        const resolvedName = name || jid.split('@')[0]
+        db.prepare(`
+            INSERT INTO users (jid, name)
+            VALUES (?, ?)
+            ON CONFLICT(jid) DO NOTHING
+        `).run(jid, resolvedName)
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to ensure user: ${err.message}`)
+    }
+}
+
+export function dbUpsertSong(track) {
+    try {
+        db.prepare(`
+            INSERT INTO songs (song_id, title, artist, duration, thumbnail_url, source, stream_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(song_id) DO UPDATE SET
+                title = excluded.title,
+                thumbnail_url = excluded.thumbnail_url,
+                stream_url = excluded.stream_url
+        `).run(
+            track.songId,
+            track.title,
+            track.artist || 'Unknown',
+            track.duration || 0,
+            track.thumbnail || '',
+            track.source,
+            track.url
+        )
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to upsert song ${track.songId}: ${err.message}`)
+    }
+}
+
+export function dbAddPlayHistory(songId, requestedByJid) {
+    try {
+        if (requestedByJid && requestedByJid.includes('@')) {
+            dbEnsureUser(requestedByJid)
+        }
+        db.prepare(`
+            INSERT INTO play_history (song_id, requested_by_jid, played_at)
+            VALUES (?, ?, unixepoch())
+        `).run(songId, requestedByJid || null)
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to add play history: ${err.message}`)
+    }
+}
+
+export function dbEvaluateAchievements(userJid) {
+    try {
+        // Evaluate requests_count achievements
+        const reqCount = db.prepare("SELECT COUNT(*) as count FROM requests WHERE user_jid = ? AND status = 'played'").get(userJid)?.count || 0
+        const reqAchievements = db.prepare("SELECT * FROM achievements WHERE criteria_type = 'requests_count'").all()
+        for (const ach of reqAchievements) {
+            if (reqCount >= ach.criteria_value) {
+                dbUnlockAchievement(userJid, ach.achievement_id)
+            }
+        }
+
+        // Evaluate listening_hours achievements
+        const totalListenSec = db.prepare('SELECT SUM(duration_seconds) as total FROM listening_sessions WHERE user_jid = ?').get(userJid)?.total || 0
+        const listenHours = totalListenSec / 3600
+        const listenAchievements = db.prepare("SELECT * FROM achievements WHERE criteria_type = 'listening_hours'").all()
+        for (const ach of listenAchievements) {
+            if (listenHours >= ach.criteria_value) {
+                dbUnlockAchievement(userJid, ach.achievement_id)
+            }
+        }
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to evaluate achievements for ${userJid}: ${err.message}`)
+    }
+}
+
+export function dbUnlockAchievement(userJid, achievementId) {
+    try {
+        db.prepare(`
+            INSERT INTO achievement_unlocks (user_jid, achievement_id, unlocked_at)
+            VALUES (?, ?, unixepoch())
+            ON CONFLICT(user_jid, achievement_id) DO NOTHING
+        `).run(userJid, achievementId)
+    } catch (_) {}
+}
+
+// ─────────────────────────────────────────────
 // TRACK MODEL
 // ─────────────────────────────────────────────
 
 class Track {
-    constructor({ title, url, duration, thumbnail, requestedBy, source }) {
+    constructor({ title, url, duration, thumbnail, requestedBy, source, songId, artist }) {
         this.title = title
         this.url = url
         this.duration = duration
@@ -317,6 +424,8 @@ class Track {
         this.requestedBy = requestedBy
         this.source = source || 'unknown' // 'youtube' | 'soundcloud' | 'unknown'
         this.addedAt = Date.now()
+        this.songId = songId || getSongId(url, this.source)
+        this.artist = artist || 'Unknown'
     }
 
     get durationFormatted() {
@@ -489,10 +598,29 @@ class RadioService extends EventEmitter {
     // QUEUE
     // ─────────────────────────────────────────────
 
-    addToQueue(track) {
+    addToQueue(track, correlationId = null) {
         if (this.#queue.length >= MAX_QUEUE) throw new Error(`Queue penuh (max ${MAX_QUEUE}).`)
+        
+        // Save song metadata to DB
+        dbUpsertSong(track)
+
         this.#queue.push(track)
-        this.emit('queue:add', track)
+
+        // Save request record to DB
+        try {
+            const requestedByJid = track.requestedBy
+            if (requestedByJid && requestedByJid.includes('@')) {
+                dbEnsureUser(requestedByJid)
+                db.prepare(`
+                    INSERT INTO requests (user_jid, song_id, status, created_at)
+                    VALUES (?, ?, 'pending', unixepoch())
+                `).run(requestedByJid, track.songId)
+            }
+        } catch (err) {
+            botLogger.error('radio-db', `Failed to log queue request: ${err.message}`)
+        }
+
+        this.emit('queue:add', track, correlationId)
         botLogger.info('radio', `Queued: ${track.title}`)
     }
 
@@ -520,6 +648,27 @@ class RadioService extends EventEmitter {
         this.#currentTrack = this.#queue.shift()
         this.#isPlaying = true
         this.#skipRequested = false
+
+        // Save to song metadata and play history in DB
+        dbUpsertSong(this.#currentTrack)
+        dbAddPlayHistory(this.#currentTrack.songId, this.#currentTrack.requestedBy)
+
+        // Update request status to played in DB
+        try {
+            if (this.#currentTrack.requestedBy && this.#currentTrack.requestedBy.includes('@')) {
+                db.prepare(`
+                    UPDATE requests 
+                    SET status = 'played', played_at = unixepoch()
+                    WHERE user_jid = ? AND song_id = ? AND status = 'pending'
+                `).run(this.#currentTrack.requestedBy, this.#currentTrack.songId)
+                
+                // Evaluate achievements
+                dbEvaluateAchievements(this.#currentTrack.requestedBy)
+            }
+        } catch (err) {
+            botLogger.error('radio-db', `Failed to update request status: ${err.message}`)
+        }
+
         this.emit('track:start', this.#currentTrack)
         botLogger.info('radio', `▶ Now playing: ${this.#currentTrack.title}`)
 
@@ -844,12 +993,76 @@ class RadioService extends EventEmitter {
         this.emit('eq:change', name)
     }
 
-    addClient(res) {
+    addClient(res, userJid = null) {
+        if (userJid) {
+            for (const client of this.#clients) {
+                if (client.userJid === userJid) {
+                    botLogger.info('radio', `Closing duplicate stream connection for JID: ${userJid}`)
+                    try {
+                        client.write(JSON.stringify({ error: 'Sesi streaming baru telah dibuka di perangkat lain.' }))
+                        client.end()
+                    } catch (_) {}
+                    this.#clients.delete(client)
+                }
+            }
+            res.userJid = userJid
+        }
         this.#clients.add(res)
         this.emit('listener:join', this.#clients.size)
+
+        let sessionId = null
+        const joinedAt = Math.floor(Date.now() / 1000)
+
+        if (userJid && userJid.includes('@')) {
+            try {
+                dbEnsureUser(userJid)
+                const result = db.prepare(`
+                    INSERT INTO listening_sessions (user_jid, joined_at)
+                    VALUES (?, ?)
+                `).run(userJid, joinedAt)
+                sessionId = result.lastInsertRowid
+            } catch (err) {
+                botLogger.error('radio-db', `Failed to start listening session: ${err.message}`)
+            }
+        }
+
         const cleanup = () => {
             this.#clients.delete(res)
             this.emit('listener:leave', this.#clients.size)
+
+            if (sessionId) {
+                try {
+                    const leftAt = Math.floor(Date.now() / 1000)
+                    const duration = leftAt - joinedAt
+                    db.prepare(`
+                        UPDATE listening_sessions
+                        SET left_at = ?, duration_seconds = ?
+                        WHERE id = ?
+                    `).run(leftAt, duration, sessionId)
+
+                    if (duration > 10) {
+                        const xpEarned = Math.max(1, Math.floor(duration / 60))
+                        db.prepare(`
+                            UPDATE users
+                            SET experience_points = experience_points + ?
+                            WHERE jid = ?
+                        `).run(xpEarned, userJid)
+
+                        const userData = db.prepare('SELECT experience_points, level FROM users WHERE jid = ?').get(userJid)
+                        if (userData) {
+                            const newLevel = Math.floor(Math.sqrt(userData.experience_points / 100)) + 1
+                            if (newLevel > userData.level) {
+                                db.prepare('UPDATE users SET level = ? WHERE jid = ?').run(newLevel, userJid)
+                                botLogger.info('radio-level', `User ${userJid} naik level ke ${newLevel}!`)
+                            }
+                        }
+                    }
+
+                    dbEvaluateAchievements(userJid)
+                } catch (err) {
+                    botLogger.error('radio-db', `Failed to close listening session ${sessionId}: ${err.message}`)
+                }
+            }
         }
         res.on('close', cleanup)
         res.on('error', cleanup)

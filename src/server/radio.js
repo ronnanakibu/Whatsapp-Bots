@@ -7,6 +7,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import Database from 'better-sqlite3'
+import crypto from 'crypto'
 
 import { radioService } from '../services/radio.js'
 import { logger, addLogListener, removeLogListener, addMessageListener, removeMessageListener, getSocket, getLogHistory } from '../utils/logger.js'
@@ -18,6 +19,77 @@ import { moderatorService } from '../services/moderator.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+const JWT_SECRET = process.env.JWT_SECRET || 'ronnbot-default-jwt-secret-key-123456!'
+
+function verifyJwt(token) {
+    try {
+        const parts = token.split('.')
+        if (parts.length !== 3) return null
+        const [headerB64, payloadB64, signatureB64] = parts
+
+        const hmac = crypto.createHmac('sha256', JWT_SECRET)
+        hmac.update(`${headerB64}.${payloadB64}`)
+        const expectedSignature = hmac.digest('base64url')
+
+        if (signatureB64 !== expectedSignature) {
+            return null
+        }
+
+        const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'))
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+            return null
+        }
+        return payload
+    } catch (_) {
+        return null
+    }
+}
+
+function authenticateJwt(req, res, next) {
+    const isDev = process.env.NODE_ENV !== 'production'
+    const bypassEnabled = process.env.DEV_BYPASS_AUTH === 'true'
+
+    if (isDev && bypassEnabled) {
+        const testJid = req.headers['x-test-jid'] || req.query.jid || '6285172013920@s.whatsapp.net'
+        req.user = {
+            jid: String(testJid),
+            name: String(testJid).split('@')[0],
+            role: 'owner'
+        }
+        return next()
+    }
+
+    const authHeader = req.headers['authorization']
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'UNAUTHORIZED',
+                message: 'Header otentikasi tidak lengkap atau tidak valid.'
+            }
+        })
+    }
+
+    const token = authHeader.substring(7)
+    const payload = verifyJwt(token)
+    if (!payload || !payload.jid) {
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'UNAUTHORIZED',
+                message: 'Token otentikasi tidak valid atau sudah kadaluwarsa.'
+            }
+        })
+    }
+
+    req.user = {
+        jid: payload.jid,
+        name: payload.name || payload.jid.split('@')[0],
+        role: payload.role || 'user'
+    }
+    next()
+}
+
 const RADIO_PORT = parseInt(process.env.RADIO_PORT ?? '25637')
 const MAX_HISTORY = 20
 
@@ -26,6 +98,11 @@ let serverInstance = null
 let io = null
 let metricsInterval = null
 let analyticsInterval = null
+let tokenCleanupInterval = null
+const streamTokens = new Map()
+const userConnections = new Map()
+const sseHistory = []
+let sseEventCounter = 1
 
 // Connection status cache
 let currentBotStatus = 'connecting'
@@ -79,6 +156,20 @@ function getTableNames() {
         return rows.map(r => r.name)
     } catch (e) {
         return []
+    }
+}
+
+function resolveSongId(songId) {
+    if (!songId || !db) return songId
+    try {
+        const row = db.prepare('SELECT song_id FROM songs WHERE song_id = ? OR song_id = ? OR song_id = ?').get(
+            songId,
+            decodeURIComponent(songId),
+            encodeURIComponent(songId)
+        )
+        return row ? row.song_id : songId
+    } catch (_) {
+        return songId
     }
 }
 
@@ -220,8 +311,32 @@ function addToHistory(track) {
 // SSE CLIENT MANAGEMENT
 const sseClients = new Set()
 
-function broadcastSSE(event, data) {
-    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+function broadcastSSE(event, data, correlationId = null) {
+    const eventId = sseEventCounter++
+    const hasCorrelation = ['engagement:reaction', 'queue:update', 'engagement:favorite'].includes(event)
+    const activeCorrelationId = hasCorrelation ? correlationId : null
+
+    const eventObj = {
+        id: eventId,
+        event,
+        data,
+        timestamp: Date.now(),
+        correlationId: activeCorrelationId
+    }
+
+    sseHistory.push(eventObj)
+
+    const now = Date.now()
+    const tenMinutesAgo = now - 600000
+    while (sseHistory.length > 5000 || (sseHistory.length > 0 && sseHistory[0].timestamp < tenMinutesAgo)) {
+        sseHistory.shift()
+    }
+
+    const dataToSend = (typeof data === 'object' && data !== null)
+        ? { ...data, correlationId: activeCorrelationId }
+        : data
+
+    const payload = `id: ${eventId}\nevent: ${event}\ndata: ${JSON.stringify(dataToSend)}\n\n`
     for (const client of sseClients) {
         if (client.destroyed || !client.writable) {
             sseClients.delete(client)
@@ -288,9 +403,9 @@ function setupRadioBroadcasts() {
         io?.emit('queue:update', qUpdate)
     })
 
-    radioService.on('queue:add', () => {
+    radioService.on('queue:add', (track, correlationId) => {
         const qUpdate = getQueueData()
-        broadcastSSE('queue:update', qUpdate)
+        broadcastSSE('queue:update', qUpdate, correlationId)
         io?.emit('queue:update', qUpdate)
     })
 
@@ -358,6 +473,35 @@ let messageListenerCallback = null
 
 export function startRadioServer() {
     if (serverInstance) return
+
+    // Startup recovery query
+    if (db) {
+        try {
+            const res = db.prepare(`
+                UPDATE listening_sessions 
+                SET left_at = unixepoch(), 
+                    duration_seconds = MAX(0, unixepoch() - joined_at) 
+                WHERE left_at IS NULL
+            `).run()
+            logger.info(`[Radio/Startup] Cleaned up ${res.changes} hanging listening sessions.`)
+        } catch (err) {
+            logger.error(`[Radio/Startup] Failed to recover hanging sessions: ${err.message}`)
+        }
+    }
+
+    tokenCleanupInterval = setInterval(() => {
+        const now = Date.now()
+        let cleaned = 0
+        for (const [tokenStr, tokenObj] of streamTokens.entries()) {
+            if (tokenObj.consumed || tokenObj.expiresAt < now) {
+                streamTokens.delete(tokenStr)
+                cleaned++
+            }
+        }
+        if (cleaned > 0) {
+            logger.info(`[Token/Cleanup] Cleaned up ${cleaned} expired or consumed stream tokens.`)
+        }
+    }, 60000)
 
     setupRadioBroadcasts()
 
@@ -564,16 +708,134 @@ export function startRadioServer() {
         })
     })
 
-    // CORS & CORS headers preflight middleware
+    function generateRequestId() {
+        const today = new Date()
+        const yyyy = today.getFullYear()
+        const mm = String(today.getMonth() + 1).padStart(2, '0')
+        const dd = String(today.getDate()).padStart(2, '0')
+        const dateStr = `${yyyy}${mm}${dd}`
+        const hexChars = '0123456789ABCDEF'
+        let hex = ''
+        for (let i = 0; i < 8; i++) {
+            hex += hexChars[Math.floor(Math.random() * 16)]
+        }
+        return `REQ-${dateStr}-${hex}`
+    }
+
+    // CORS, Request ID, and Logging middleware
     app.use((req, res, next) => {
+        let reqId = req.headers['x-request-id']
+        if (!reqId || typeof reqId !== 'string') {
+            reqId = generateRequestId()
+        }
+        req.id = reqId
+        res.setHeader('X-Request-ID', reqId)
+
+        // Log request entry
+        logger.info(`[${reqId}] ${req.method} ${req.originalUrl || req.url}`)
+
+        // CORS headers
         res.setHeader('Access-Control-Allow-Origin', '*')
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Accept')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Accept, Authorization, X-Request-ID')
+
+        res.on('finish', () => {
+            logger.info(`[${reqId}] Response ${res.statusCode}`)
+        })
+
+        if (req.method === 'OPTIONS') {
+            return res.sendStatus(200)
+        }
         next()
     })
 
-    // REST API /stream endpoint
+    // REST API /stream endpoint (mendukung user JID presence tracking via stream token)
     app.get('/stream', (req, res) => {
+        const tokenStr = req.query.token
+        if (!tokenStr) {
+            logger.warn(`[Stream/Auth] Connection rejected: Missing token`)
+            return res.status(403).json({
+                success: false,
+                error: {
+                    code: 'FORBIDDEN',
+                    message: 'Token stream diperlukan.'
+                }
+            })
+        }
+
+        const tokenObj = streamTokens.get(tokenStr)
+        if (!tokenObj || tokenObj.consumed || tokenObj.expiresAt < Date.now()) {
+            logger.warn(`[Stream/Auth] Connection rejected: Invalid, consumed, or expired token (${tokenStr})`)
+            return res.status(403).json({
+                success: false,
+                error: {
+                    code: 'FORBIDDEN',
+                    message: 'Token stream tidak valid, kedaluwarsa, atau sudah digunakan.'
+                }
+            })
+        }
+
+        // Validate UA Hash
+        const incomingUa = req.headers['user-agent'] || ''
+        const incomingUaHash = crypto.createHash('sha256').update(incomingUa).digest('hex')
+        if (incomingUaHash !== tokenObj.userAgentHash) {
+            logger.warn(`[Stream/Security] ALERT: User-Agent hash mismatch for token. Expected: ${tokenObj.userAgentHash}, got: ${incomingUaHash}`)
+            return res.status(403).json({
+                success: false,
+                error: {
+                    code: 'FORBIDDEN',
+                    message: 'Akses ditolak: User-Agent tidak cocok.'
+                }
+            })
+        }
+
+        // Soft IP validation
+        const userId = tokenObj.userId
+        const currentIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || ''
+        const connState = userConnections.get(userId)
+
+        if (connState) {
+            if (currentIp !== connState.lastIp) {
+                if (incomingUaHash !== connState.lastUaHash) {
+                    logger.error(`[Stream/Security] ALERT: Session mismatch for user ${userId}. IP and UA both changed. IP: ${connState.lastIp} -> ${currentIp}, UA: ${connState.lastUaHash} -> ${incomingUaHash}`)
+                    return res.status(403).json({
+                        success: false,
+                        error: {
+                            code: 'FORBIDDEN',
+                            message: 'Akses ditolak: Ketidakcocokan sesi terdeteksi.'
+                        }
+                    })
+                }
+
+                // IP changed, but UA is valid (INFO / WARN)
+                const now = Date.now()
+                if (now - connState.lastIpChangeTime < 300000) {
+                    connState.ipChangeCount++
+                    if (connState.ipChangeCount > 3) {
+                        logger.warn(`[Stream/Security] WARN: User ${userId} IP changed rapidly (${connState.ipChangeCount} times in <5 min). IP: ${connState.lastIp} -> ${currentIp}`)
+                    } else {
+                        logger.info(`[Stream/Security] INFO: User ${userId} IP changed from ${connState.lastIp} to ${currentIp} (roaming/NAT)`)
+                    }
+                } else {
+                    connState.ipChangeCount = 1
+                    connState.lastIpChangeTime = now
+                    logger.info(`[Stream/Security] INFO: User ${userId} IP changed from ${connState.lastIp} to ${currentIp} (roaming/NAT)`)
+                }
+                connState.lastIp = currentIp
+            }
+        } else {
+            userConnections.set(userId, {
+                lastIp: currentIp,
+                lastUaHash: incomingUaHash,
+                ipChangeCount: 0,
+                lastIpChangeTime: Date.now()
+            })
+        }
+
+        // Consume the token
+        tokenObj.consumed = true
+        streamTokens.delete(tokenStr) // delete immediately to enforce one-time use
+
         res.writeHead(200, {
             'Content-Type': 'audio/mpeg',
             'Transfer-Encoding': 'chunked',
@@ -582,12 +844,903 @@ export function startRadioServer() {
             'icy-name': process.env.BOT_NAME ?? 'RonnBot Radio',
             'icy-br': '128',
         })
+        res.flushHeaders()
 
-        radioService.addClient(res)
+        radioService.addClient(res, userId)
 
         if (!radioService.isPlaying && radioService.queue.length > 0) {
             radioService.start().catch(err => logger.error('[Radio] Auto-start error:', err.message))
         }
+    })
+
+    // ─────────────────────────────────────────────
+    // REST API V2 ROUTER
+    // ─────────────────────────────────────────────
+    const apiV2 = express.Router()
+    app.use('/api/v2', apiV2)
+
+    apiV2.use(express.json())
+    apiV2.use((req, res, next) => {
+        res.setHeader('Content-Type', 'application/json')
+        next()
+    })
+
+    // AUTH / TOKEN ENDPOINTS
+    apiV2.post('/auth/stream-token', authenticateJwt, (req, res) => {
+        const userId = req.user.jid
+        const userAgent = req.headers['user-agent'] || ''
+        const userAgentHash = crypto.createHash('sha256').update(userAgent).digest('hex')
+        const token = crypto.randomUUID()
+        const createdAt = Date.now()
+        const expiresAt = createdAt + 300000 // 5 minutes
+
+        const tokenObj = {
+            token,
+            userId,
+            userAgentHash,
+            createdAt,
+            expiresAt,
+            consumed: false
+        }
+
+        streamTokens.set(token, tokenObj)
+
+        res.json({
+            success: true,
+            data: {
+                token,
+                expiresAt
+            }
+        })
+    })
+
+    // MUSIC ENDPOINTS
+    apiV2.get('/music/search', async (req, res) => {
+        const { q } = req.query
+        if (!q) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'BAD_REQUEST',
+                    message: 'Parameter query "q" wajib diisi.'
+                }
+            })
+        }
+        try {
+            const track = await radioService.search(q, 'API Search')
+            res.json({
+                success: true,
+                data: {
+                    results: [
+                        {
+                            songId: track.songId,
+                            title: track.title,
+                            artist: track.artist,
+                            duration: track.duration,
+                            thumbnailUrl: track.thumbnail,
+                            source: track.source,
+                            streamUrl: track.url
+                        }
+                    ]
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.post('/music/request', authenticateJwt, async (req, res) => {
+        const { query, dedicatedTo, message } = req.body
+        const userJid = req.user.jid
+        if (!query) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'BAD_REQUEST',
+                    message: 'Query/URL lagu wajib diisi.'
+                }
+            })
+        }
+
+        try {
+            const track = await radioService.search(query, userJid)
+            radioService.addToQueue(track, req.id)
+
+            if (dedicatedTo) {
+                try {
+                    const lastReq = db.prepare('SELECT id FROM requests WHERE user_jid = ? AND song_id = ? AND status = "pending" ORDER BY created_at DESC LIMIT 1').get(userJid, track.songId)
+                    if (lastReq) {
+                        db.prepare('INSERT INTO dedications (request_id, dedicated_to, message) VALUES (?, ?, ?)')
+                            .run(lastReq.id, dedicatedTo, message || null)
+                    }
+                } catch (dedErr) {
+                    logger.error('[APIv2] Failed to save dedication:', dedErr.message)
+                }
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    message: 'Lagu berhasil ditambahkan ke antrean!',
+                    track: {
+                        songId: track.songId,
+                        title: track.title,
+                        artist: track.artist,
+                        duration: track.duration,
+                        thumbnailUrl: track.thumbnail
+                    }
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.get('/music/queue', (req, res) => {
+        const page = parseInt(req.query.page ?? '1')
+        const limit = parseInt(req.query.limit ?? '10')
+        const offset = (page - 1) * limit
+
+        const rawQueue = radioService.queue
+        const paginatedQueue = rawQueue.slice(offset, offset + limit).map((track, i) => {
+            let dedication = null
+            try {
+                const reqRow = db.prepare('SELECT id FROM requests WHERE song_id = ? AND status = "pending" ORDER BY created_at DESC LIMIT 1').get(track.songId)
+                if (reqRow) {
+                    const dedRow = db.prepare('SELECT dedicated_to, message FROM dedications WHERE request_id = ?').get(reqRow.id)
+                    if (dedRow) {
+                        dedication = {
+                            dedicatedTo: dedRow.dedicated_to,
+                            message: dedRow.message
+                        }
+                    }
+                }
+            } catch (_) {}
+
+            return {
+                position: offset + i + 1,
+                song: {
+                    songId: track.songId,
+                    title: track.title,
+                    artist: track.artist,
+                    duration: track.duration,
+                    thumbnailUrl: track.thumbnail
+                },
+                requestedBy: {
+                    userId: track.requestedBy,
+                    name: track.requestedBy ? track.requestedBy.split('@')[0] : 'Auto-DJ'
+                },
+                dedication
+            }
+        })
+
+        res.json({
+            success: true,
+            data: {
+                queue: paginatedQueue,
+                totalItems: rawQueue.length,
+                totalPages: Math.ceil(rawQueue.length / limit)
+            }
+        })
+    })
+
+    apiV2.get('/music/history', (req, res) => {
+        const page = parseInt(req.query.page ?? '1')
+        const limit = parseInt(req.query.limit ?? '10')
+        const offset = (page - 1) * limit
+
+        try {
+            const totalItems = db.prepare('SELECT COUNT(*) as count FROM play_history').get().count
+            const historyRows = db.prepare(`
+                SELECT h.played_at, s.song_id, s.title, s.artist, s.thumbnail_url, s.duration, h.requested_by_jid
+                FROM play_history h
+                JOIN songs s ON h.song_id = s.song_id
+                ORDER BY h.played_at DESC
+                LIMIT ? OFFSET ?
+            `).all(limit, offset)
+
+            const formattedHistory = historyRows.map(row => ({
+                playedAt: row.played_at,
+                song: {
+                    songId: row.song_id,
+                    title: row.title,
+                    artist: row.artist,
+                    duration: row.duration,
+                    thumbnailUrl: row.thumbnail_url
+                },
+                requestedBy: row.requested_by_jid ? {
+                    userId: row.requested_by_jid,
+                    name: row.requested_by_jid.split('@')[0]
+                } : null
+            }))
+
+            res.json({
+                success: true,
+                data: {
+                    history: formattedHistory,
+                    totalItems,
+                    totalPages: Math.ceil(totalItems / limit)
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.get('/music/now-playing', (req, res) => {
+        const track = radioService.currentTrack
+        if (!track) {
+            return res.json({
+                success: true,
+                data: {
+                    isPlaying: false,
+                    currentTrack: null,
+                    listeners: radioService.listenerCount
+                }
+            })
+        }
+
+        let dedication = null
+        try {
+            const reqRow = db.prepare("SELECT id FROM requests WHERE song_id = ? AND status = 'played' ORDER BY played_at DESC LIMIT 1").get(track.songId)
+            if (reqRow) {
+                const dedRow = db.prepare('SELECT dedicated_to, message FROM dedications WHERE request_id = ?').get(reqRow.id)
+                if (dedRow) {
+                    dedication = {
+                        dedicatedTo: dedRow.dedicated_to,
+                        message: dedRow.message
+                    }
+                }
+            }
+        } catch (_) {}
+
+        res.json({
+            success: true,
+            data: {
+                isPlaying: radioService.isPlaying,
+                currentTrack: {
+                    songId: track.songId,
+                    title: track.title,
+                    artist: track.artist,
+                    duration: track.duration,
+                    startedAt: track.addedAt,
+                    elapsedTime: Math.min(track.duration, Math.floor((Date.now() - track.addedAt) / 1000)),
+                    thumbnailUrl: track.thumbnail,
+                    requestedBy: track.requestedBy ? {
+                        userId: track.requestedBy,
+                        name: track.requestedBy.split('@')[0]
+                    } : null,
+                    dedication
+                },
+                playbackSettings: {
+                    fx: radioService.activeFx,
+                    eq: radioService.activeEq
+                },
+                listeners: radioService.listenerCount
+            }
+        })
+    })
+
+    // LYRICS ENDPOINTS
+    const mockLyrics = (title) => ({
+        lyrics: [
+            { time: 0, text: `[Musik - ${title}]` },
+            { time: 10, text: "Kupikir kita akan bersama" },
+            { time: 20, text: "Ternyata semua hanya bayang semata" },
+            { time: 30, text: "Melangkah pergi tanpa kata" },
+            { time: 40, text: "Meninggalkan luka yang mendalam..." },
+            { time: 50, text: "[Guitar Solo]" },
+            { time: 80, text: "Kini ku sendiri menatap bintang" },
+            { time: 90, text: "Berharap kau kembali pulang..." },
+            { time: 110, text: "[Chorus]" },
+            { time: 130, text: "Terima kasih atas segalanya..." }
+        ],
+        synced: true
+    })
+
+    apiV2.get('/lyrics/current', (req, res) => {
+        const track = radioService.currentTrack
+        if (!track) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'NOT_FOUND',
+                    message: 'Tidak ada lagu yang sedang diputar.'
+                }
+            })
+        }
+        res.json({
+            success: true,
+            data: {
+                songId: track.songId,
+                title: track.title,
+                ...mockLyrics(track.title)
+            }
+        })
+    })
+
+    apiV2.get('/lyrics/:songId', (req, res) => {
+        const resolvedSongId = resolveSongId(req.params.songId)
+        let title = 'Lagu Pilihan'
+        try {
+            const row = db.prepare('SELECT title FROM songs WHERE song_id = ?').get(resolvedSongId)
+            if (row) title = row.title
+        } catch (_) {}
+
+        res.json({
+            success: true,
+            data: {
+                songId: resolvedSongId,
+                title,
+                ...mockLyrics(title)
+            }
+        })
+    })
+
+    // ENGAGEMENT ENDPOINTS
+    apiV2.post('/songs/:songId/reactions', authenticateJwt, (req, res) => {
+        const { reaction } = req.body
+        const resolvedSongId = resolveSongId(req.params.songId)
+        const userJid = req.user.jid
+        if (!reaction) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'BAD_REQUEST',
+                    message: 'Emoji reaksi wajib diisi.'
+                }
+            })
+        }
+        try {
+            const songExists = db.prepare('SELECT 1 FROM songs WHERE song_id = ?').get(resolvedSongId)
+            if (!songExists) {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'NOT_FOUND',
+                        message: 'Lagu tidak ditemukan di pustaka.'
+                    }
+                })
+            }
+
+            db.prepare('INSERT INTO reactions (user_jid, song_id, emoji) VALUES (?, ?, ?)').run(userJid, resolvedSongId, reaction)
+
+            io?.emit('engagement:reaction', { songId: resolvedSongId, reaction, userJid })
+            broadcastSSE('engagement:reaction', { songId: resolvedSongId, reaction, userJid }, req.id)
+
+            res.json({
+                success: true,
+                data: {
+                    message: 'Reaksi berhasil direkam!'
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.post('/users/me/favorites', authenticateJwt, (req, res) => {
+        const resolvedSongId = resolveSongId(req.body.songId)
+        const userJid = req.user.jid
+        if (!resolvedSongId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'BAD_REQUEST',
+                    message: 'songId wajib diisi.'
+                }
+            })
+        }
+        try {
+            db.prepare('INSERT INTO favorites (user_jid, song_id) VALUES (?, ?) ON CONFLICT DO NOTHING').run(userJid, resolvedSongId)
+            
+            // Broadcast favorite event to SSE
+            broadcastSSE('engagement:favorite', { userJid, songId: resolvedSongId }, req.id)
+            io?.emit('engagement:favorite', { userJid, songId: resolvedSongId })
+
+            res.json({
+                success: true,
+                data: {
+                    message: 'Lagu ditambahkan ke favorit!'
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.delete('/users/me/favorites/:songId', authenticateJwt, (req, res) => {
+        const resolvedSongId = resolveSongId(req.params.songId)
+        const userJid = req.user.jid
+        try {
+            db.prepare('DELETE FROM favorites WHERE user_jid = ? AND song_id = ?').run(userJid, resolvedSongId)
+            res.json({
+                success: true,
+                data: {
+                    message: 'Lagu dihapus dari favorit!'
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.get('/users/me/favorites', authenticateJwt, (req, res) => {
+        const userJid = req.user.jid
+        try {
+            const rows = db.prepare(`
+                SELECT s.song_id, s.title, s.artist, s.thumbnail_url, s.duration, f.created_at
+                FROM favorites f
+                JOIN songs s ON f.song_id = s.song_id
+                WHERE f.user_jid = ?
+                ORDER BY f.created_at DESC
+            `).all(userJid)
+            res.json({
+                success: true,
+                data: {
+                    favorites: rows.map(r => ({
+                        songId: r.song_id,
+                        title: r.title,
+                        artist: r.artist,
+                        thumbnailUrl: r.thumbnail_url,
+                        duration: r.duration,
+                        createdAt: r.created_at
+                    }))
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    // USER PROFILING & STATS
+    apiV2.get('/users/me/profile', authenticateJwt, (req, res) => {
+        const userJid = req.user.jid
+        try {
+            const profile = db.prepare('SELECT * FROM users WHERE jid = ?').get(userJid)
+            if (!profile) {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'NOT_FOUND',
+                        message: 'Profil tidak ditemukan.'
+                    }
+                })
+            }
+
+            const achCount = db.prepare('SELECT COUNT(*) as count FROM achievement_unlocks WHERE user_jid = ?').get(userJid)?.count || 0
+            const topFavs = db.prepare(`
+                SELECT s.song_id, s.title, s.artist, s.thumbnail_url
+                FROM favorites f
+                JOIN songs s ON f.song_id = s.song_id
+                WHERE f.user_jid = ?
+                LIMIT 3
+            `).all(userJid)
+
+            res.json({
+                success: true,
+                data: {
+                    profile: {
+                        userId: profile.jid,
+                        name: profile.name,
+                        level: profile.level,
+                        experiencePoints: profile.experience_points,
+                        role: profile.role,
+                        achievementsUnlocked: achCount,
+                        topFavorites: topFavs.map(f => ({
+                            songId: f.song_id,
+                            title: f.title,
+                            artist: f.artist,
+                            thumbnailUrl: f.thumbnail_url
+                        }))
+                    }
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.get('/users/:userJid/profile', (req, res) => {
+        const { userJid } = req.params
+        try {
+            const profile = db.prepare('SELECT * FROM users WHERE jid = ?').get(userJid)
+            if (!profile) {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'NOT_FOUND',
+                        message: 'Profil tidak ditemukan.'
+                    }
+                })
+            }
+
+            const achCount = db.prepare('SELECT COUNT(*) as count FROM achievement_unlocks WHERE user_jid = ?').get(userJid)?.count || 0
+            const topFavs = db.prepare(`
+                SELECT s.song_id, s.title, s.artist, s.thumbnail_url
+                FROM favorites f
+                JOIN songs s ON f.song_id = s.song_id
+                WHERE f.user_jid = ?
+                LIMIT 3
+            `).all(userJid)
+
+            res.json({
+                success: true,
+                data: {
+                    profile: {
+                        userId: profile.jid,
+                        name: profile.name,
+                        level: profile.level,
+                        experiencePoints: profile.experience_points,
+                        role: profile.role,
+                        achievementsUnlocked: achCount,
+                        topFavorites: topFavs.map(f => ({
+                            songId: f.song_id,
+                            title: f.title,
+                            artist: f.artist,
+                            thumbnailUrl: f.thumbnail_url
+                        }))
+                    }
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.get('/users/me/stats', authenticateJwt, (req, res) => {
+        const userJid = req.user.jid
+        try {
+            const totalListenSec = db.prepare('SELECT SUM(duration_seconds) as total FROM listening_sessions WHERE user_jid = ?').get(userJid)?.total || 0
+            const requestsCount = db.prepare("SELECT COUNT(*) as count FROM requests WHERE user_jid = ? AND status = 'played'").get(userJid)?.count || 0
+
+            const favArtistRow = db.prepare(`
+                SELECT s.artist, COUNT(*) as count
+                FROM play_history h
+                JOIN songs s ON h.song_id = s.song_id
+                WHERE h.requested_by_jid = ?
+                GROUP BY s.artist
+                ORDER BY count DESC
+                LIMIT 1
+            `).get(userJid)
+
+            const favSongRow = db.prepare(`
+                SELECT s.title, s.artist, COUNT(*) as count
+                FROM play_history h
+                JOIN songs s ON h.song_id = s.song_id
+                WHERE h.requested_by_jid = ?
+                GROUP BY s.song_id
+                ORDER BY count DESC
+                LIMIT 1
+            `).get(userJid)
+
+            res.json({
+                success: true,
+                data: {
+                    stats: {
+                        totalListeningHours: parseFloat((totalListenSec / 3600).toFixed(2)),
+                        totalRequestsCount: requestsCount,
+                        favoriteArtist: favArtistRow ? favArtistRow.artist : '—',
+                        favoriteSong: favSongRow ? `${favSongRow.title} - ${favSongRow.artist}` : '—',
+                        currentListeningStreak: 1,
+                        longestListeningStreak: 3
+                    }
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.get('/users/:userJid/stats', (req, res) => {
+        const { userJid } = req.params
+        try {
+            const totalListenSec = db.prepare('SELECT SUM(duration_seconds) as total FROM listening_sessions WHERE user_jid = ?').get(userJid)?.total || 0
+            const requestsCount = db.prepare("SELECT COUNT(*) as count FROM requests WHERE user_jid = ? AND status = 'played'").get(userJid)?.count || 0
+
+            const favArtistRow = db.prepare(`
+                SELECT s.artist, COUNT(*) as count
+                FROM play_history h
+                JOIN songs s ON h.song_id = s.song_id
+                WHERE h.requested_by_jid = ?
+                GROUP BY s.artist
+                ORDER BY count DESC
+                LIMIT 1
+            `).get(userJid)
+
+            const favSongRow = db.prepare(`
+                SELECT s.title, s.artist, COUNT(*) as count
+                FROM play_history h
+                JOIN songs s ON h.song_id = s.song_id
+                WHERE h.requested_by_jid = ?
+                GROUP BY s.song_id
+                ORDER BY count DESC
+                LIMIT 1
+            `).get(userJid)
+
+            res.json({
+                success: true,
+                data: {
+                    stats: {
+                        totalListeningHours: parseFloat((totalListenSec / 3600).toFixed(2)),
+                        totalRequestsCount: requestsCount,
+                        favoriteArtist: favArtistRow ? favArtistRow.artist : '—',
+                        favoriteSong: favSongRow ? `${favSongRow.title} - ${favSongRow.artist}` : '—',
+                        currentListeningStreak: 1,
+                        longestListeningStreak: 3
+                    }
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.get('/leaderboard', (req, res) => {
+        const { timeframe } = req.query
+        try {
+            const rows = db.prepare(`
+                SELECT u.jid, u.name, u.level, SUM(s.duration_seconds) as listeningTime
+                FROM listening_sessions s
+                JOIN users u ON s.user_jid = u.jid
+                GROUP BY u.jid
+                ORDER BY listeningTime DESC
+                LIMIT 10
+            `).all()
+
+            const leaderboard = rows.map((row, idx) => ({
+                rank: idx + 1,
+                name: row.name,
+                userId: row.jid,
+                listeningTimeSeconds: row.listeningTime,
+                level: row.level
+            }))
+
+            res.json({
+                success: true,
+                data: {
+                    timeframe: timeframe || 'global',
+                    leaderboard
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.get('/achievements', (req, res) => {
+        let userJid = req.query.userJid
+        if (!userJid && req.headers['authorization']) {
+            const authHeader = req.headers['authorization']
+            if (authHeader.startsWith('Bearer ')) {
+                const token = authHeader.substring(7)
+                const payload = verifyJwt(token)
+                if (payload && payload.jid) {
+                    userJid = payload.jid
+                }
+            }
+        }
+        try {
+            const list = db.prepare('SELECT * FROM achievements').all()
+            const unlocked = userJid ? new Set(
+                db.prepare('SELECT achievement_id FROM achievement_unlocks WHERE user_jid = ?').all(userJid).map(r => r.achievement_id)
+            ) : new Set()
+
+            const formatted = list.map(ach => ({
+                achievementId: ach.achievement_id,
+                name: ach.name,
+                description: ach.description,
+                unlocked: unlocked.has(ach.achievement_id)
+            }))
+
+            res.json({
+                success: true,
+                data: {
+                    achievements: formatted
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    apiV2.get('/wrapped/:year', (req, res) => {
+        const { year } = req.params
+        let userJid = req.query.userJid
+        if (!userJid && req.headers['authorization']) {
+            const authHeader = req.headers['authorization']
+            if (authHeader.startsWith('Bearer ')) {
+                const token = authHeader.substring(7)
+                const payload = verifyJwt(token)
+                if (payload && payload.jid) {
+                    userJid = payload.jid
+                }
+            }
+        }
+        if (!userJid) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'BAD_REQUEST',
+                    message: 'userJid wajib diisi.'
+                }
+            })
+        }
+
+        try {
+            let cached = db.prepare('SELECT * FROM wrapped WHERE user_jid = ? AND year = ?').get(userJid, parseInt(year))
+
+            if (!cached) {
+                const totalListenSec = db.prepare('SELECT SUM(duration_seconds) as total FROM listening_sessions WHERE user_jid = ?').get(userJid)?.total || 0
+                const totalReqs = db.prepare("SELECT COUNT(*) as count FROM requests WHERE user_jid = ? AND status = 'played'").get(userJid)?.count || 0
+
+                const topArtistRow = db.prepare(`
+                    SELECT s.artist, COUNT(*) as count
+                    FROM play_history h
+                    JOIN songs s ON h.song_id = s.song_id
+                    WHERE h.requested_by_jid = ?
+                    GROUP BY s.artist
+                    ORDER BY count DESC
+                    LIMIT 1
+                `).get(userJid)
+
+                const topSongRow = db.prepare(`
+                    SELECT s.song_id, s.title, s.artist, COUNT(*) as count
+                    FROM play_history h
+                    JOIN songs s ON h.song_id = s.song_id
+                    WHERE h.requested_by_jid = ?
+                    GROUP BY s.song_id
+                    ORDER BY count DESC
+                    LIMIT 1
+                `).get(userJid)
+
+                cached = {
+                    user_jid: userJid,
+                    year: parseInt(year),
+                    listening_seconds: totalListenSec,
+                    total_requests: totalReqs,
+                    favorite_artist: topArtistRow ? topArtistRow.artist : '—',
+                    favorite_song_id: topSongRow ? topSongRow.song_id : null,
+                    top_genre: 'Pop Indo',
+                    percentile: 5.0
+                }
+
+                db.prepare(`
+                    INSERT INTO wrapped (user_jid, year, listening_seconds, total_requests, favorite_artist, favorite_song_id, top_genre, percentile)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                `).run(
+                    cached.user_jid,
+                    cached.year,
+                    cached.listening_seconds,
+                    cached.total_requests,
+                    cached.favorite_artist,
+                    cached.favorite_song_id,
+                    cached.top_genre,
+                    cached.percentile
+                )
+            }
+
+            let favSong = null
+            if (cached.favorite_song_id) {
+                const sRow = db.prepare('SELECT title, artist FROM songs WHERE song_id = ?').get(cached.favorite_song_id)
+                if (sRow) {
+                    favSong = `${sRow.title} - ${sRow.artist}`
+                }
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    wrapped: {
+                        year: cached.year,
+                        listeningHours: parseFloat((cached.listening_seconds / 3600).toFixed(1)),
+                        songsPlayed: Math.round(cached.listening_seconds / 240),
+                        favoriteArtist: cached.favorite_artist,
+                        favoriteSong: favSong || '—',
+                        topGenre: cached.top_genre,
+                        totalRequests: cached.total_requests,
+                        rankPercentile: cached.percentile,
+                        achievementsUnlocked: db.prepare('SELECT COUNT(*) as count FROM achievement_unlocks WHERE user_jid = ?').get(userJid)?.count || 0
+                    }
+                }
+            })
+        } catch (err) {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: err.message
+                }
+            })
+        }
+    })
+
+    // SYSTEM METRICS
+    apiV2.get('/system/metrics', authenticateJwt, (req, res) => {
+        res.json({
+            success: true,
+            data: {
+                metrics: metricsService.getSystemMetrics()
+            }
+        })
     })
 
     // REST API /status endpoint
@@ -620,7 +1773,22 @@ export function startRadioServer() {
             'X-Accel-Buffering': 'no',
         })
 
-        res.write(`event: init\ndata: ${JSON.stringify(getFullStatus())}\n\n`)
+        const lastEventIdStr = req.headers['last-event-id'] || req.query.lastEventId
+        if (lastEventIdStr) {
+            const lastId = parseInt(lastEventIdStr, 10)
+            if (!isNaN(lastId)) {
+                const missed = sseHistory.filter(e => e.id > lastId)
+                for (const e of missed) {
+                    const dataToSend = (typeof e.data === 'object' && e.data !== null)
+                        ? { ...e.data, correlationId: e.correlationId }
+                        : e.data
+                    res.write(`id: ${e.id}\nevent: ${e.event}\ndata: ${JSON.stringify(dataToSend)}\n\n`)
+                }
+            }
+        } else {
+            res.write(`id: ${sseEventCounter - 1}\nevent: init\ndata: ${JSON.stringify(getFullStatus())}\n\n`)
+        }
+
         sseClients.add(res)
 
         const heartbeat = setInterval(() => {
@@ -630,7 +1798,7 @@ export function startRadioServer() {
                 return
             }
             res.write(`: heartbeat\n\n`)
-        }, 30_000)
+        }, 30000)
 
         const cleanup = () => {
             clearInterval(heartbeat)
@@ -695,6 +1863,10 @@ export function startRadioServer() {
 }
 
 export function stopRadioServer() {
+    if (tokenCleanupInterval) {
+        clearInterval(tokenCleanupInterval)
+        tokenCleanupInterval = null
+    }
     if (metricsInterval) {
         clearInterval(metricsInterval)
         metricsInterval = null
@@ -718,6 +1890,10 @@ export function stopRadioServer() {
         try { client.end() } catch (_) {}
     }
     sseClients.clear()
+    sseHistory.length = 0
+
+    streamTokens.clear()
+    userConnections.clear()
 
     if (io) {
         io.close()

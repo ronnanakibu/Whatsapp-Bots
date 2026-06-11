@@ -6,6 +6,21 @@ This file documents the key milestones, architectural design patterns, and criti
 
 ## Key Milestones
 
+### v4.1.0 — Backend Production Foundation (v2.8 Rearchitecture)
+* **Achievement**: Implemented hardened stream token access, dual-bounded SSE buffer replay mechanisms, structured envelopes for API v2, and bulk presence recovery on startup.
+* **Technical Details**:
+  * Added 5-minute TTL opaque UUID stream tokens with one-time consumption logic and a 60-second cleanup daemon.
+  * Formulated multi-tier Soft IP validation to tolerate mobile NAT switches safely without allowing session theft.
+  * Enforced double-bounded (10-minute/5,000 events) SSE buffer and recovery utilizing standard `Last-Event-ID` parsing.
+  * Created an automated test suite (`verify_v28.js`) covering all security, routing, and SSE replay logic (39/39 passing).
+
+### v5.0.0 — Radio Backend API v2 & Relational Database Rarchitecture
+* **Achievement**: Completely rebuilt the live streaming engine backend from a simple monolithic status endpoint to a robust relational database schema and modular API v2.
+* **Technical Details**:
+  * Designed structured SQLite schema containing users, songs, play_history, requests, listening_sessions, reactions, favorites, achievements, and wrapped tables.
+  * Decoupled status polling by creating specialized cache-friendly endpoints under `/api/v2/music/...`.
+  * Implemented client-presence tracking on `/stream?jid=...` to measure listener engagement, distribute Experience Points (XP) dynamically, and evaluate achievements.
+
 ### v4.0.4 — Real-time Context & Agentic Command Router
 * **Achievement**: Enabled temporal query awareness and natural language command execution via an agentic routing system and a keyword pre-router.
 * **Technical Details**:
