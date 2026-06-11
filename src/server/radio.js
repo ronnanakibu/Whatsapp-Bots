@@ -765,90 +765,116 @@ export function startRadioServer() {
     // REST API /stream endpoint (mendukung user JID presence tracking via stream token)
     app.get('/stream', (req, res) => {
         const tokenStr = req.query.token
-        if (!tokenStr) {
-            logger.warn(`[Stream/Auth] Connection rejected: Missing token`)
-            return res.status(403).json({
-                success: false,
-                error: {
-                    code: 'FORBIDDEN',
-                    message: 'Token stream diperlukan.'
-                }
-            })
-        }
 
-        const tokenObj = streamTokens.get(tokenStr)
-        if (!tokenObj || tokenObj.consumed || tokenObj.expiresAt < Date.now()) {
-            logger.warn(`[Stream/Auth] Connection rejected: Invalid, consumed, or expired token (${tokenStr})`)
-            return res.status(403).json({
-                success: false,
-                error: {
-                    code: 'FORBIDDEN',
-                    message: 'Token stream tidak valid, kedaluwarsa, atau sudah digunakan.'
-                }
-            })
-        }
+        // Exceptions check (Bypass token validation for local Discord bot, internal web pages, and Android APK players)
+        const remoteIp = req.socket.remoteAddress || ''
+        const isLocal = remoteIp.includes('127.0.0.1') || remoteIp === '::1' || remoteIp.includes('localhost')
 
-        // Validate UA Hash
+        const referer = req.headers['referer'] || ''
+        const isRefererValid = referer && (referer.includes('/radio') || referer.includes('/dashboard'))
+
+        const hasCacheBuster = req.query.t !== undefined
+
         const incomingUa = req.headers['user-agent'] || ''
         const incomingNormalized = normalizeUserAgent(incomingUa)
-        const incomingUaHash = crypto.createHash('sha256').update(incomingNormalized).digest('hex')
-        if (incomingUaHash !== tokenObj.userAgentHash) {
-            logger.warn(`[Stream/Security] ALERT: User-Agent hash mismatch for token. Expected: ${tokenObj.userAgentHash}, got: ${incomingUaHash} (Raw UA: ${incomingUa})`)
-            return res.status(403).json({
-                success: false,
-                error: {
-                    code: 'FORBIDDEN',
-                    message: 'Akses ditolak: User-Agent tidak cocok.'
-                }
-            })
-        }
+        const isAndroidPlayer = incomingNormalized === 'android-radio-client'
 
-        // Soft IP validation
-        const userId = tokenObj.userId
-        const currentIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || ''
-        const connState = userConnections.get(userId)
+        const shouldBypass = isLocal || isRefererValid || hasCacheBuster || isAndroidPlayer
 
-        if (connState) {
-            if (currentIp !== connState.lastIp) {
-                if (incomingUaHash !== connState.lastUaHash) {
-                    logger.error(`[Stream/Security] ALERT: Session mismatch for user ${userId}. IP and UA both changed. IP: ${connState.lastIp} -> ${currentIp}, UA: ${connState.lastUaHash} -> ${incomingUaHash}`)
-                    return res.status(403).json({
-                        success: false,
-                        error: {
-                            code: 'FORBIDDEN',
-                            message: 'Akses ditolak: Ketidakcocokan sesi terdeteksi.'
+        let userId = 'anonymous'
+
+        if (shouldBypass && !tokenStr) {
+            // Retrieve JID from query if available during bypass (e.g. from APK or browser testing)
+            const queryJid = req.query.jid
+            if (queryJid && typeof queryJid === 'string' && queryJid.includes('@')) {
+                userId = queryJid
+            }
+            logger.info(`[Stream/Auth] Connection bypassed. RemoteIP: ${remoteIp}, Referer: ${referer}, UA: ${incomingUa}, JID: ${userId}`)
+        } else {
+            // Strict token enforcement
+            if (!tokenStr) {
+                logger.warn(`[Stream/Auth] Connection rejected: Missing token. RemoteIP: ${remoteIp}, Referer: ${referer}, UA: ${incomingUa}`)
+                return res.status(403).json({
+                    success: false,
+                    error: {
+                        code: 'FORBIDDEN',
+                        message: 'Token stream diperlukan.'
+                    }
+                })
+            }
+
+            const tokenObj = streamTokens.get(tokenStr)
+            if (!tokenObj || tokenObj.consumed || tokenObj.expiresAt < Date.now()) {
+                logger.warn(`[Stream/Auth] Connection rejected: Invalid, consumed, or expired token (${tokenStr})`)
+                return res.status(403).json({
+                    success: false,
+                    error: {
+                        code: 'FORBIDDEN',
+                        message: 'Token stream tidak valid, kedaluwarsa, atau sudah digunakan.'
+                    }
+                })
+            }
+
+            // Validate UA Hash
+            const incomingUaHash = crypto.createHash('sha256').update(incomingNormalized).digest('hex')
+            if (incomingUaHash !== tokenObj.userAgentHash) {
+                logger.warn(`[Stream/Security] ALERT: User-Agent hash mismatch for token. Expected: ${tokenObj.userAgentHash}, got: ${incomingUaHash} (Raw UA: ${incomingUa})`)
+                return res.status(403).json({
+                    success: false,
+                    error: {
+                        code: 'FORBIDDEN',
+                        message: 'Akses ditolak: User-Agent tidak cocok.'
+                    }
+                })
+            }
+
+            // Soft IP validation
+            userId = tokenObj.userId
+            const currentIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || ''
+            const connState = userConnections.get(userId)
+
+            if (connState) {
+                if (currentIp !== connState.lastIp) {
+                    if (incomingUaHash !== connState.lastUaHash) {
+                        logger.error(`[Stream/Security] ALERT: Session mismatch for user ${userId}. IP and UA both changed. IP: ${connState.lastIp} -> ${currentIp}, UA: ${connState.lastUaHash} -> ${incomingUaHash}`)
+                        return res.status(403).json({
+                            success: false,
+                            error: {
+                                code: 'FORBIDDEN',
+                                message: 'Akses ditolak: Ketidakcocokan sesi terdeteksi.'
+                            }
+                        })
+                    }
+
+                    // IP changed, but UA is valid (INFO / WARN)
+                    const now = Date.now()
+                    if (now - connState.lastIpChangeTime < 300000) {
+                        connState.ipChangeCount++
+                        if (connState.ipChangeCount > 3) {
+                            logger.warn(`[Stream/Security] WARN: User ${userId} IP changed rapidly (${connState.ipChangeCount} times in <5 min). IP: ${connState.lastIp} -> ${currentIp}`)
+                        } else {
+                            logger.info(`[Stream/Security] INFO: User ${userId} IP changed from ${connState.lastIp} to ${currentIp} (roaming/NAT)`)
                         }
-                    })
-                }
-
-                // IP changed, but UA is valid (INFO / WARN)
-                const now = Date.now()
-                if (now - connState.lastIpChangeTime < 300000) {
-                    connState.ipChangeCount++
-                    if (connState.ipChangeCount > 3) {
-                        logger.warn(`[Stream/Security] WARN: User ${userId} IP changed rapidly (${connState.ipChangeCount} times in <5 min). IP: ${connState.lastIp} -> ${currentIp}`)
                     } else {
+                        connState.ipChangeCount = 1
+                        connState.lastIpChangeTime = now
                         logger.info(`[Stream/Security] INFO: User ${userId} IP changed from ${connState.lastIp} to ${currentIp} (roaming/NAT)`)
                     }
-                } else {
-                    connState.ipChangeCount = 1
-                    connState.lastIpChangeTime = now
-                    logger.info(`[Stream/Security] INFO: User ${userId} IP changed from ${connState.lastIp} to ${currentIp} (roaming/NAT)`)
+                    connState.lastIp = currentIp
                 }
-                connState.lastIp = currentIp
+            } else {
+                userConnections.set(userId, {
+                    lastIp: currentIp,
+                    lastUaHash: incomingUaHash,
+                    ipChangeCount: 0,
+                    lastIpChangeTime: Date.now()
+                })
             }
-        } else {
-            userConnections.set(userId, {
-                lastIp: currentIp,
-                lastUaHash: incomingUaHash,
-                ipChangeCount: 0,
-                lastIpChangeTime: Date.now()
-            })
-        }
 
-        // Consume the token
-        tokenObj.consumed = true
-        streamTokens.delete(tokenStr) // delete immediately to enforce one-time use
+            // Consume the token
+            tokenObj.consumed = true
+            streamTokens.delete(tokenStr) // delete immediately to enforce one-time use
+        }
 
         res.writeHead(200, {
             'Content-Type': 'audio/mpeg',
