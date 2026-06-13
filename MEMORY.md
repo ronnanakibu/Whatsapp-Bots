@@ -77,6 +77,12 @@ This file documents the key milestones, architectural design patterns, and criti
   * Modified the `addClient()` JID verification logic to check if a user is `'anonymous'` (the default string for non-authenticated web clients).
   * Excluded anonymous sessions from the duplicate connection verification loop, allowing unlimited dashboard listeners to stream concurrently.
 
+### v5.3.10 — Radio Dashboard Crash Fix
+* **Achievement**: Fixed a critical client-side exception (`TypeError: a.slice is not a function`) that crashed the `/radio` web dashboard and added resilient array safety checks to client components.
+* **Technical Details**:
+  * Fixed a bug in the server-side `broadcastSSE` serialization that was spreading arrays using `{ ...data, correlationId }`, converting them into plain indexed objects. Included `Array.isArray()` checks to preserve array structure.
+  * Added fallback array parsing (e.g. `Array.isArray(queue) ? queue : []`) across all dashboard components (HomePage, QueueTimeline, SearchPage, NetworkPage, ListenerNetwork, FactoryPage, and CommandPalette) to prevent client-side JavaScript crashes when rendering.
+
 ### v4.0.4 — Real-time Context & Agentic Command Router
 * **Achievement**: Enabled temporal query awareness and natural language command execution via an agentic routing system and a keyword pre-router.
 * **Technical Details**:
