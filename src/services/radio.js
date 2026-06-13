@@ -3,7 +3,7 @@
 // Architecture: yt-dlp (YouTube extract) → FFmpeg stdin pipe → HTTP broadcast
 // Fallback: SoundCloud via play-dl jika YouTube/yt-dlp gagal
 
-import { spawn } from 'child_process'
+import { spawn, execSync } from 'child_process'
 import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
@@ -12,6 +12,15 @@ import http from 'http'
 import { botLogger } from '../utils/logger.js'
 import { getYtdlpPath, ytdlpGetAudioUrl, ytdlpStream } from './ytdlp.js'
 import { db } from './db.js'
+
+// Cek apakah filter 'afifo' didukung oleh ffmpeg (karena sudah dihapus sejak versi FFmpeg awal 2024)
+let _isAfifoSupported = false
+try {
+    const filters = execSync('ffmpeg -filters', { stdio: 'pipe' }).toString()
+    _isAfifoSupported = filters.includes(' afifo ')
+} catch (e) {
+    botLogger.warn('radio', `Gagal mengecek filter afifo ffmpeg: ${e.message}`)
+}
 
 // ─────────────────────────────────────────────
 // PLAY-DL — search + stream (no yt-dlp needed)
@@ -709,8 +718,10 @@ class RadioService extends EventEmitter {
                     filters.push(`afade=t=out:st=${track.duration - 3}:d=3`)
                 }
 
-                // Tambahkan audio FIFO buffer filter untuk meminimalkan lag / stuttering
-                filters.push('afifo')
+                // Tambahkan audio FIFO buffer filter jika didukung oleh versi ffmpeg
+                if (_isAfifoSupported) {
+                    filters.push('afifo')
+                }
 
                 const filterStr = filters.join(',')
 
@@ -862,12 +873,12 @@ class RadioService extends EventEmitter {
                 const isDirectUrl = typeof inputStream === 'string'
 
                 const ffArgs = [
+                    '-thread_queue_size', '4096',
                     // Jika direct URL, pakai fitur auto-reconnect & realtime read dari FFmpeg (sangat kebal putus)
                     ...(isDirectUrl ? [
                         '-reconnect', '1',
                         '-reconnect_streamed', '1',
-                        '-reconnect_delay_max', '5',
-                        '-re'
+                        '-reconnect_delay_max', '5'
                     ] : []),
                     '-re',
                     '-i', isDirectUrl ? inputStream : 'pipe:0',

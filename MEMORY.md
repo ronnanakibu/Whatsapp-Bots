@@ -40,6 +40,21 @@ This file documents the key milestones, architectural design patterns, and criti
   * The `android:run` command builds, installs, and launches the app directly on the connected target device using ADB shell intent actions (`adb shell am start -n com.ronnbot.radio/com.ronnbot.radio.MainActivity`).
   * Structured offline-first Room database, retroactive SSE/Retrofit sync, ExoPlayer foreground playback engine, and high-fidelity sliding Spotify-style Wrapped storyboards.
 
+### v5.3.4 — FFmpeg Obsolete 'afifo' Filter Crash Fix
+* **Achievement**: Resolved a critical live streaming engine crash caused by the obsolete `afifo` audio filter on modern FFmpeg builds.
+* **Technical Details**:
+  * Implemented a dynamic capability check in `src/services/radio.js` that executes `ffmpeg -filters` at startup to determine if `afifo` is supported.
+  * Conditionalized the filter push so it dynamically adapts to both older (requiring `afifo` for lag buffer mitigation) and newer (where `afifo` is removed and buffering is handled internally) FFmpeg versions.
+
+### v5.3.5 — Audio Streaming Buffer & Stuttering Optimizations
+* **Achievement**: Optimized the live streaming transmission pipeline to eliminate audio stuttering, network dropouts, and rate-limiting throttles on YouTube tracks.
+* **Technical Details**:
+  * Upgraded `yt-dlp` arguments to use the iOS player client (`youtube:player_client=ios,android`), bypassing signature-based rate limits.
+  * Increased the download buffer size parameter to `256k` inside `ytdlp.js` (replacing the default 1KB download buffer).
+  * Injected `-thread_queue_size 4096` in `src/services/radio.js` to decouple the FFmpeg decoder thread from input stream IO lag.
+
+
+
 
 ### v4.0.4 — Real-time Context & Agentic Command Router
 * **Achievement**: Enabled temporal query awareness and natural language command execution via an agentic routing system and a keyword pre-router.
