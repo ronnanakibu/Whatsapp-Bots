@@ -97,7 +97,7 @@ export async function ensureYtdlp() {
 
     try {
         await downloadFile(YTDLP_URL, BIN_PATH)
-        
+
         // Chmod +x
         fs.chmodSync(BIN_PATH, 0o755)
 
@@ -107,14 +107,14 @@ export async function ensureYtdlp() {
         return BIN_PATH
     } catch (e) {
         botLogger.warn('ytdlp', `Gagal mengunduh yt-dlp dari GitHub: ${e.message}`)
-        
+
         // Fallback ke system PATH
         existing = getYtdlpPath(false)
         if (existing) {
             botLogger.info('ytdlp', `Menggunakan fallback system yt-dlp: ${existing}`)
             return existing
         }
-        
+
         throw new Error(`yt-dlp tidak dapat disediakan (download gagal dan tidak ada di system PATH): ${e.message}`)
     }
 }
@@ -238,9 +238,9 @@ export function ytdlpGetAudioUrl(youtubeUrl) {
 
         const args = [
             '--no-playlist',
-            '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+            '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best',
             '--get-url',
-            '--extractor-args', 'youtube:player_client=android,web',
+            '--extractor-args', 'youtube:player_client=ios,android,web',  // ios dulu, lebih reliable
             '--buffer-size', '256k',
             ...getCookieArgs(),
             '--no-warnings',

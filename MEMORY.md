@@ -59,6 +59,14 @@ This file documents the key milestones, architectural design patterns, and criti
   * Reverted the `player_client` extractor argument back to `android,web`. The iOS client endpoints do not accept session cookies for age-gate validation, leading to format extraction failures.
   * Retained the `256k` download buffer size and `-thread_queue_size 4096` buffering, ensuring stable streaming of all track types.
 
+### v5.3.7 — Dynamic Local yt-dlp Auto-Updater & Fallback
+* **Achievement**: Prevented signature extraction crashes caused by obsolete system-wide `yt-dlp` executables in host container environments.
+* **Technical Details**:
+  * Prioritized downloading the latest official compiled release of `yt-dlp` directly from the GitHub repository to `./storage/bin/yt-dlp` on startup.
+  * Disabled default fallback to host `PATH` executables during routine checks, forcing a dynamic update loop. Added a graceful fallback mechanism to the system `PATH` only if the download attempt fails.
+  * Added platform-dependent executable name formatting (`.exe` extension logic on Windows).
+
+
 
 
 
