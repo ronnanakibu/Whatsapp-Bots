@@ -53,6 +53,13 @@ This file documents the key milestones, architectural design patterns, and criti
   * Increased the download buffer size parameter to `256k` inside `ytdlp.js` (replacing the default 1KB download buffer).
   * Injected `-thread_queue_size 4096` in `src/services/radio.js` to decouple the FFmpeg decoder thread from input stream IO lag.
 
+### v5.3.6 — YouTube Age-Gate Format Compatibility
+* **Achievement**: Restored compatibility for age-restricted streams containing user session cookies.
+* **Technical Details**:
+  * Reverted the `player_client` extractor argument back to `android,web`. The iOS client endpoints do not accept session cookies for age-gate validation, leading to format extraction failures.
+  * Retained the `256k` download buffer size and `-thread_queue_size 4096` buffering, ensuring stable streaming of all track types.
+
+
 
 
 
