@@ -64,12 +64,18 @@ This file documents the key milestones, architectural design patterns, and criti
 * **Technical Details**:
   * Prioritized downloading the latest official compiled release of `yt-dlp` directly from the GitHub repository to `./storage/bin/yt-dlp` on startup.
   * Disabled default fallback to host `PATH` executables during routine checks, forcing a dynamic update loop. Added a graceful fallback mechanism to the system `PATH` only if the download attempt fails.
-  * Added platform-dependent executable name formatting (`.exe` extension logic on Windows).
+  * Added platform-dependent executable name formatting (`.exe` extension logic on Windows).### v5.3.8 — Radio Stream Fallback Download Pipelines
+* **Achievement**: Formulated offline-first track downloading fallbacks to handle real-time stdout piping and buffering failure points.
+* **Technical Details**:
+  * Implemented an asynchronous Hugging Face downloader endpoint (`/download`) fallback that retrieves full MP3 files into a local buffer.
+  * Added a secondary local `yt-dlp` download fallback that compiles age-restricted streams locally before starting playback.
+  * Integrated automatic filesystem unlinking of temporary audio assets inside the `#streamTrack` `.finally()` block.
 
-
-
-
-
+### v5.3.9 — Concurrent Guest Streaming Support
+* **Achievement**: Resolved a critical session collision bug that disconnected existing radio stream listeners when new web dashboard guest listeners joined.
+* **Technical Details**:
+  * Modified the `addClient()` JID verification logic to check if a user is `'anonymous'` (the default string for non-authenticated web clients).
+  * Excluded anonymous sessions from the duplicate connection verification loop, allowing unlimited dashboard listeners to stream concurrently.
 
 ### v4.0.4 — Real-time Context & Agentic Command Router
 * **Achievement**: Enabled temporal query awareness and natural language command execution via an agentic routing system and a keyword pre-router.

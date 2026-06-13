@@ -38,7 +38,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
     // Also show current queue items in results
     const queueResults = query
-        ? queue.filter((t) =>
+        ? (queue || []).filter((t) =>
             t.title?.toLowerCase().includes(query.toLowerCase())
           ).slice(0, 3)
         : []

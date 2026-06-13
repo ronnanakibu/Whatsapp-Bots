@@ -28,7 +28,7 @@ function buildJobs(state: ReturnType<typeof useDashboardStore.getState>): Job[] 
             status: 'running', progress: 100, detail: `${state.nowPlaying.bitrate}kbps · ${state.nowPlaying.codec}`, ts: Date.now() - 60000,
         })
     }
-    state.queue.slice(0, 3).forEach((t, i) => {
+    (state.queue || []).slice(0, 3).forEach((t, i) => {
         jobs.push({
             id: `dl-${i}`, type: 'download', label: t.title,
             status: i === 0 ? 'queued' : 'queued', detail: 'Waiting', ts: Date.now() - i * 30000,
@@ -89,7 +89,7 @@ export default function FactoryPage() {
     const jobs = buildJobs(store)
     const { accentColor, events } = store
 
-    const recentErrors = events.filter(e => e.type === 'error').slice(0, 3)
+    const recentErrors = (events || []).filter(e => e.type === 'error').slice(0, 3)
 
     return (
         <div className="h-full overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>

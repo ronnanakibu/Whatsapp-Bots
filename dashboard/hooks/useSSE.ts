@@ -57,7 +57,7 @@ export function useSSE() {
                     })
                 }
                 if (data.queue) {
-                    setQueue(data.queue as Track[])
+                    setQueue(Array.isArray(data.queue) ? data.queue : [])
                 }
                 if (data.listeners !== undefined) {
                     setMetrics({ connectedUsers: data.listeners, queueSize: data.queueLength ?? 0 })
@@ -90,9 +90,10 @@ export function useSSE() {
         // Queue update
         es.addEventListener('queue:update', (e: MessageEvent) => {
             try {
-                const q = JSON.parse(e.data) as Track[]
-                setQueue(q)
-                setMetrics({ queueSize: q.length })
+                const q = JSON.parse(e.data)
+                const qArr = Array.isArray(q) ? q : []
+                setQueue(qArr)
+                setMetrics({ queueSize: qArr.length })
             } catch { /* ignore */ }
         })
 

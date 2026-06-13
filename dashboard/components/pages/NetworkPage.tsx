@@ -30,7 +30,7 @@ export default function NetworkPage() {
                         style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <p className="text-[9px] font-mono uppercase tracking-widest text-white/25">Network</p>
                         {[
-                            { label: 'Connected', value: listeners.length, color: accentColor },
+                            { label: 'Connected', value: (listeners || []).length, color: accentColor },
                             { label: 'Peak today', value: '—', color: '#8B5CF6' },
                             { label: 'Total users', value: metrics.connectedUsers, color: '#10B981' },
                         ].map(s => (
@@ -51,7 +51,7 @@ export default function NetworkPage() {
                             { node: 'Search & DL', detail: `Queue: ${queue.length}`, color: '#8B5CF6' },
                             { node: 'FFmpeg', detail: metrics.ffmpegStatus, color: '#F59E0B' },
                             { node: 'Broadcast', detail: nowPlaying.isPlaying ? 'LIVE' : 'Idle', color: '#10B981' },
-                            { node: 'HTTP Listeners', detail: `${listeners.length} tuned in`, color: accentColor },
+                            { node: 'HTTP Listeners', detail: `${(listeners || []).length} tuned in`, color: accentColor },
                         ].map((n, i) => (
                             <div key={n.node}>
                                 <div className="flex items-start gap-2 py-1.5">
@@ -69,7 +69,7 @@ export default function NetworkPage() {
                     </div>
 
                     {/* Active listener list */}
-                    {listeners.length > 0 && (
+                    {Array.isArray(listeners) && listeners.length > 0 && (
                         <div className="rounded-2xl p-4"
                             style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                             <p className="text-[9px] font-mono uppercase tracking-widest text-white/25 mb-2">Active Listeners</p>
@@ -78,7 +78,7 @@ export default function NetworkPage() {
                                     <div key={l.id} className="flex items-center gap-2">
                                         <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: accentColor }} />
                                         <span className="text-[10px] font-mono text-white/50 truncate">
-                                            {l.name ?? l.id.slice(0, 12)}
+                                            {l.name ?? l.id?.slice(0, 12) ?? 'Anonymous'}
                                         </span>
                                     </div>
                                 ))}

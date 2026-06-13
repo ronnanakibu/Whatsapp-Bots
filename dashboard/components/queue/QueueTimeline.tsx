@@ -13,7 +13,7 @@ interface Props { compact?: boolean }
 
 export default function QueueTimeline({ compact }: Props) {
     const { queue, nowPlaying, accentColor } = useDashboardStore()
-    const displayQueue = compact ? queue.slice(0, 5) : queue
+    const displayQueue = compact ? (queue || []).slice(0, 5) : (queue || [])
 
     return (
         <div className="flex flex-col h-full rounded-2xl overflow-hidden"
@@ -24,10 +24,10 @@ export default function QueueTimeline({ compact }: Props) {
                     <span className="text-[10px] font-mono uppercase tracking-widest text-white/30">Queue</span>
                     <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
                         style={{ background: `${accentColor}15`, color: accentColor }}>
-                        {queue.length}
+                        {Array.isArray(queue) ? queue.length : 0}
                     </span>
                 </div>
-                {compact && queue.length > 5 && (
+                {compact && Array.isArray(queue) && queue.length > 5 && (
                     <span className="text-[10px] text-white/20">+{queue.length - 5} more</span>
                 )}
             </div>

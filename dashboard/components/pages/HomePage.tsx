@@ -49,7 +49,7 @@ function SystemHealthBar({ label, value, color }: { label: string; value: number
 export default function HomePage() {
     const { metrics, nowPlaying, accentColor, connected, queue, events } = useDashboardStore()
 
-    const recentEvents = events.slice(0, 5)
+    const recentEvents = Array.isArray(events) ? events.slice(0, 5) : []
 
     return (
         <div className="h-full overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
@@ -134,11 +134,11 @@ export default function HomePage() {
                             </div>
                             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
                                 style={{ background: `${accentColor}15`, color: accentColor }}>
-                                {events.length}
+                                {Array.isArray(events) ? events.length : 0}
                             </span>
                         </div>
                         <div className="p-2 space-y-0.5 max-h-48 overflow-y-auto">
-                            {recentEvents.length === 0 ? (
+                            {(!recentEvents || recentEvents.length === 0) ? (
                                 <div className="flex items-center justify-center h-16">
                                     <span className="text-[11px] text-white/20">Waiting for events...</span>
                                 </div>
@@ -146,7 +146,7 @@ export default function HomePage() {
                                 <div key={event.id} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.02] transition-colors">
                                     <span className="text-[9px] font-mono px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5"
                                         style={getEventStyle(event.type)}>
-                                        {event.type.toUpperCase().slice(0, 3)}
+                                        {event.type ? event.type.toUpperCase().slice(0, 3) : 'EVT'}
                                     </span>
                                     <p className="text-[11px] text-white/60 leading-relaxed flex-1">{event.message}</p>
                                 </div>

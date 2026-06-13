@@ -24,12 +24,12 @@ export default function ListenerNetwork() {
     // Place nodes in a semi-circle around broadcast node
     useEffect(() => {
         const cx = 280, cy = 120
-        const r = 70
+        const r = 70;
 
-        listeners.forEach((l, i) => {
-            if (!nodeMap.current.has(l.id)) {
+        (listeners || []).forEach((l, i) => {
+            if (l && l.id && !nodeMap.current.has(l.id)) {
                 // semi circle on the right side
-                const angle = -Math.PI/2 + (i / Math.max(listeners.length - 1 || 1, 1)) * Math.PI
+                const angle = -Math.PI/2 + (i / Math.max((listeners || []).length - 1 || 1, 1)) * Math.PI
                 nodeMap.current.set(l.id, {
                     id: l.id,
                     x: cx + Math.cos(angle) * r,
@@ -42,7 +42,7 @@ export default function ListenerNetwork() {
 
         // Cleanup removed listeners
         for (const id of nodeMap.current.keys()) {
-            if (!listeners.find((l) => l.id === id)) {
+            if (!(listeners || []).find((l) => l && l.id === id)) {
                 nodeMap.current.delete(id)
             }
         }
@@ -181,7 +181,7 @@ export default function ListenerNetwork() {
                                     🎧
                                 </text>
                                 <text x={dot.x} y={dot.y + 14} textAnchor="middle" fontSize={5.5} fill="rgba(148,163,184,0.7)" className="font-mono select-none">
-                                    {dot.name.slice(0, 8)}
+                                    {dot.name ? dot.name.slice(0, 8) : 'Anon'}
                                 </text>
                             </motion.g>
                         ))}
@@ -191,7 +191,7 @@ export default function ListenerNetwork() {
             </div>
 
             {/* Listener list */}
-            {listeners.length > 0 && (
+            {Array.isArray(listeners) && listeners.length > 0 && (
                 <div className="px-3 pb-3 space-y-1 max-h-24 overflow-y-auto border-t border-white/[0.04] pt-2">
                     <AnimatePresence>
                         {listeners.map((l) => (
@@ -205,7 +205,7 @@ export default function ListenerNetwork() {
                                 <div className="flex items-center gap-1.5">
                                     <span className="text-[10px]">🎧</span>
                                     <span className="text-[10px] text-white/70 font-mono">
-                                        {l.name ?? l.id.slice(0, 12)}
+                                        {l.name ?? l.id?.slice(0, 12) ?? 'Anonymous'}
                                     </span>
                                 </div>
                                 <span className="text-[9px] font-mono text-muted-foreground">

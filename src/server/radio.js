@@ -346,7 +346,7 @@ function broadcastSSE(event, data, correlationId = null) {
     }
 
     const dataToSend = (typeof data === 'object' && data !== null)
-        ? { ...data, correlationId: activeCorrelationId }
+        ? (Array.isArray(data) ? data : { ...data, correlationId: activeCorrelationId })
         : data
 
     const payload = `id: ${eventId}\nevent: ${event}\ndata: ${JSON.stringify(dataToSend)}\n\n`
@@ -1821,7 +1821,7 @@ export function startRadioServer() {
                 const missed = sseHistory.filter(e => e.id > lastId)
                 for (const e of missed) {
                     const dataToSend = (typeof e.data === 'object' && e.data !== null)
-                        ? { ...e.data, correlationId: e.correlationId }
+                        ? (Array.isArray(e.data) ? e.data : { ...e.data, correlationId: e.correlationId })
                         : e.data
                     res.write(`id: ${e.id}\nevent: ${e.event}\ndata: ${JSON.stringify(dataToSend)}\n\n`)
                 }

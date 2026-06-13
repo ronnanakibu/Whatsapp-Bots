@@ -32,11 +32,11 @@ export default function SearchPage() {
         : PAGES
 
     const filteredTracks = query
-        ? queue.filter(t => t.title?.toLowerCase().includes(query.toLowerCase())).slice(0, 4)
+        ? (queue || []).filter(t => t.title?.toLowerCase().includes(query.toLowerCase())).slice(0, 4)
         : []
 
     const filteredEvents = query
-        ? events.filter(e => e.message.toLowerCase().includes(query.toLowerCase())).slice(0, 3)
+        ? (events || []).filter(e => e.message.toLowerCase().includes(query.toLowerCase())).slice(0, 3)
         : []
 
     const totalItems = filteredPages.length + filteredTracks.length + filteredEvents.length
@@ -145,7 +145,7 @@ export default function SearchPage() {
                                     style={{ background: 'rgba(255,255,255,0.02)' }}>
                                     <span className="text-[9px] font-mono px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5"
                                         style={{ background: 'rgba(59,130,246,0.12)', color: '#60A5FA' }}>
-                                        {event.type.toUpperCase().slice(0, 3)}
+                                        {event.type ? event.type.toUpperCase().slice(0, 3) : 'EVT'}
                                     </span>
                                     <p className="text-xs text-white/50">{event.message}</p>
                                 </div>
