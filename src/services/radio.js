@@ -10,7 +10,7 @@ import path from 'path'
 import https from 'https'
 import http from 'http'
 import { botLogger } from '../utils/logger.js'
-import { getYtdlpPath, ytdlpGetAudioUrl, ytdlpStream } from './ytdlp.js'
+import { getYtdlpPath, ytdlpGetAudioUrl, ytdlpStream, getCookieArgs } from './ytdlp.js'
 import { db } from './db.js'
 
 // Cek apakah filter 'afifo' didukung oleh ffmpeg (karena sudah dihapus sejak versi FFmpeg awal 2024)
@@ -802,12 +802,87 @@ class RadioService extends EventEmitter {
                                 ? tempYtProc.ytdlpLogs.join('\n')
                                 : 'Tidak ada output dari stderr. Kemungkinan masalah alokasi memory kontainer atau IP Hard-ban.'
 
-                            botLogger.warn('radio', `[yt-dlp] Gagal memproduksi data stream.\n====== DETAIL YT-DLP ERROR ======\n${detailError}\n=================================`)
+                            botLogger.warn('radio', `[yt-dlp] Gagal memproduksi data stream (Pipe error).\n====== DETAIL YT-DLP ERROR ======\n${detailError}\n=================================`)
                             tempYtProc.kill()
+
+                            // ── Strategy 1.1: Hugging Face space downloader fallback ──
+                            const hfUrl = process.env.HF_API_URL
+                            if (hfUrl) {
+                                botLogger.info('radio', `[HF-fallback] Meminta stream audio dari Hugging Face downloader...`)
+                                try {
+                                    const response = await fetch(`${hfUrl.replace(/\/$/, '')}/download`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ url: track.url, format: 'audio' })
+                                    })
+                                    if (response.ok) {
+                                        const arrayBuffer = await response.arrayBuffer()
+                                        const buffer = Buffer.from(arrayBuffer)
+                                        const tempFilePath = path.resolve(`./storage/media/temp/radio_${Date.now()}.mp3`)
+                                        if (!fs.existsSync(path.dirname(tempFilePath))) {
+                                            fs.mkdirSync(path.dirname(tempFilePath), { recursive: true })
+                                        }
+                                        fs.writeFileSync(tempFilePath, buffer)
+                                        inputStream = tempFilePath
+                                        streamType = 'hf-downloader-file'
+                                        botLogger.info('radio', `[HF-fallback] Sukses download → streaming dari local file: ${tempFilePath}`)
+                                    } else {
+                                        botLogger.warn('radio', `[HF-fallback] Server HF mengembalikan HTTP ${response.status}`)
+                                    }
+                                } catch (hfErr) {
+                                    botLogger.warn('radio', `[HF-fallback] Gagal: ${hfErr.message}`)
+                                }
+                            }
+
+                            // ── Strategy 1.2: Local yt-dlp download full file fallback (jika HF gagal/tidak ada) ──
+                            if (!inputStream) {
+                                botLogger.info('radio', `[Local-download-fallback] Mencoba download full file via yt-dlp...`)
+                                try {
+                                    const tempFilePath = path.resolve(`./storage/media/temp/radio_${Date.now()}.mp3`)
+                                    if (!fs.existsSync(path.dirname(tempFilePath))) {
+                                        fs.mkdirSync(path.dirname(tempFilePath), { recursive: true })
+                                    }
+                                    
+                                    const dlArgs = [
+                                        '--no-playlist',
+                                        '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best',
+                                        '--extract-audio',
+                                        '--audio-format', 'mp3',
+                                        '--audio-quality', '128K',
+                                        ...getCookieArgs(),
+                                        '-o', tempFilePath,
+                                        track.url
+                                    ]
+                                    
+                                    const ytdlpPath = getYtdlpPath()
+                                    await new Promise((resolveDl, rejectDl) => {
+                                        const dlProc = spawn(ytdlpPath, dlArgs)
+                                        let dlStderr = ''
+                                        dlProc.stderr.on('data', d => dlStderr += d.toString())
+                                        dlProc.on('close', code => {
+                                            if (code === 0 && fs.existsSync(tempFilePath)) {
+                                                resolveDl()
+                                            } else {
+                                                rejectDl(new Error(`Exit code ${code}: ${dlStderr.slice(0, 150)}`))
+                                            }
+                                        })
+                                        dlProc.on('error', rejectDl)
+                                        setTimeout(() => {
+                                            dlProc.kill()
+                                            rejectDl(new Error('Download timeout'))
+                                        }, 60000)
+                                    })
+                                    
+                                    inputStream = tempFilePath
+                                    streamType = 'local-download-file'
+                                    botLogger.info('radio', `[Local-download-fallback] Sukses download → streaming dari local file: ${tempFilePath}`)
+                                } catch (dlErr) {
+                                    botLogger.warn('radio', `[Local-download-fallback] Gagal: ${dlErr.message}`)
+                                }
+                            }
                         }
                     } catch (ytErr) {
                         botLogger.warn('radio', `[yt-dlp] Gagal: ${ytErr.message}`)
-                        botLogger.info('radio', `[yt-dlp] Falling back to play-dl stream...`)
                         if (ytProc) { ytProc.kill(); ytProc = null }
                     }
                 }
@@ -950,6 +1025,17 @@ class RadioService extends EventEmitter {
             }
         }).finally(() => {
             clearTimeout(this.#playTimeout)
+            // Bersihkan file streaming lokal (jika ada)
+            if (typeof inputStream === 'string' && (inputStream.includes('radio_') || inputStream.includes('radio_temp'))) {
+                try {
+                    if (fs.existsSync(inputStream)) {
+                        fs.unlinkSync(inputStream)
+                        botLogger.info('radio', `Membersihkan file streaming lokal: ${inputStream}`)
+                    }
+                } catch (e) {
+                    botLogger.warn('radio', `Gagal menghapus file stream lokal: ${e.message}`)
+                }
+            }
         })
     }
 

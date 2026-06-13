@@ -166,7 +166,7 @@ function downloadFile(url, dest) {
 // COOKIES HELPER
 // ─────────────────────────────────────────────
 
-function getCookieArgs() {
+export function getCookieArgs() {
     // 1. Check YOUTUBE_COOKIE env var (header string)
     const envCookie = process.env.YOUTUBE_COOKIE
     if (envCookie && envCookie.length > 20 && !envCookie.startsWith('[')) {
