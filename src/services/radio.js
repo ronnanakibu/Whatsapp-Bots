@@ -1101,7 +1101,7 @@ class RadioService extends EventEmitter {
     }
 
     addClient(res, userJid = null) {
-        if (userJid) {
+        if (userJid && userJid !== 'anonymous') {
             for (const client of this.#clients) {
                 if (client.userJid === userJid) {
                     botLogger.info('radio', `Closing duplicate stream connection for JID: ${userJid}`)
@@ -1113,6 +1113,8 @@ class RadioService extends EventEmitter {
                 }
             }
             res.userJid = userJid
+        } else if (userJid === 'anonymous') {
+            res.userJid = 'anonymous'
         }
         this.#clients.add(res)
         this.emit('listener:join', this.#clients.size)
