@@ -21,6 +21,26 @@ This file documents the key milestones, architectural design patterns, and criti
   * Decoupled status polling by creating specialized cache-friendly endpoints under `/api/v2/music/...`.
   * Implemented client-presence tracking on `/stream?jid=...` to measure listener engagement, distribute Experience Points (XP) dynamically, and evaluate achievements.
 
+### v5.3.1 — Interactive Help & Categorized Menu Overhaul
+* **Achievement**: Overhauled the help/menu commands system to support an interactive, categorized multi-menu dashboard.
+* **Technical Details**:
+  * Redesigned `.help` / `.menu` / `.h` layout with dynamic process uptime tracking, WhatsApp group participation caching (with background pre-fetching), version indexing, and dashboard links.
+  * Implemented specific sub-menu triggers (`.aimenu`, `.toolsmenu`, `.ownermenu`, etc.) and category routing inside `help.js` to return only commands belonging to that specific category.
+
+### v5.3.2 — Radio Queue SSE Sync & Stream URL Refinement
+* **Achievement**: Synchronized active playlist changes with the live dashboard instantly upon song removal, and resolved generic host placeholders.
+* **Technical Details**:
+  * Emitted standard queue broadcast triggers from the internal track deletion pipeline (`removeFromQueue`) to update frontend clients dynamically.
+  * Replaced the template host placeholders in Discord/WhatsApp listener status cards with static server stream domain details.
+
+### v5.3.3 — Android App Integration & Automation Scripts
+* **Achievement**: Developed the core Jetpack Compose Android client from scratch (v6.0.0 android client) and integrated NPM-based terminal commands to automate Android compilation, local installation, and ADB runner execution.
+* **Technical Details**:
+  * Programmed Gradle automation scripts (`android:build`, `android:install`, `android:run`) in the root `package.json`.
+  * The `android:run` command builds, installs, and launches the app directly on the connected target device using ADB shell intent actions (`adb shell am start -n com.ronnbot.radio/com.ronnbot.radio.MainActivity`).
+  * Structured offline-first Room database, retroactive SSE/Retrofit sync, ExoPlayer foreground playback engine, and high-fidelity sliding Spotify-style Wrapped storyboards.
+
+
 ### v4.0.4 — Real-time Context & Agentic Command Router
 * **Achievement**: Enabled temporal query awareness and natural language command execution via an agentic routing system and a keyword pre-router.
 * **Technical Details**:

@@ -20,7 +20,7 @@ export default {
             `📻 *Radio Status*\n\n` +
             `👥 Pendengar aktif: *${count}*\n` +
             `▶️ Status: ${isPlaying ? '*ON AIR* 🔴' : '*OFF* ⚫'}\n` +
-            `🔗 Stream: \`http://[host]:${port}/stream\`\n\n` +
+            `🔗 Stream: \`http://ap2.nzb.zelpstore.id:${port}/stream\`\n\n` +
             `_Buka URL stream di media player (VLC, browser, dll)_`
         )
     }

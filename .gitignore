@@ -32,3 +32,5 @@ s r c / a s s e t s / f o n t s / * . t t f
 # Next.js build outputs
 src/app/dashboard/.next/
 src/app/dashboard/out/
+
+android/

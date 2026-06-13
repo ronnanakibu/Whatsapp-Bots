@@ -632,6 +632,7 @@ class RadioService extends EventEmitter {
     removeFromQueue(index) {
         if (index < 0 || index >= this.#queue.length) return null
         const [removed] = this.#queue.splice(index, 1)
+        this.emit('queue:clear')
         return removed
     }
 

@@ -306,7 +306,7 @@ export function startDiscordBot() {
                 `**📻 Radio Status**\n\n` +
                 `👥 Pendengar aktif: **${count}**\n` +
                 `▶️ Status: ${isPlaying ? '**ON AIR** 🔴' : '**OFF** ⚫'}\n` +
-                `🔗 Stream: \`http://[host]:${port}/stream\`\n\n` +
+                `🔗 Stream: \`http://ap2.nzb.zelpstore.id:${port}/stream\`\n\n` +
                 `_Gunakan URL stream di media player favoritmu!_`
             )
         }
