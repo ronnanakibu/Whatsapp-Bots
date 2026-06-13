@@ -688,7 +688,7 @@ async function geocodeCity(city) {
 }
 
 export async function getDetailedWeatherReportGoogle(city) {
-    const key = process.env.GOOGLE_WEATHER_KEY || 'AIzaSyC3qpjP1SU4vncYUULZZrLXhDr7i2AZ8NA'
+    const key = process.env.GOOGLE_WEATHER_KEY
     
     // Geocode to get coordinates
     const coords = await geocodeCity(city)
