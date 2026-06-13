@@ -138,6 +138,24 @@ db.exec(`
         FOREIGN KEY(favorite_song_id) REFERENCES songs(song_id)
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_wrapped_year ON wrapped(user_jid, year);
+
+    CREATE TABLE IF NOT EXISTS playlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_jid TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_lookup ON playlists(user_jid, name COLLATE NOCASE);
+
+    CREATE TABLE IF NOT EXISTS playlist_songs (
+        playlist_id INTEGER NOT NULL,
+        song_id TEXT NOT NULL,
+        added_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY(playlist_id, song_id),
+        FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+        FOREIGN KEY(song_id) REFERENCES songs(song_id) ON DELETE CASCADE
+    );
 `)
 
 // 2. Safe Migration untuk database lama

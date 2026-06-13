@@ -296,10 +296,13 @@ class MediaService {
 
         fs.writeFileSync(inputPath, buffer)
         try {
-            await execPromise(`rembg i "${inputPath}" "${outputPath}"`)
+            await execPromise(`python -m rembg i "${inputPath}" "${outputPath}"`)
             return fs.readFileSync(outputPath)
         } catch (err) {
-            logger.error('❌ [Pterodactyl Rembg Error]:', err.message)
+            logger.error('❌ [Rembg Error]:', err.message)
+            if (err.message.includes('No module named rembg') || err.message.includes('not found') || err.message.includes('not recognized')) {
+                throw new Error('Modul python "rembg" tidak ditemukan di sistem.\nUntuk menggunakan fitur --rmbg, silakan jalankan command "pip install rembg" terlebih dahulu.')
+            }
             throw new Error('Gagal memproses hulu rmbg statis.')
         } finally {
             if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
@@ -521,7 +524,15 @@ class MediaService {
                 await execPromise(`ffmpeg -i ${inputPath} -vf "fps=25" "${framesInDir}/%04d.png"`)
 
                 logger.info('🔥 [Siksa CPU] Menembak modul "rembg p" untuk memproses massal seluruh frame...')
-                await execPromise(`rembg p "${framesInDir}" "${framesOutDir}"`)
+                try {
+                    await execPromise(`python -m rembg p "${framesInDir}" "${framesOutDir}"`)
+                } catch (err) {
+                    logger.error('❌ [Rembg Error]:', err.message)
+                    if (err.message.includes('No module named rembg') || err.message.includes('not found') || err.message.includes('not recognized')) {
+                        throw new Error('Modul python "rembg" tidak ditemukan di sistem.\nUntuk menggunakan fitur --rmbg, silakan jalankan command "pip install rembg" terlebih dahulu.')
+                    }
+                    throw new Error('Gagal mengeksekusi siksaan rembg animasi.')
+                }
 
                 // Alihkan target input FFmpeg dari file video mentah ke folder sequence gambar transparan
                 ffmpegInputArgs = `-framerate 25 -i "${framesOutDir}/%04d.png"`

@@ -67,10 +67,12 @@ export async function handleIncomingMessage(sock, { messages }) {
         // ─────────────────────────────────────────────
 
         const rawBotId = sock.user?.id ?? ''
-        const quotedMsgId = messageContent?.extendedTextMessage?.contextInfo?.stanzaId ?? null
+        const msgTypeObj = messageContent[type]
+        const contextInfo = msgTypeObj?.contextInfo || messageContent?.extendedTextMessage?.contextInfo
+        const quotedMsgId = contextInfo?.stanzaId ?? null
         const isReplyToBot = seamlessTracker.isReplyToBot(quotedMsgId)
 
-        const mentionedJids = messageContent?.extendedTextMessage?.contextInfo?.mentionedJid ?? []
+        const mentionedJids = contextInfo?.mentionedJid ?? []
 
         // Collect all possible bot JID numbers (phone number, LID number, etc.)
         const botNumbers = new Set([
@@ -151,6 +153,7 @@ export async function handleIncomingMessage(sock, { messages }) {
             reply,
             react,
             downloadMedia,
+            mentionedJids,
             replyMedia: async (content, mediaType, options = {}) => {
                 return sock.sendMessage(from, { [mediaType]: content, ...options }, { quoted: msg })
             }
@@ -268,31 +271,15 @@ export async function handleIncomingMessage(sock, { messages }) {
         }
 
         // ─────────────────────────────────────────────
-        // ROUTE 2: SEAMLESS AI
+        // ROUTE 2: ROUTE TO CENTRAL AI FLOW
         // ─────────────────────────────────────────────
 
-        if (isReplyToBot && body.trim()) {
+        if (isReplyToBot && (body.trim() || type === 'imageMessage')) {
             if (!memoryService.isAiEnabled(from)) return
 
             botLogger.aiTrigger('seamless', body)
-            await react('🤔')
-            const startMs = Date.now()
-
-            try {
-                const isDirectRouted = await tryDirectRoute(body, ctx)
-                if (isDirectRouted) {
-                    await react('✅')
-                    return
-                }
-
-                const result = await aiService.chat(from, body)
-                botLogger.ai(result.provider, result.model, from, Date.now() - startMs)
-                const executed = await processAiResponse(ctx, result)
-                if (!executed) await react('✅')
-            } catch (err) {
-                await react('❌')
-                botLogger.err('seamless', err)
-            }
+            const { executeAiFlow } = await import('../utils/aiRouter.js')
+            await executeAiFlow(ctx, body)
             return
         }
 
@@ -300,28 +287,12 @@ export async function handleIncomingMessage(sock, { messages }) {
         // ROUTE 3: MENTION DI GRUP
         // ─────────────────────────────────────────────
 
-        if (isMentionedInGroup && bodyWithoutMention) {
+        if (isMentionedInGroup && (bodyWithoutMention || type === 'imageMessage')) {
             if (!memoryService.isAiEnabled(from)) return
 
             botLogger.aiTrigger('mention', bodyWithoutMention)
-            await react('🤔')
-            const startMs = Date.now()
-
-            try {
-                const isDirectRouted = await tryDirectRoute(bodyWithoutMention, ctx)
-                if (isDirectRouted) {
-                    await react('✅')
-                    return
-                }
-
-                const result = await aiService.chat(from, bodyWithoutMention)
-                botLogger.ai(result.provider, result.model, from, Date.now() - startMs)
-                const executed = await processAiResponse(ctx, result)
-                if (!executed) await react('✅')
-            } catch (err) {
-                await react('❌')
-                botLogger.err('mention', err)
-            }
+            const { executeAiFlow } = await import('../utils/aiRouter.js')
+            await executeAiFlow(ctx, bodyWithoutMention)
             return
         }
 
@@ -342,24 +313,8 @@ export async function handleIncomingMessage(sock, { messages }) {
             if (!memoryService.isAiEnabled(from)) return
 
             botLogger.aiTrigger('dm', body)
-            await react('🤔')
-            const startMs = Date.now()
-
-            try {
-                const isDirectRouted = await tryDirectRoute(body, ctx)
-                if (isDirectRouted) {
-                    await react('✅')
-                    return
-                }
-
-                const result = await aiService.chat(from, body)
-                botLogger.ai(result.provider, result.model, from, Date.now() - startMs)
-                const executed = await processAiResponse(ctx, result)
-                if (!executed) await react('✅')
-            } catch (err) {
-                await react('❌')
-                botLogger.err('dm', err)
-            }
+            const { executeAiFlow } = await import('../utils/aiRouter.js')
+            await executeAiFlow(ctx, body)
             return
         }
 

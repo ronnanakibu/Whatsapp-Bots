@@ -147,10 +147,6 @@ async function nvidiaChat(chatId, userMessage, retryCount = 0) {
         const reply = res.choices[0]?.message?.content?.trim()
         if (!reply) throw new Error('Empty response from NVIDIA')
 
-        // Simpan ke memory
-        memoryService.addMessage(chatId, 'user', userMessage)
-        memoryService.addMessage(chatId, 'assistant', reply)
-
         return { text: reply, model, provider: 'nvidia' }
 
     } catch (err) {
@@ -198,10 +194,6 @@ async function groqChat(chatId, userMessage, retryCount = 0) {
 
         const reply = res.choices[0]?.message?.content?.trim()
         if (!reply) throw new Error('Empty response from Groq')
-
-        // Simpan ke memory
-        memoryService.addMessage(chatId, 'user', userMessage)
-        memoryService.addMessage(chatId, 'assistant', reply)
 
         return { text: reply, model, provider: 'groq' }
 
@@ -254,9 +246,6 @@ async function geminiChat(chatId, userMessage, retryCount = 0) {
         const result = await chat.sendMessage(userMessage)
         const reply = result.response.text()?.trim()
         if (!reply) throw new Error('Empty response from Gemini')
-
-        memoryService.addMessage(chatId, 'user', userMessage)
-        memoryService.addMessage(chatId, 'assistant', reply)
 
         return { text: reply, model: modelName, provider: 'gemini' }
 
@@ -446,9 +435,33 @@ Sumber: [sebutkan sumber/konteks singkat]`
 // MAIN CHAT — Auto fallback NVIDIA → Groq → Gemini
 // ─────────────────────────────────────────────
 
+function cleanMemoryMessage(text) {
+    if (!text) return text
+    if (text.includes('{') && text.includes('}')) {
+        let cleanText = text
+            .replace(/^```json\s*/i, '')
+            .replace(/^```\s*/, '')
+            .replace(/```\s*$/, '')
+            .trim()
+        try {
+            const startIdx = cleanText.indexOf('{')
+            const endIdx = cleanText.lastIndexOf('}')
+            if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+                const jsonStr = cleanText.substring(startIdx, endIdx + 1)
+                const parsed = JSON.parse(jsonStr)
+                if (parsed.executeCommand && parsed.command) {
+                    return `[Mengaktifkan fitur ${parsed.command}]`
+                }
+            }
+        } catch (_) {}
+    }
+    return text
+}
+
 async function chat(chatId, userMessage, forcedProvider = null) {
     // Tentukan provider utama (dari parameter, database memori, atau default 'groq')
     let provider = forcedProvider || memoryService.getAiProvider(chatId) || 'groq'
+    let result = null
 
     if (provider === 'nvidia') {
         if (!nvidiaClient) {
@@ -456,7 +469,7 @@ async function chat(chatId, userMessage, forcedProvider = null) {
             provider = 'groq'
         } else {
             try {
-                return await nvidiaChat(chatId, userMessage)
+                result = await nvidiaChat(chatId, userMessage)
             } catch (err) {
                 logger.warn(`[AI] NVIDIA failed (${err.message}), falling back to Groq`)
                 provider = 'groq'
@@ -466,7 +479,7 @@ async function chat(chatId, userMessage, forcedProvider = null) {
 
     if (provider === 'groq') {
         try {
-            return await groqChat(chatId, userMessage)
+            result = await groqChat(chatId, userMessage)
         } catch (err) {
             logger.warn(`[AI] Groq failed (${err.message}), falling back to Gemini`)
             provider = 'gemini'
@@ -475,12 +488,22 @@ async function chat(chatId, userMessage, forcedProvider = null) {
 
     if (provider === 'gemini') {
         try {
-            return await geminiChat(chatId, userMessage)
+            result = await geminiChat(chatId, userMessage)
         } catch (err) {
             logger.error('[AI] Gemini failed:', err.message)
             throw new Error('Semua AI provider sedang sibuk. Coba lagi sebentar.')
         }
     }
+
+    if (result && result.text) {
+        if (!chatId.startsWith('__')) {
+            const cleanText = cleanMemoryMessage(result.text)
+            memoryService.addMessage(chatId, 'user', userMessage)
+            memoryService.addMessage(chatId, 'assistant', cleanText)
+        }
+    }
+
+    return result
 }
 
 // ─────────────────────────────────────────────

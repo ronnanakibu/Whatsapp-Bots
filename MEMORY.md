@@ -57,3 +57,7 @@ This file documents the key milestones, architectural design patterns, and criti
 3. **AI Formatting & Constraint Inconsistency**:
    * *Problem*: Depending solely on LLM prompt constraints to enforce structured JSON outputs is unreliable (especially for smaller models like Llama-3-70b/8b instruct under Groq), occasionally resulting in conversational text instead of command executions.
    * *Solution*: Deploy a keyword/regex-based pre-routing layer (`tryDirectRoute`) before the AI engine. If a message contains explicit keywords combined with the right context (e.g. "stiker" when replying to media), bypass the AI to execute the command directly. If it fails to match, fall back to agentic AI routing.
+
+4. **Mobile App Stream Sessions & Loop Prevention**:
+   * *Problem*: If external players or mobile apps connect to the `/stream` endpoint without a unique query JID, they get classified under the default `'anonymous'` JID, causing collision-based session termination on other connections (like the Discord bot's local stream connection). Additionally, enqueuing the `/stream` URL itself via song request API calls triggers self-referential download loops, leading to 100% CPU lockups and severe audio stuttering/choppiness.
+   * *Solution*: Append a dedicated JID to client streams (`/stream?jid=android-app-client@s.whatsapp.net`) to separate mobile app connections from other clients. Bypassed song requesting logic on the mobile client when listening directly to the broadcast stream.

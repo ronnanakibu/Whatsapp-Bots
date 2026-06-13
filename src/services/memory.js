@@ -124,6 +124,7 @@ class MemoryService {
     // ─────────────────────────────────────────────
 
     addMessage(chatId, role, content, topic = null) {
+        if (chatId.startsWith('__')) return
         // Kalau topic tidak di-pass, pakai topic aktif chatId
         const resolvedTopic = topic ?? this.getActiveTopic(chatId)
         const key = this.#cacheKey(chatId, resolvedTopic)
@@ -159,16 +160,19 @@ class MemoryService {
     }
 
     getHistory(chatId, topic = null) {
+        if (chatId.startsWith('__')) return []
         const resolvedTopic = topic ?? this.getActiveTopic(chatId)
         const key = this.#cacheKey(chatId, resolvedTopic)
 
         if (!this.#cache.has(key)) {
             const rows = this.#db.prepare(`
-                SELECT role, content
-                FROM chat_history
-                WHERE chat_id = ? AND topic = ?
-                ORDER BY created_at ASC
-                LIMIT ?
+                SELECT role, content FROM (
+                    SELECT id, role, content
+                    FROM chat_history
+                    WHERE chat_id = ? AND topic = ?
+                    ORDER BY id DESC
+                    LIMIT ?
+                ) ORDER BY id ASC
             `).all(chatId, resolvedTopic, MAX_HISTORY)
 
             this.#cache.set(key, rows.map(r => ({ role: r.role, content: r.content })))

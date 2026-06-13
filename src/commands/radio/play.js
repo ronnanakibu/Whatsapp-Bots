@@ -38,7 +38,7 @@ export default {
 
         if (isBatch) {
             await reply(`_Mencari ${queries.length} lagu..._`)
-            const results = await radioService.searchBatch(queries, ctx.pushName)
+            const results = await radioService.searchBatch(queries, sender, ctx.pushName)
 
             let successCount = 0
             let text = `🎵 *Batch Request Result:*\n\n`
@@ -57,7 +57,7 @@ export default {
                 }
             }
 
-            text += `\n📋 Queue: ${radioService.queue.length} lagu`
+            text += `\n📋 Antrean: ${radioService.queue.length} lagu`
 
             if (!notifiedUsers.has(sender)) {
                 notifiedUsers.add(sender)
@@ -74,7 +74,7 @@ export default {
         } else {
             // Single request
             try {
-                const track = await radioService.search(queries[0], ctx.pushName)
+                const track = await radioService.search(queries[0], sender, ctx.pushName)
                 radioService.addToQueue(track)
 
                 let linkMsg = ''
@@ -88,7 +88,7 @@ export default {
                     `✅ *Ditambahkan ke queue!*\n\n` +
                     `🎵 *${track.title}*\n` +
                     `⏱️ Durasi: ${track.durationFormatted}\n` +
-                    `📋 Posisi: #${radioService.queue.length}${linkMsg}`
+                    `📋 Posisi: #${radioService.queue.length + (radioService.currentTrack ? 1 : 0)}${linkMsg}`
                 )
                 await react('✅')
 

@@ -1,5 +1,6 @@
 import { commands } from '../core/loader.js'
 import { botLogger } from './logger.js'
+import { aiService } from '../services/ai.js'
 
 // ─────────────────────────────────────────────
 // KEYWORD PRE-ROUTER
@@ -203,4 +204,81 @@ export async function processAiResponse(ctx, aiResponseResult) {
         seamlessTracker.track(sent.key.id)
     }
     return false
+}
+
+export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
+    const { chatId, msg, reply, react, downloadMedia, type, messageContent } = ctx
+
+    // 1. Detect image in direct or quoted message
+    const directImage = msg.message?.imageMessage ?? null
+
+    const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
+    const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']
+    let quotedInner = quotedMsg
+    if (quotedMsg) {
+        const qType = Object.keys(quotedMsg)[0]
+        if (WRAPPERS.includes(qType)) {
+            quotedInner = quotedMsg[qType]?.message ?? quotedMsg
+        }
+    }
+    const quotedImage = quotedInner?.imageMessage ?? null
+
+    const hasDirectImage = !!directImage
+    const hasQuotedImage = !!quotedImage
+
+    if (hasDirectImage || hasQuotedImage) {
+        await react('👁️')
+        try {
+            const targetMsg = hasDirectImage ? msg : { message: quotedInner, key: msg.key }
+            const buffer = await downloadMedia(targetMsg)
+            if (!buffer) {
+                throw new Error('Gagal download gambar untuk analisa vision.')
+            }
+
+            const cleanPrompt = promptText?.trim() || 'Deskripsikan gambar ini secara detail dan lengkap. Sebutkan semua yang kamu lihat: objek, teks, warna, suasana, dll.'
+            
+            // Vision analysis using Gemini
+            const startMs = Date.now()
+            const result = await aiService.analyzeImage(buffer, 'image/jpeg', cleanPrompt)
+            botLogger.ai(result.provider, result.model, chatId, Date.now() - startMs)
+
+            // Save to memory so subsequent chat turns have context about this image
+            if (!chatId.startsWith('__')) {
+                const { memoryService } = await import('../services/memory.js')
+                memoryService.addMessage(chatId, 'user', `[Melihat Gambar] ${cleanPrompt}`)
+                memoryService.addMessage(chatId, 'assistant', result.text)
+            }
+
+            await reply(result.text)
+            await react('✅')
+            return true
+        } catch (err) {
+            await react('❌')
+            botLogger.err('vision', err)
+            await reply(`❌ Gagal menganalisa gambar: ${err.message}`)
+            return false
+        }
+    }
+
+    // Normal Text Chat
+    await react('🤔')
+    const startMs = Date.now()
+    try {
+        const isDirectRouted = await tryDirectRoute(promptText, ctx)
+        if (isDirectRouted) {
+            await react('✅')
+            return true
+        }
+
+        const result = await aiService.chat(chatId, promptText, forcedProvider)
+        botLogger.ai(result.provider, result.model, chatId, Date.now() - startMs)
+        const executed = await processAiResponse(ctx, result)
+        if (!executed) await react('✅')
+        return true
+    } catch (err) {
+        await react('❌')
+        botLogger.err('aiChat', err)
+        await reply(`Maaf, AI lagi error:\n${err.message}`)
+        return false
+    }
 }

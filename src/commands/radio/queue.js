@@ -50,7 +50,7 @@ export default {
             const removedTracks = []
             for (const index of uniqueIndices) {
                 // index - 1 karena urutan user mulai dari 1, sedangkan array JS mulai dari 0
-                const removed = queue.splice(index - 1, 1)[0]
+                const removed = radioService.removeFromQueue(index - 1)
                 if (removed) {
                     removedTracks.push(removed.title)
                 }

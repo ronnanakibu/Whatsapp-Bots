@@ -416,13 +416,14 @@ export function dbUnlockAchievement(userJid, achievementId) {
 // TRACK MODEL
 // ─────────────────────────────────────────────
 
-class Track {
-    constructor({ title, url, duration, thumbnail, requestedBy, source, songId, artist }) {
+export class Track {
+    constructor({ title, url, duration, thumbnail, requestedBy, source, songId, artist, requestedByJid }) {
         this.title = title
         this.url = url
         this.duration = duration
         this.thumbnail = thumbnail
         this.requestedBy = requestedBy
+        this.requestedByJid = requestedByJid || null
         this.source = source || 'unknown' // 'youtube' | 'soundcloud' | 'unknown'
         this.addedAt = Date.now()
         this.songId = songId || getSongId(url, this.source)
@@ -472,17 +473,18 @@ class RadioService extends EventEmitter {
     // Priority: YouTube (yt-dlp binary) → SoundCloud (play-dl) fallback
     // yt-dlp punya anti-throttle & cipher solver yang lebih canggih dari play-dl
 
-    async search(query, requestedBy) {
+    async search(query, requestedByJid, requestedByName = null) {
         const playdl = await getPlayDl()
         const isUrl = /^https?:\/\//.test(query)
         const isYoutubeUrl = /(?:youtube\.com|youtu\.be)/.test(query)
+        const display = requestedByName || (requestedByJid ? (requestedByJid.includes('@') ? requestedByJid.split('@')[0] : requestedByJid) : 'Unknown')
 
         // ── Strategy 1: YouTube URL langsung → yt-dlp ──
         if (isYoutubeUrl) {
             botLogger.info('radio', `YouTube URL detected, using yt-dlp: ${query}`)
             try {
                 const info = await this.#ytdlpGetInfo(query)
-                return new Track({ ...info, requestedBy, source: 'youtube' })
+                return new Track({ ...info, requestedBy: display, requestedByJid, source: 'youtube' })
             } catch (e) {
                 botLogger.warn('radio', `yt-dlp gagal untuk URL: ${e.message}`)
                 // Fallback ke SoundCloud search via judul
@@ -503,7 +505,8 @@ class RadioService extends EventEmitter {
                         url: ytUrl,
                         duration: v.durationInSec || 0,
                         thumbnail: v.thumbnails?.[0]?.url || null,
-                        requestedBy,
+                        requestedBy: display,
+                        requestedByJid,
                         source: 'youtube'
                     })
                 }
@@ -545,7 +548,8 @@ class RadioService extends EventEmitter {
             title: sc.name + ' (SC)',
             duration: sc.durationInSec,
             thumbnail: sc.thumbnail || null,
-            requestedBy,
+            requestedBy: display,
+            requestedByJid,
             source: 'soundcloud'
         })
     }
@@ -583,11 +587,11 @@ class RadioService extends EventEmitter {
         })
     }
 
-    async searchBatch(queries, requestedBy) {
+    async searchBatch(queries, requestedByJid, requestedByName = null) {
         const results = []
         for (const q of queries) {
             try {
-                results.push({ track: await this.search(q.trim(), requestedBy), error: null })
+                results.push({ track: await this.search(q.trim(), requestedByJid, requestedByName), error: null })
             } catch (err) {
                 results.push({ track: null, error: err.message, query: q })
             }
@@ -609,9 +613,9 @@ class RadioService extends EventEmitter {
 
         // Save request record to DB
         try {
-            const requestedByJid = track.requestedBy
+            const requestedByJid = track.requestedByJid || track.requestedBy
             if (requestedByJid && requestedByJid.includes('@')) {
-                dbEnsureUser(requestedByJid)
+                dbEnsureUser(requestedByJid, track.requestedBy && !track.requestedBy.includes('@') ? track.requestedBy : null)
                 db.prepare(`
                     INSERT INTO requests (user_jid, song_id, status, created_at)
                     VALUES (?, ?, 'pending', unixepoch())
@@ -652,19 +656,20 @@ class RadioService extends EventEmitter {
 
         // Save to song metadata and play history in DB
         dbUpsertSong(this.#currentTrack)
-        dbAddPlayHistory(this.#currentTrack.songId, this.#currentTrack.requestedBy)
+        dbAddPlayHistory(this.#currentTrack.songId, this.#currentTrack.requestedByJid || this.#currentTrack.requestedBy)
 
         // Update request status to played in DB
         try {
-            if (this.#currentTrack.requestedBy && this.#currentTrack.requestedBy.includes('@')) {
+            const requestedByJid = this.#currentTrack.requestedByJid || this.#currentTrack.requestedBy
+            if (requestedByJid && requestedByJid.includes('@')) {
                 db.prepare(`
                     UPDATE requests 
                     SET status = 'played', played_at = unixepoch()
                     WHERE user_jid = ? AND song_id = ? AND status = 'pending'
-                `).run(this.#currentTrack.requestedBy, this.#currentTrack.songId)
+                `).run(requestedByJid, this.#currentTrack.songId)
                 
                 // Evaluate achievements
-                dbEvaluateAchievements(this.#currentTrack.requestedBy)
+                dbEvaluateAchievements(requestedByJid)
             }
         } catch (err) {
             botLogger.error('radio-db', `Failed to update request status: ${err.message}`)
@@ -702,6 +707,9 @@ class RadioService extends EventEmitter {
                 if (track.duration && track.duration > 6) {
                     filters.push(`afade=t=out:st=${track.duration - 3}:d=3`)
                 }
+
+                // Tambahkan audio FIFO buffer filter untuk meminimalkan lag / stuttering
+                filters.push('afifo')
 
                 const filterStr = filters.join(',')
 
@@ -1105,3 +1113,151 @@ process.on('SIGINT', () => radioService.destroy())
 
 export const AVAILABLE_FX = Object.keys(FX_PRESETS)
 export const AVAILABLE_EQ = Object.keys(EQ_PRESETS)
+
+// ─────────────────────────────────────────────
+// FAVORITES DATABASE HELPERS
+// ─────────────────────────────────────────────
+
+export function dbAddFavorite(userJid, songId) {
+    try {
+        dbEnsureUser(userJid)
+        db.prepare(`
+            INSERT INTO favorites (user_jid, song_id, created_at)
+            VALUES (?, ?, unixepoch())
+            ON CONFLICT(user_jid, song_id) DO NOTHING
+        `).run(userJid, songId)
+        return true
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to add favorite: ${err.message}`)
+        return false
+    }
+}
+
+export function dbRemoveFavorite(userJid, songId) {
+    try {
+        db.prepare(`
+            DELETE FROM favorites
+            WHERE user_jid = ? AND song_id = ?
+        `).run(userJid, songId)
+        return true
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to remove favorite: ${err.message}`)
+        return false
+    }
+}
+
+export function dbGetFavorites(userJid) {
+    try {
+        dbEnsureUser(userJid)
+        return db.prepare(`
+            SELECT s.* FROM favorites f
+            JOIN songs s ON f.song_id = s.song_id
+            WHERE f.user_jid = ?
+            ORDER BY f.created_at DESC
+        `).all(userJid)
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to get favorites: ${err.message}`)
+        return []
+    }
+}
+
+export function dbIsFavorite(userJid, songId) {
+    try {
+        const row = db.prepare(`
+            SELECT 1 FROM favorites
+            WHERE user_jid = ? AND song_id = ?
+        `).get(userJid, songId)
+        return !!row
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to check favorite: ${err.message}`)
+        return false
+    }
+}
+
+export function dbCreatePlaylist(userJid, name, description = null) {
+    try {
+        dbEnsureUser(userJid)
+        const existing = db.prepare('SELECT id FROM playlists WHERE user_jid = ? AND name = ? COLLATE NOCASE').get(userJid, name)
+        if (existing) throw new Error(`Playlist "${name}" sudah ada.`)
+        
+        db.prepare('INSERT INTO playlists (user_jid, name, description) VALUES (?, ?, ?)')
+            .run(userJid, name, description)
+        return true
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to create playlist: ${err.message}`)
+        throw err
+    }
+}
+
+export function dbAddSongToPlaylist(userJid, playlistName, songId) {
+    try {
+        dbEnsureUser(userJid)
+        const pl = db.prepare('SELECT id FROM playlists WHERE user_jid = ? AND name = ? COLLATE NOCASE').get(userJid, playlistName)
+        if (!pl) throw new Error(`Playlist "${playlistName}" tidak ditemukan.`)
+        
+        const existing = db.prepare('SELECT 1 FROM playlist_songs WHERE playlist_id = ? AND song_id = ?').get(pl.id, songId)
+        if (existing) throw new Error(`Lagu sudah ada di playlist "${playlistName}".`)
+
+        db.prepare('INSERT INTO playlist_songs (playlist_id, song_id) VALUES (?, ?)')
+            .run(pl.id, songId)
+        return true
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to add song to playlist: ${err.message}`)
+        throw err
+    }
+}
+
+export function dbRemoveSongFromPlaylist(userJid, playlistName, songIndex) {
+    try {
+        const pl = db.prepare('SELECT id FROM playlists WHERE user_jid = ? AND name = ? COLLATE NOCASE').get(userJid, playlistName)
+        if (!pl) throw new Error(`Playlist "${playlistName}" tidak ditemukan.`)
+
+        const songs = db.prepare('SELECT song_id FROM playlist_songs WHERE playlist_id = ? ORDER BY added_at ASC').all(pl.id)
+        if (songIndex < 0 || songIndex >= songs.length) throw new Error(`Nomor urutan lagu tidak valid.`)
+
+        const targetSongId = songs[songIndex].song_id
+        db.prepare('DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?').run(pl.id, targetSongId)
+        return true
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to remove song from playlist: ${err.message}`)
+        throw err
+    }
+}
+
+export function dbGetPlaylists(userJid) {
+    try {
+        return db.prepare('SELECT * FROM playlists WHERE user_jid = ? ORDER BY created_at DESC').all(userJid)
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to get playlists: ${err.message}`)
+        return []
+    }
+}
+
+export function dbGetPlaylistSongs(userJid, playlistName) {
+    try {
+        const pl = db.prepare('SELECT id FROM playlists WHERE user_jid = ? AND name = ? COLLATE NOCASE').get(userJid, playlistName)
+        if (!pl) return null
+        
+        return db.prepare(`
+            SELECT s.* FROM playlist_songs ps
+            JOIN songs s ON ps.song_id = s.song_id
+            WHERE ps.playlist_id = ?
+            ORDER BY ps.added_at ASC
+        `).all(pl.id)
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to get playlist songs: ${err.message}`)
+        return []
+    }
+}
+
+export function dbDeletePlaylist(userJid, playlistName) {
+    try {
+        const pl = db.prepare('SELECT id FROM playlists WHERE user_jid = ? AND name = ? COLLATE NOCASE').get(userJid, playlistName)
+        if (!pl) throw new Error(`Playlist "${playlistName}" tidak ditemukan.`)
+        db.prepare('DELETE FROM playlists WHERE id = ?').run(pl.id)
+        return true
+    } catch (err) {
+        botLogger.error('radio-db', `Failed to delete playlist: ${err.message}`)
+        throw err
+    }
+}

@@ -2,10 +2,7 @@
 // !q — AI Chat dengan memory
 // Alias: !ai, !tanya, !ronnbot
 
-import { aiService } from '../../services/ai.js'
 import { memoryService } from '../../services/memory.js'
-import { seamlessTracker } from '../../services/seamless.js'
-import { processAiResponse, tryDirectRoute } from '../../utils/aiRouter.js'
 
 export default {
     name: 'q',
@@ -18,7 +15,7 @@ export default {
     permissions: ['user'],
 
     async execute(ctx) {
-        const { args, reply, react, chatId, msg } = ctx
+        const { args, reply, react, chatId, msg, messageContent } = ctx
 
         let forcedProvider = null
         let cleanArgs = []
@@ -38,28 +35,24 @@ export default {
             await reply(`[⚙️] Preferensi AI untuk chat ini diubah ke: *${forcedProvider.toUpperCase()}*`)
         }
 
-        if (!question) {
+        // Cek apakah ada gambar di pesan atau di quoted
+        const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
+        const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']
+        let quotedInner = quotedMsg
+        if (quotedMsg) {
+            const qType = Object.keys(quotedMsg)[0]
+            if (WRAPPERS.includes(qType)) {
+                quotedInner = quotedMsg[qType]?.message ?? quotedMsg
+            }
+        }
+        const hasImage = !!(msg.message?.imageMessage || quotedInner?.imageMessage)
+
+        if (!question && !hasImage) {
             if (forcedProvider) return // Kalau cuma setting param tanpa tanya, stop di sini
             return reply(`*Cara pakai:*\n!q [pertanyaan kamu]\n\nAtau ganti AI sementara/permanen:\n!q --nvidia [tanya sesuatu]\n!q --groq\n\nKetik !resetparamai untuk reset otak ke default.`)
         }
 
-        // Thinking indicator
-        await react('🤔')
-
-        try {
-            const isDirectRouted = await tryDirectRoute(question, ctx)
-            if (isDirectRouted) {
-                await react('✅')
-                return
-            }
-
-            const result = await aiService.chat(chatId, question, forcedProvider)
-            const executed = await processAiResponse(ctx, result)
-            if (!executed) await react('✅')
-
-        } catch (err) {
-            await react('❌')
-            await reply(`Maaf, AI lagi error:\n${err.message}`)
-        }
+        const { executeAiFlow } = await import('../../utils/aiRouter.js')
+        await executeAiFlow(ctx, question, forcedProvider)
     }
 }

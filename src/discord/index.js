@@ -1,7 +1,24 @@
 import { Client, GatewayIntentBits, ActivityType } from 'discord.js'
 import { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } from '@discordjs/voice'
-import { radioService, AVAILABLE_FX, AVAILABLE_EQ } from '../services/radio.js'
+import { 
+    radioService, 
+    AVAILABLE_FX, 
+    AVAILABLE_EQ,
+    Track, 
+    dbAddFavorite, 
+    dbRemoveFavorite, 
+    dbGetFavorites, 
+    dbIsFavorite,
+    dbCreatePlaylist,
+    dbAddSongToPlaylist,
+    dbRemoveSongFromPlaylist,
+    dbGetPlaylists,
+    dbGetPlaylistSongs,
+    dbDeletePlaylist
+} from '../services/radio.js'
 import { logger } from '../utils/logger.js'
+import { db } from '../services/db.js'
+import { lyricsService } from '../services/lyrics.js'
 
 let discordClient = null
 let currentConnection = null
@@ -177,7 +194,8 @@ export function startDiscordBot() {
 
             try {
                 const msg = await message.reply(`🔍 Mencari \`${query}\`...`)
-                const track = await radioService.search(query, message.author.username)
+                const userJid = message.author.id + '@discord'
+                const track = await radioService.search(query, userJid, message.author.username)
                 radioService.addToQueue(track)
 
                 if (!radioService.isPlaying) {
@@ -230,8 +248,12 @@ export function startDiscordBot() {
                 }
 
                 // Hapus item dari array antrean berdasarkan index (dikurang 1 karena array mulai dari 0)
-                const removedTrack = queue.splice(indexToRemove - 1, 1)[0]
-                return message.reply(`🗑️ Berhasil menghapus **${removedTrack.title}** dari antrean playlist.`)
+                const removedTrack = radioService.removeFromQueue(indexToRemove - 1)
+                if (removedTrack) {
+                    return message.reply(`🗑️ Berhasil menghapus **${removedTrack.title}** dari antrean playlist.`)
+                } else {
+                    return message.reply(`❌ Gagal menghapus lagu dari antrean playlist.`)
+                }
             }
 
             // Logic menampilkan antrean normal
@@ -348,6 +370,587 @@ export function startDiscordBot() {
             } else {
                 message.reply('Bot sedang tidak ada di Voice Channel.')
             }
+        }
+
+        if (command === 'fav' || command === 'myfav' || command === 'favlist' || command === 'playfav' || command === 'unfav') {
+            const userJid = message.author.id + '@discord'
+            const pushName = message.author.username
+
+            // myfav / favlist lookup
+            if (['myfav', 'favlist'].includes(command) || (command === 'fav' && args[0]?.toLowerCase() === 'list')) {
+                const targetUser = message.mentions.users.first()
+                const targetJid = targetUser ? (targetUser.id + '@discord') : userJid
+                const isSelf = targetJid === userJid
+
+                const list = dbGetFavorites(targetJid)
+                if (!list || list.length === 0) {
+                    return message.reply(isSelf 
+                        ? '📭 **Daftar lagu favoritmu masih kosong.**\nPutar lagu yang kamu suka di radio, lalu ketik `!fav` untuk menambahkannya ke list ini!'
+                        : `📭 **Daftar lagu favorit @${targetUser.username} masih kosong.**`
+                    )
+                }
+
+                let text = isSelf 
+                    ? `❤️ **Daftar Lagu Favoritmu (${list.length} lagu):**\n\n`
+                    : `❤️ **Daftar Lagu Favorit ${targetUser.username} (${list.length} lagu):**\n\n`
+
+                list.forEach((song, i) => {
+                    const min = Math.floor(song.duration / 60)
+                    const sec = song.duration % 60
+                    const durStr = `${min}:${sec.toString().padStart(2, '0')}`
+                    text += `${i + 1}. **${song.title}** - _${song.artist}_ (${durStr})\n`
+                })
+
+                if (isSelf) {
+                    text += `\n💡 **Tips:**\n` +
+                            `• Putar lagu favorit: \`!playfav <nomor/random/all>\`\n` +
+                            `• Hapus dari favorit: \`!unfav <nomor>\``
+                }
+
+                return message.reply(text)
+            }
+
+            // unfav
+            if (command === 'unfav' || (command === 'fav' && ['remove', 'hapus', 'r', 'delete'].includes(args[0]?.toLowerCase()))) {
+                const list = dbGetFavorites(userJid)
+                if (!list || list.length === 0) {
+                    return message.reply('📭 Daftar lagu favoritmu kosong, tidak ada yang bisa dihapus.')
+                }
+
+                const rawIdx = command === 'fav' ? args[1] : args[0]
+                const index = parseInt(rawIdx) - 1
+
+                if (isNaN(index) || index < 0 || index >= list.length) {
+                    return message.reply(`⚠️ Masukkan nomor lagu favorit yang ingin dihapus.\nContoh: \`!unfav 2\` (lihat nomor lagu di \`!myfav\`)`)
+                }
+
+                const targetSong = list[index]
+                const success = dbRemoveFavorite(userJid, targetSong.song_id)
+
+                if (success) {
+                    return message.reply(`🗑️ **Berhasil menghapus lagu dari favorit:** \n_${targetSong.title}_ - ${targetSong.artist}`)
+                } else {
+                    return message.reply('❌ Gagal menghapus lagu dari favorit. Terjadi kesalahan internal.')
+                }
+            }
+
+            // playfav
+            if (command === 'playfav' || (command === 'fav' && args[0]?.toLowerCase() === 'play')) {
+                const list = dbGetFavorites(userJid)
+                if (!list || list.length === 0) {
+                    return message.reply('📭 **Daftar lagu favoritmu masih kosong.** Ketik `!fav` saat lagu diputar untuk menyimpannya.')
+                }
+
+                const option = (command === 'fav' ? args[1] : args[0])?.toLowerCase()
+
+                if (!option || option === 'random' || option === 'acak') {
+                    const song = list[Math.floor(Math.random() * list.length)]
+                    try {
+                        const track = new Track({
+                            title: song.title,
+                            url: song.stream_url,
+                            duration: song.duration,
+                            thumbnail: song.thumbnail_url || null,
+                            requestedBy: pushName,
+                            requestedByJid: userJid,
+                            source: song.source,
+                            songId: song.song_id,
+                            artist: song.artist
+                        })
+                        radioService.addToQueue(track)
+
+                        await message.reply(
+                            `` +
+                            `✅ **Memutar Acak Favorit!**\n\n` +
+                            `🎵 **${track.title}**\n` +
+                            `⏱️ Durasi: ${track.durationFormatted}\n` +
+                            `📋 Posisi: #${radioService.queue.length + (radioService.currentTrack ? 1 : 0)}`
+                        )
+
+                        if (!radioService.isPlaying) {
+                            radioService.start().catch(e => console.error('[Radio] Start error:', e.message))
+                        }
+                    } catch (err) {
+                        message.reply(`❌ Gagal memutar lagu: ${err.message}`)
+                    }
+                    return
+                }
+
+                if (option === 'all' || option === 'semua') {
+                    let successCount = 0
+                    for (const song of list) {
+                        try {
+                            const track = new Track({
+                                title: song.title,
+                                url: song.stream_url,
+                                duration: song.duration,
+                                thumbnail: song.thumbnail_url || null,
+                                requestedBy: pushName,
+                                requestedByJid: userJid,
+                                source: song.source,
+                                songId: song.song_id,
+                                artist: song.artist
+                            })
+                            radioService.addToQueue(track)
+                            successCount++
+                        } catch (e) {
+                            if (e.message.includes('Queue penuh')) break
+                        }
+                    }
+
+                    await message.reply(`✅ Berhasil menambahkan **${successCount}** lagu favorit ke antrean. (Antrean saat ini: ${radioService.queue.length} lagu)`)
+                    if (successCount > 0 && !radioService.isPlaying) {
+                        radioService.start().catch(e => console.error('[Radio] Start error:', e.message))
+                    }
+                    return
+                }
+
+                const index = parseInt(option) - 1
+                if (isNaN(index) || index < 0 || index >= list.length) {
+                    return message.reply(`⚠️ Masukkan nomor lagu favorit yang valid atau ketik acak/all.\nContoh: \`!playfav 3\` (lihat nomor lagu di \`!myfav\`)`)
+                }
+
+                const song = list[index]
+                try {
+                    const track = new Track({
+                        title: song.title,
+                        url: song.stream_url,
+                        duration: song.duration,
+                        thumbnail: song.thumbnail_url || null,
+                        requestedBy: pushName,
+                        requestedByJid: userJid,
+                        source: song.source,
+                        songId: song.song_id,
+                        artist: song.artist
+                    })
+                    radioService.addToQueue(track)
+
+                    await message.reply(
+                        `✅ **Ditambahkan ke queue!**\n\n` +
+                        `🎵 **${track.title}**\n` +
+                        `⏱️ Durasi: ${track.durationFormatted}\n` +
+                        `📋 Posisi: #${radioService.queue.length + (radioService.currentTrack ? 1 : 0)}`
+                    )
+
+                    if (!radioService.isPlaying) {
+                        radioService.start().catch(e => console.error('[Radio] Start error:', e.message))
+                    }
+                } catch (err) {
+                    message.reply(`❌ Gagal memutar lagu: ${err.message}`)
+                }
+                return
+            }
+
+            const targetUser = message.mentions.users.first()
+            if (targetUser) {
+                const targetJid = targetUser.id + '@discord'
+                const list = dbGetFavorites(targetJid)
+                if (!list || list.length === 0) {
+                    return message.reply(`📭 **Daftar lagu favorit @${targetUser.username} masih kosong.**`)
+                }
+
+                let text = `❤️ **Daftar Lagu Favorit ${targetUser.username} (${list.length} lagu):**\n\n`
+                list.forEach((song, i) => {
+                    const min = Math.floor(song.duration / 60)
+                    const sec = song.duration % 60
+                    const durStr = `${min}:${sec.toString().padStart(2, '0')}`
+                    text += `${i + 1}. **${song.title}** - _${song.artist}_ (${durStr})\n`
+                })
+                return message.reply(text)
+            }
+
+            const info = radioService.getNowPlayingInfo()
+            if (!info || !info.track) {
+                return message.reply('📻 Radio sedang tidak memutar lagu.\nPutar lagu dulu dengan command `!play`, baru sukai lagunya menggunakan `!fav`.')
+            }
+
+            const currentTrack = info.track
+            const alreadyFav = dbIsFavorite(userJid, currentTrack.songId)
+
+            if (alreadyFav) {
+                return message.reply(`⚠️ Lagu **${currentTrack.title}** sudah ada di daftar lagu favoritmu.`)
+            }
+
+            const success = dbAddFavorite(userJid, currentTrack.songId)
+            if (success) {
+                return message.reply(`❤️ **Berhasil menyukai lagu!**\n\n🎵 **${currentTrack.title}**\n_Lagu telah dimasukkan ke daftar favoritmu._\nKetik \`!myfav\` untuk melihat list.`)
+            } else {
+                return message.reply('❌ Gagal menambahkan lagu ke favorit. Silakan coba lagi.')
+            }
+        }
+
+        if (command === 'recap' || command === 'wrapped' || command === 'rekap') {
+            const userJid = message.author.id + '@discord'
+            const pushName = message.author.username
+
+            let isMe = false
+            let offset = 0
+            let targetMonthNum = null
+
+            for (const arg of args.map(a => a.toLowerCase())) {
+                if (['me', 'saya', 'aku'].includes(arg)) {
+                    isMe = true
+                } else if (['last', 'lalu', 'kemarin'].includes(arg)) {
+                    offset = -1
+                } else {
+                    const num = parseInt(arg)
+                    if (!isNaN(num) && num >= 1 && num <= 12) {
+                        targetMonthNum = num
+                    }
+                }
+            }
+
+            function getMonthRange(monthOffset = 0, targetYear = null, targetMonth = null) {
+                const now = new Date();
+                const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+                let year = targetYear !== null ? targetYear : jakartaTime.getFullYear();
+                let month = targetMonth !== null ? targetMonth - 1 : jakartaTime.getMonth() + monthOffset;
+                const dateObj = new Date(year, month, 1);
+                year = dateObj.getFullYear();
+                month = dateObj.getMonth();
+                const monthNames = [
+                    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+                ];
+                const startEpoch = Math.floor(Date.UTC(year, month, 1, 0, 0, 0, 0) / 1000) - (7 * 3600);
+                const endEpoch = Math.floor(Date.UTC(year, month + 1, 1, 0, 0, 0, 0) / 1000) - (7 * 3600) - 1;
+                return { startEpoch, endEpoch, monthName: monthNames[month], year };
+            }
+
+            function formatDuration(seconds) {
+                if (!seconds) return '0 menit'
+                const hours = Math.floor(seconds / 3600)
+                const minutes = Math.floor((seconds % 3600) / 60)
+                if (hours > 0) return `${hours} jam ${minutes} menit`
+                return `${minutes} menit`
+            }
+
+            const { startEpoch, endEpoch, monthName, year } = getMonthRange(offset, null, targetMonthNum)
+
+            if (isMe) {
+                try {
+                    const userProfile = db.prepare('SELECT level, experience_points FROM users WHERE jid = ?').get(userJid)
+                    const level = userProfile?.level || 1
+                    const xp = userProfile?.experience_points || 0
+
+                    const reqCount = db.prepare(`
+                        SELECT COUNT(*) as count 
+                        FROM requests 
+                        WHERE user_jid = ? AND created_at >= ? AND created_at <= ? AND status = 'played'
+                    `).get(userJid, startEpoch, endEpoch)?.count || 0
+
+                    const listenTime = db.prepare(`
+                        SELECT SUM(duration_seconds) as total 
+                        FROM listening_sessions 
+                        WHERE user_jid = ? AND joined_at >= ? AND joined_at <= ?
+                    `).get(userJid, startEpoch, endEpoch)?.total || 0
+
+                    const topSongs = db.prepare(`
+                        SELECT s.title, s.artist, COUNT(*) as count
+                        FROM play_history ph
+                        JOIN songs s ON ph.song_id = s.song_id
+                        WHERE ph.requested_by_jid = ? AND ph.played_at >= ? AND ph.played_at <= ?
+                        GROUP BY ph.song_id
+                        ORDER BY count DESC
+                        LIMIT 3
+                    `).all(userJid, startEpoch, endEpoch)
+
+                    let text = `🎧 **YOUR RADIO WRAPPED - ${monthName.toUpperCase()} ${year}** 🎧\n` +
+                               `Halo, **${pushName}**! Ini rangkuman perjalanan musikmu bulan ini:\n\n` +
+                               `⭐ **Level Anda:** ${level} (${xp} XP)\n` +
+                               `🎵 **Total Request:** ${reqCount} lagu diputar\n` +
+                               `⏱️ **Waktu Mendengar:** ${formatDuration(listenTime)}\n\n`
+
+                    if (topSongs && topSongs.length > 0) {
+                        text += `🏆 **3 Lagu Favoritmu Bulan Ini:**\n`
+                        topSongs.forEach((song, i) => {
+                            text += `  ${i + 1}. **${song.title}** - _${song.artist}_ (${song.count}x request)\n`
+                        })
+                    } else {
+                        text += `🏆 **Lagu teratas:** Kamu belum banyak memutar musik bulan ini. Yuk request lebih banyak lagu!`
+                    }
+
+                    text += `\n_Ketik \`!recap\` untuk melihat statistik global radio bulan ini._`
+                    return message.reply(text)
+                } catch (err) {
+                    return message.reply(`❌ Gagal menyusun rekap personal: ${err.message}`)
+                }
+            }
+
+            try {
+                const totalPlayed = db.prepare(`
+                    SELECT COUNT(*) as count 
+                    FROM play_history 
+                    WHERE played_at >= ? AND played_at <= ?
+                `).get(startEpoch, endEpoch)?.count || 0
+
+                const topSongs = db.prepare(`
+                    SELECT s.title, s.artist, COUNT(*) as count
+                    FROM play_history ph
+                    JOIN songs s ON ph.song_id = s.song_id
+                    WHERE ph.played_at >= ? AND ph.played_at <= ?
+                    GROUP BY ph.song_id
+                    ORDER BY count DESC
+                    LIMIT 5
+                `).all(startEpoch, endEpoch)
+
+                const topRequesters = db.prepare(`
+                    SELECT u.name, COUNT(*) as count
+                    FROM requests r
+                    JOIN users u ON r.user_jid = u.jid
+                    WHERE r.created_at >= ? AND r.created_at <= ? AND r.status = 'played'
+                    GROUP BY r.user_jid
+                    ORDER BY count DESC
+                    LIMIT 3
+                `).all(startEpoch, endEpoch)
+
+                const topListeners = db.prepare(`
+                    SELECT u.name, SUM(ls.duration_seconds) as total_duration
+                    FROM listening_sessions ls
+                    JOIN users u ON ls.user_jid = u.jid
+                    WHERE ls.joined_at >= ? AND ls.joined_at <= ?
+                    GROUP BY ls.user_jid
+                    ORDER BY total_duration DESC
+                    LIMIT 3
+                `).all(startEpoch, endEpoch)
+
+                let text = `📻 **RADIO RECAP & WRAPPED - ${monthName.toUpperCase()} ${year}** 📻\n` +
+                           `Statistik siaran dan pendengar radio global:\n\n` +
+                           `📊 **Total Lagu Diputar:** ${totalPlayed} kali\n\n`
+
+                if (topSongs && topSongs.length > 0) {
+                    text += `🔥 **5 Lagu Paling Banyak Diputar:**\n`
+                    topSongs.forEach((song, i) => {
+                        text += `  ${i + 1}. **${song.title}** - _${song.artist}_ (${song.count}x diputar)\n`
+                    })
+                    text += `\n`
+                }
+
+                if (topRequesters && topRequesters.length > 0) {
+                    text += `👑 **Top Requester Teraktif:**\n`
+                    topRequesters.forEach((req, i) => {
+                        text += `  ${i + 1}. **${req.name}** (${req.count} lagu)\n`
+                    })
+                    text += `\n`
+                }
+
+                if (topListeners && topListeners.length > 0) {
+                    text += `🎧 **Pendengar Paling Setia:**\n`
+                    topListeners.forEach((lis, i) => {
+                        text += `  ${i + 1}. **${lis.name}** (${formatDuration(lis.total_duration)})\n`
+                    })
+                    text += `\n`
+                }
+
+                text += `_Ketik \`!recap me\` untuk melihat rangkuman musikmu sendiri bulan ini!_`
+                return message.reply(text)
+            } catch (err) {
+                return message.reply(`❌ Gagal menyusun rekap global: ${err.message}`)
+            }
+        }
+
+        if (command === 'lyrics' || command === 'lirik' || command === 'ly') {
+            let query = args.join(' ').trim()
+
+            if (!query) {
+                const info = radioService.getNowPlayingInfo()
+                if (info && info.track) {
+                    const artist = info.track.artist && info.track.artist !== 'Unknown' ? info.track.artist : ''
+                    query = artist ? `${artist} - ${info.track.title}` : info.track.title
+                }
+            }
+
+            if (!query) {
+                return message.reply('📻 **Radio sedang tidak memutar lagu.**\nTulis judul lagu yang ingin dicari.\nContoh: `!lyrics Remember Me`')
+            }
+
+            try {
+                const msg = await message.reply(`🔍 Mencari lirik untuk: \`${query}\`...`)
+                const result = await lyricsService.fetchLyrics(query)
+                if (!result || !result.plainLyrics) {
+                    return msg.edit(`❌ **Lirik tidak ditemukan** untuk pencarian: "${query}"`)
+                }
+
+                let text = `🎤 **Lirik Lagu:** **${result.title}** - _${result.artist}_\n\n`
+                text += result.plainLyrics
+
+                if (text.length <= 1900) {
+                    await msg.edit(text)
+                } else {
+                    await msg.edit(text.substring(0, 1900) + '\n\n...(Lirik terlalu panjang, bersambung)')
+                }
+            } catch (err) {
+                message.reply(`❌ Gagal mencari lirik: ${err.message}`)
+            }
+        }
+
+        if (command === 'playlist' || command === 'pl') {
+            const userJid = message.author.id + '@discord'
+            const pushName = message.author.username
+
+            if (!args.length) {
+                return message.reply(
+                    `🎶 **Panduan Command Playlist (!pl):**\n\n` +
+                    `• \`!pl create [nama]\` : Buat playlist baru\n` +
+                    `• \`!pl list\` : Lihat daftar playlist kamu\n` +
+                    `• \`!pl add [nama]\` : Tambahkan lagu aktif ke playlist\n` +
+                    `• \`!pl show [nama]\` : Lihat isi lagu di playlist\n` +
+                    `• \`!pl remove [nama] [no]\` : Hapus lagu di playlist\n` +
+                    `• \`!pl play [nama]\` : Putar antrean dari playlist\n` +
+                    `• \`!pl play [nama] random\` : Putar acak playlist\n` +
+                    `• \`!pl delete [nama]\` : Hapus playlist`
+                )
+            }
+
+            const action = args[0].toLowerCase()
+
+            if (action === 'create') {
+                const name = args.slice(1).join(' ').trim()
+                if (!name) return message.reply('⚠️ Masukkan nama playlist yang ingin dibuat. Contoh: `!pl create Rock`')
+                try {
+                    dbCreatePlaylist(userJid, name)
+                    return message.reply(`✅ **Playlist "${name}" berhasil dibuat!**`)
+                } catch (err) {
+                    return message.reply(`❌ Gagal membuat playlist: ${err.message}`)
+                }
+            }
+
+            if (action === 'list') {
+                const list = dbGetPlaylists(userJid)
+                if (!list || list.length === 0) {
+                    return message.reply('📭 Kamu belum memiliki playlist. Buat dengan: `!pl create [nama]`')
+                }
+                let text = `🎶 **Daftar Playlist Kamu (${list.length}):**\n\n`
+                list.forEach((pl, i) => {
+                    text += `${i + 1}. **${pl.name}**\n`
+                })
+                return message.reply(text)
+            }
+
+            if (action === 'add') {
+                const name = args.slice(1).join(' ').trim()
+                if (!name) return message.reply('⚠️ Masukkan nama playlist target. Contoh: `!pl add Rock`')
+
+                const info = radioService.getNowPlayingInfo()
+                if (!info || !info.track) {
+                    return message.reply('📻 Radio sedang tidak memutar lagu untuk ditambahkan.')
+                }
+
+                try {
+                    dbAddSongToPlaylist(userJid, name, info.track.songId)
+                    return message.reply(`✅ Berhasil menambahkan **${info.track.title}** ke playlist **"${name}"**..`)
+                } catch (err) {
+                    return message.reply(`❌ Gagal: ${err.message}`)
+                }
+            }
+
+            if (action === 'show') {
+                const name = args.slice(1).join(' ').trim()
+                if (!name) return message.reply('⚠️ Masukkan nama playlist yang ingin dilihat. Contoh: `!pl show Rock`')
+
+                const songs = dbGetPlaylistSongs(userJid, name)
+                if (songs === null) {
+                    return message.reply(`❌ Playlist "${name}" tidak ditemukan.`)
+                }
+
+                if (songs.length === 0) {
+                    return message.reply(`📭 Playlist **"${name}"** masih kosong. Putar lagu lalu tambahkan dengan: \`!pl add ${name}\``)
+                }
+
+                let text = `📂 **Isi Playlist "${name}" (${songs.length} lagu):**\n\n`
+                songs.forEach((song, i) => {
+                    const min = Math.floor(song.duration / 60)
+                    const sec = song.duration % 60
+                    const durStr = `${min}:${sec.toString().padStart(2, '0')}`
+                    text += `${i + 1}. **${song.title}** - _${song.artist}_ (${durStr})\n`
+                })
+                return message.reply(text)
+            }
+
+            if (action === 'remove') {
+                if (args.length < 3) {
+                    return message.reply('⚠️ Format salah. Contoh: `!pl remove Rock 2` (hapus lagu nomor 2 di playlist Rock)')
+                }
+                const songIndexStr = args[args.length - 1]
+                const playlistName = args.slice(1, -1).join(' ').trim()
+                const songIndex = parseInt(songIndexStr) - 1
+
+                if (isNaN(songIndex)) {
+                    return message.reply('⚠️ Nomor urutan lagu harus berupa angka.')
+                }
+
+                try {
+                    dbRemoveSongFromPlaylist(userJid, playlistName, songIndex)
+                    return message.reply(`🗑️ Berhasil menghapus lagu dari playlist **"${playlistName}"**.`)
+                } catch (err) {
+                    return message.reply(`❌ Gagal: ${err.message}`)
+                }
+            }
+
+            if (action === 'play') {
+                const isRandom = args[args.length - 1]?.toLowerCase() === 'random'
+                const playlistName = (isRandom ? args.slice(1, -1) : args.slice(1)).join(' ').trim()
+
+                if (!playlistName) {
+                    return message.reply('⚠️ Masukkan nama playlist yang ingin diputar. Contoh: `!pl play Rock`')
+                }
+
+                const songs = dbGetPlaylistSongs(userJid, playlistName)
+                if (songs === null) {
+                    return message.reply(`❌ Playlist "${playlistName}" tidak ditemukan.`)
+                }
+
+                if (songs.length === 0) {
+                    return message.reply(`📭 Playlist **"${playlistName}"** masih kosong.`)
+                }
+
+                let playlistQueue = [...songs]
+                if (isRandom) {
+                    playlistQueue.sort(() => Math.random() - 0.5)
+                }
+
+                let addedCount = 0
+                for (const song of playlistQueue) {
+                    try {
+                        const track = new Track({
+                            title: song.title,
+                            url: song.stream_url,
+                            duration: song.duration,
+                            thumbnail: song.thumbnail_url || null,
+                            requestedBy: pushName,
+                            requestedByJid: userJid,
+                            source: song.source,
+                            songId: song.song_id,
+                            artist: song.artist
+                        })
+                        radioService.addToQueue(track)
+                        addedCount++
+                    } catch (e) {
+                        if (e.message.includes('Queue penuh')) break
+                    }
+                }
+
+                await message.reply(`✅ Memutar playlist **"${playlistName}"** (${isRandom ? 'acak' : 'urut'}). Menambahkan **${addedCount}** lagu ke antrean.`)
+
+                if (addedCount > 0 && !radioService.isPlaying) {
+                    radioService.start().catch(e => console.error('[Radio] Start error:', e.message))
+                }
+                return
+            }
+
+            if (action === 'delete') {
+                const name = args.slice(1).join(' ').trim()
+                if (!name) return message.reply('⚠️ Masukkan nama playlist yang ingin dihapus. Contoh: `!pl delete Rock`')
+
+                try {
+                    dbDeletePlaylist(userJid, name)
+                    return message.reply(`🗑️ **Playlist "${name}" berhasil dihapus.**`)
+                } catch (err) {
+                    return message.reply(`❌ Gagal menghapus: ${err.message}`)
+                }
+            }
+
+            return message.reply('❓ Subcommand tidak dikenali. Ketik `!pl` untuk melihat panduan lengkap.')
         }
     })
 
