@@ -1,0 +1,207 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Users Model (Stores profile information, customizable anonymously)
+model User {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nickname    String   @unique @db.VarChar(50)
+  avatarUrl   String?  @map("avatar_url")
+  bannerUrl   String?  @map("banner_url")
+  bio         String?  @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  accounts         UserAccount[]
+  stats            UserStats?
+  presence         UserPresence?
+  chatMessages     ChatMessage[]
+  chatReactions    ChatReaction[]
+  listenerSessions ListenerSession[]
+  userAchievements UserAchievement[]
+  notifications    Notification[]
+  wrappedCaches    WrappedCache[]
+
+  @@map("users")
+}
+
+// 2. User Accounts Model (For credential linking: Password/OAuth)
+// Decoupled to allow adding OAuth (Google/Discord/GitHub) later without breaking profiles
+model UserAccount {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  provider       String   @default("local") @db.VarChar(50) // 'local', 'google', 'discord', 'github'
+  providerUserId String   @map("provider_user_id") @db.VarChar(255) // username or provider's unique ID
+  passwordHash   String?  @map("password_hash") @db.VarChar(255) // Null for social login
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@map("user_accounts")
+}
+
+// 3. User Statistics Model
+model UserStats {
+  userId             String   @id @map("user_id") @db.Uuid
+  listeningTimeMs    BigInt   @default(0) @map("listening_time_ms")
+  songsRequested     Int      @default(0) @map("songs_requested")
+  achievementsEarned Int      @default(0) @map("achievements_earned")
+  lastActiveAt       DateTime @default(now()) @map("last_active_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_stats")
+}
+
+// 4. User Presence Model
+model UserPresence {
+  userId       String   @id @map("user_id") @db.Uuid
+  status       String   @default("offline") @db.VarChar(20) // 'listening', 'idle', 'online', 'offline'
+  lastActiveAt DateTime @default(now()) @map("last_active_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_presence")
+}
+
+// 5. Chat Messages Model
+model ChatMessage {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  content   String   @db.Text
+  timestamp DateTime @default(now())
+
+  user      User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reactions ChatReaction[]
+
+  @@index([timestamp(sort: Desc)])
+  @@map("chat_messages")
+}
+
+// 6. Chat Reactions Model
+model ChatReaction {
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId    String @map("message_id") @db.Uuid
+  userId       String @map("user_id") @db.Uuid
+  reactionType String @map("reaction_type") @db.VarChar(10) // E.g. '❤️', '🔥', '😂'
+
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, reactionType])
+  @@map("chat_reactions")
+}
+
+// 7. Listener Sessions Model
+model ListenerSession {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  joinedAt        DateTime  @default(now()) @map("joined_at")
+  leftAt          DateTime? @map("left_at")
+  durationSeconds Int?      @map("duration_seconds")
+  
+  // Extended metadata for platform metrics
+  platform        String    @db.VarChar(50) // 'android', 'web', 'whatsapp'
+  source          String    @db.VarChar(50) // 'radio_stream', 'chat'
+  ipHash          String    @map("ip_hash") @db.VarChar(64) // SHA-256 hash of listener IP
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("listener_sessions")
+}
+
+// 8. Achievements Catalog Model
+model Achievement {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key              String   @unique @db.VarChar(50) // 'first_listener', 'night_owl'
+  name             String   @db.VarChar(100)
+  description      String   @db.VarChar(255)
+  iconName         String   @map("icon_name") @db.VarChar(50)
+  requirementType  String   @map("requirement_type") @db.VarChar(30) // 'listening_time', 'requests'
+  requirementValue Int      @map("requirement_value")
+
+  userAchievements UserAchievement[]
+
+  @@map("achievements")
+}
+
+// 9. User Achievements Link Model
+model UserAchievement {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  achievementId String   @map("achievement_id") @db.Uuid
+  unlockedAt    DateTime @default(now()) @map("unlocked_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
+
+// 10. Song Session Reactions Model (per track session)
+model SongReaction {
+  songId     String @id @map("song_id") @db.VarChar(100) // Hash of Title + Artist
+  hearts     Int    @default(0)
+  fire       Int    @default(0)
+  headphones Int    @default(0)
+  claps      Int    @default(0)
+
+  @@map("song_reactions")
+}
+
+// 11. Activity Feed Model
+model ActivityFeed {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type      String   @db.VarChar(50) // 'song_requested', 'achievement_unlocked'
+  payload   Json     @db.JsonB
+  timestamp DateTime @default(now())
+
+  @@index([timestamp(sort: Desc)])
+  @@map("activity_feed")
+}
+
+// 12. Notifications Model
+model Notification {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  type      String   @db.VarChar(50) // 'now_playing', 'achievement'
+  content   String   @db.VarChar(255)
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// 13. Personal Wrapped Cache Model
+model WrappedCache {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  year        Int
+  wrappedData Json     @map("wrapped_data") @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, year])
+  @@map("wrapped_cache")
+}
+
+// 14. First-Class Community Wrapped Model
+model CommunityWrapped {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  year        Int      @unique
+  wrappedData Json     @map("wrapped_data") @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("community_wrapped")
+}

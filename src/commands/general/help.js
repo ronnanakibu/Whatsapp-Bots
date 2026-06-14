@@ -33,13 +33,13 @@ export default {
 
         // Resolve active category if any
         let activeMenu = null
-        
+
         // 1. Resolve from commandName (e.g. .aimenu)
         const cmdName = ctx.commandName.toLowerCase()
         if (cmdName.endsWith('menu')) {
             activeMenu = cmdName.replace('menu', '')
         }
-        
+
         // 2. Resolve from args[0] (e.g. .help ai, .help aimenu)
         if (!activeMenu && args.length) {
             const arg = args[0].toLowerCase()
@@ -95,9 +95,9 @@ export default {
 
         for (const [, cmd] of commands) {
             if (!cmd.name) continue
-            
+
             let menuGroup = cmd.category ?? 'misc'
-            
+
             if (menuGroup === 'media') {
                 if (cmd.name === 'dl' || cmd.aliases?.includes('dl')) {
                     menuGroup = 'downloader'
@@ -201,7 +201,7 @@ export default {
                     }
                     cachedTotalUsers = participants.size
                     lastUserCountFetch = Date.now()
-                }).catch(() => {})
+                }).catch(() => { })
             }
         }
 
@@ -210,7 +210,7 @@ export default {
         const hours = Math.floor(uptime / 3600)
         const minutes = Math.floor((uptime % 3600) / 60)
         const seconds = Math.floor(uptime % 60)
-        
+
         const runtimeParts = []
         if (hours > 0) runtimeParts.push(`${hours} jam`)
         if (minutes > 0) runtimeParts.push(`${minutes} menit`)
@@ -222,7 +222,7 @@ export default {
         try {
             const pkg = JSON.parse(fs.readFileSync(path.resolve('./package.json'), 'utf-8'))
             botVersion = pkg.version || '5.3.0'
-        } catch (_) {}
+        } catch (_) { }
 
         const dashboardUrl = `http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard`
 
@@ -256,7 +256,7 @@ export default {
         text += `${prefix}adminmenu\n`
         text += `${prefix}generalmenu\n\n`
 
-        text += `Powered by Ronn Bot Radio`
+        text += `Powered by Ronn Bot`
 
         await reply(text.trim())
     }

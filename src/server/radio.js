@@ -15,6 +15,11 @@ import { metricsService } from '../services/metrics.js'
 import { commands } from '../core/loader.js'
 import { memoryService } from '../services/memory.js'
 import { moderatorService } from '../services/moderator.js'
+import { eventBus } from '../events/bus.js'
+import { userService } from '../services/user-v2.js'
+import { chatService } from '../services/chat-v2.js'
+import { mediaService } from '../services/media.js'
+import { prisma } from '../config/database.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -112,6 +117,7 @@ let io = null
 let metricsInterval = null
 let analyticsInterval = null
 let tokenCleanupInterval = null
+let archiverInterval = null
 const streamTokens = new Map()
 const userConnections = new Map()
 const sseHistory = []
@@ -527,6 +533,97 @@ export function startRadioServer() {
         }
     })
 
+    // --- V2 Socket.IO Namespaces ---
+    const chatNamespace = io.of('/chat')
+    const presenceNamespace = io.of('/presence')
+    const songReactionsNamespace = io.of('/song-reactions')
+
+    // --- V2 Event Bus decoupled subscriptions ---
+    eventBus.subscribe('chat.message', (payload) => {
+        chatNamespace.emit('chat:new_message', {
+            id: payload.messageId,
+            userId: payload.userId,
+            nickname: payload.nickname,
+            content: payload.content,
+            timestamp: payload.timestamp.getTime()
+        })
+    })
+
+    chatNamespace.on('connection', (socket) => {
+        logger.info(`[Socket/Chat] Client connected: ${socket.id}`)
+
+        socket.on('chat:send_message', async (data) => {
+            if (!data.content || data.content.trim() === '') return
+            try {
+                const decoded = verifyJwt(data.token)
+                if (!decoded) {
+                    socket.emit('error', 'Sesi tidak valid.')
+                    return
+                }
+                await chatService.sendMessage(decoded.jid, data.content)
+            } catch (err) {
+                socket.emit('error', err.message)
+            }
+        })
+
+        socket.on('chat:add_reaction', async (data) => {
+            try {
+                const decoded = verifyJwt(data.token)
+                if (!decoded) return
+                await chatService.addReaction(data.messageId, decoded.jid, data.reaction)
+                chatNamespace.emit('chat:reactions_update', {
+                    messageId: data.messageId,
+                    reaction: data.reaction,
+                    userId: decoded.jid
+                })
+            } catch (err) {
+                // ignore
+            }
+        })
+    })
+
+    presenceNamespace.on('connection', (socket) => {
+        logger.info(`[Socket/Presence] Client connected: ${socket.id}`)
+
+        socket.on('presence:change', async (data) => {
+            try {
+                const decoded = verifyJwt(data.token)
+                if (!decoded) return
+                await userRepository.updateUserPresence(decoded.jid, data.status)
+                presenceNamespace.emit('presence:listeners_update', {
+                    userId: decoded.jid,
+                    status: data.status,
+                    timestamp: Date.now()
+                })
+            } catch (err) {
+                // ignore
+            }
+        })
+    })
+
+    songReactionsNamespace.on('connection', (socket) => {
+        logger.info(`[Socket/SongReactions] Client connected: ${socket.id}`)
+
+        socket.on('song:react', (data) => {
+            songReactionsNamespace.emit('song:reactions_sync', {
+                songId: data.songId,
+                reaction: data.reaction,
+                timestamp: Date.now()
+            })
+        })
+    })
+
+    // Daily chat logging archiver scheduler
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000
+    archiverInterval = setInterval(() => {
+        logger.info('[Scheduler] Running daily chat log archiver...')
+        const yesterday = new Date()
+        yesterday.setDate(yesterday.getDate() - 1)
+        chatService.archiveDailyLogs(yesterday)
+            .then((file) => logger.info(`[Scheduler] Daily logs archived to: ${file}`))
+            .catch((err) => logger.error('[Scheduler] Failed to archive logs:', err.message))
+    }, ONE_DAY_MS)
+
     // Setup periodic metrics broadcasts
     metricsInterval = setInterval(() => {
         const sysMetrics = metricsService.getSystemMetrics()
@@ -906,6 +1003,41 @@ export function startRadioServer() {
     })
 
     // AUTH / TOKEN ENDPOINTS
+    apiV2.post('/auth/anonymous', async (req, res) => {
+        try {
+            const session = await userService.registerAnonymous()
+            res.json({
+                success: true,
+                token: session.token,
+                profile: {
+                    id: session.user.id,
+                    nickname: session.user.nickname,
+                    avatarUrl: session.user.avatarUrl,
+                    isGuest: true
+                }
+            })
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message })
+        }
+    })
+
+    apiV2.post('/auth/register', authenticateJwt, async (req, res) => {
+        const { username, password } = req.body
+        if (!username || !password) {
+            return res.status(400).json({ success: false, error: 'Username dan password wajib diisi.' })
+        }
+        try {
+            const passwordHash = crypto.createHash('sha256').update(password).digest('hex')
+            await userService.claimAccount(req.user.jid, username, passwordHash)
+            res.json({
+                success: true,
+                message: 'Akun berhasil didaftarkan.'
+            })
+        } catch (err) {
+            res.status(400).json({ success: false, error: err.message })
+        }
+    })
+
     apiV2.post('/auth/stream-token', authenticateJwt, (req, res) => {
         const userId = req.user.jid
         const userAgent = req.headers['user-agent'] || ''
@@ -1377,10 +1509,10 @@ export function startRadioServer() {
     })
 
     // USER PROFILING & STATS
-    apiV2.get('/users/me/profile', authenticateJwt, (req, res) => {
+    apiV2.get('/users/me/profile', authenticateJwt, async (req, res) => {
         const userJid = req.user.jid
         try {
-            const profile = db.prepare('SELECT * FROM users WHERE jid = ?').get(userJid)
+            const profile = await userService.getProfile(userJid)
             if (!profile) {
                 return res.status(404).json({
                     success: false,
@@ -1391,31 +1523,20 @@ export function startRadioServer() {
                 })
             }
 
-            const achCount = db.prepare('SELECT COUNT(*) as count FROM achievement_unlocks WHERE user_jid = ?').get(userJid)?.count || 0
-            const topFavs = db.prepare(`
-                SELECT s.song_id, s.title, s.artist, s.thumbnail_url
-                FROM favorites f
-                JOIN songs s ON f.song_id = s.song_id
-                WHERE f.user_jid = ?
-                LIMIT 3
-            `).all(userJid)
-
             res.json({
                 success: true,
                 data: {
                     profile: {
-                        userId: profile.jid,
-                        name: profile.name,
-                        level: profile.level,
-                        experiencePoints: profile.experience_points,
-                        role: profile.role,
-                        achievementsUnlocked: achCount,
-                        topFavorites: topFavs.map(f => ({
-                            songId: f.song_id,
-                            title: f.title,
-                            artist: f.artist,
-                            thumbnailUrl: f.thumbnail_url
-                        }))
+                        userId: profile.id,
+                        name: profile.nickname,
+                        avatarUrl: profile.avatarUrl,
+                        bannerUrl: profile.bannerUrl,
+                        bio: profile.bio,
+                        level: 1,
+                        experiencePoints: profile.stats ? Number(profile.stats.listeningTimeMs) : 0,
+                        role: 'user',
+                        achievementsUnlocked: profile.stats ? profile.stats.achievementsEarned : 0,
+                        topFavorites: []
                     }
                 }
             })
@@ -1430,10 +1551,28 @@ export function startRadioServer() {
         }
     })
 
-    apiV2.get('/users/:userJid/profile', (req, res) => {
+    apiV2.put('/users/me/profile', authenticateJwt, async (req, res) => {
+        const { nickname, bio, avatarUrl, bannerUrl } = req.body
+        try {
+            const updated = await userService.updateProfile(req.user.jid, {
+                nickname,
+                bio,
+                avatarUrl,
+                bannerUrl
+            })
+            res.json({
+                success: true,
+                profile: updated
+            })
+        } catch (err) {
+            res.status(400).json({ success: false, error: err.message })
+        }
+    })
+
+    apiV2.get('/users/:userJid/profile', async (req, res) => {
         const { userJid } = req.params
         try {
-            const profile = db.prepare('SELECT * FROM users WHERE jid = ?').get(userJid)
+            const profile = await userService.getProfile(userJid)
             if (!profile) {
                 return res.status(404).json({
                     success: false,
@@ -1444,31 +1583,20 @@ export function startRadioServer() {
                 })
             }
 
-            const achCount = db.prepare('SELECT COUNT(*) as count FROM achievement_unlocks WHERE user_jid = ?').get(userJid)?.count || 0
-            const topFavs = db.prepare(`
-                SELECT s.song_id, s.title, s.artist, s.thumbnail_url
-                FROM favorites f
-                JOIN songs s ON f.song_id = s.song_id
-                WHERE f.user_jid = ?
-                LIMIT 3
-            `).all(userJid)
-
             res.json({
                 success: true,
                 data: {
                     profile: {
-                        userId: profile.jid,
-                        name: profile.name,
-                        level: profile.level,
-                        experiencePoints: profile.experience_points,
-                        role: profile.role,
-                        achievementsUnlocked: achCount,
-                        topFavorites: topFavs.map(f => ({
-                            songId: f.song_id,
-                            title: f.title,
-                            artist: f.artist,
-                            thumbnailUrl: f.thumbnail_url
-                        }))
+                        userId: profile.id,
+                        name: profile.nickname,
+                        avatarUrl: profile.avatarUrl,
+                        bannerUrl: profile.bannerUrl,
+                        bio: profile.bio,
+                        level: 1,
+                        experiencePoints: profile.stats ? Number(profile.stats.listeningTimeMs) : 0,
+                        role: 'user',
+                        achievementsUnlocked: profile.stats ? profile.stats.achievementsEarned : 0,
+                        topFavorites: []
                     }
                 }
             })
@@ -1482,32 +1610,12 @@ export function startRadioServer() {
             })
         }
     })
-
-    apiV2.get('/users/me/stats', authenticateJwt, (req, res) => {
+    apiV2.get('/users/me/stats', authenticateJwt, async (req, res) => {
         const userJid = req.user.jid
         try {
-            const totalListenSec = db.prepare('SELECT SUM(duration_seconds) as total FROM listening_sessions WHERE user_jid = ?').get(userJid)?.total || 0
-            const requestsCount = db.prepare("SELECT COUNT(*) as count FROM requests WHERE user_jid = ? AND status = 'played'").get(userJid)?.count || 0
-
-            const favArtistRow = db.prepare(`
-                SELECT s.artist, COUNT(*) as count
-                FROM play_history h
-                JOIN songs s ON h.song_id = s.song_id
-                WHERE h.requested_by_jid = ?
-                GROUP BY s.artist
-                ORDER BY count DESC
-                LIMIT 1
-            `).get(userJid)
-
-            const favSongRow = db.prepare(`
-                SELECT s.title, s.artist, COUNT(*) as count
-                FROM play_history h
-                JOIN songs s ON h.song_id = s.song_id
-                WHERE h.requested_by_jid = ?
-                GROUP BY s.song_id
-                ORDER BY count DESC
-                LIMIT 1
-            `).get(userJid)
+            const stats = await prisma.userStats.findUnique({ where: { userId: userJid } })
+            const totalListenSec = stats ? Number(stats.listeningTimeMs / 1000n) : 0
+            const requestsCount = stats ? stats.songsRequested : 0
 
             res.json({
                 success: true,
@@ -1515,8 +1623,8 @@ export function startRadioServer() {
                     stats: {
                         totalListeningHours: parseFloat((totalListenSec / 3600).toFixed(2)),
                         totalRequestsCount: requestsCount,
-                        favoriteArtist: favArtistRow ? favArtistRow.artist : '—',
-                        favoriteSong: favSongRow ? `${favSongRow.title} - ${favSongRow.artist}` : '—',
+                        favoriteArtist: '—',
+                        favoriteSong: '—',
                         currentListeningStreak: 1,
                         longestListeningStreak: 3
                     }
@@ -1533,31 +1641,12 @@ export function startRadioServer() {
         }
     })
 
-    apiV2.get('/users/:userJid/stats', (req, res) => {
+    apiV2.get('/users/:userJid/stats', async (req, res) => {
         const { userJid } = req.params
         try {
-            const totalListenSec = db.prepare('SELECT SUM(duration_seconds) as total FROM listening_sessions WHERE user_jid = ?').get(userJid)?.total || 0
-            const requestsCount = db.prepare("SELECT COUNT(*) as count FROM requests WHERE user_jid = ? AND status = 'played'").get(userJid)?.count || 0
-
-            const favArtistRow = db.prepare(`
-                SELECT s.artist, COUNT(*) as count
-                FROM play_history h
-                JOIN songs s ON h.song_id = s.song_id
-                WHERE h.requested_by_jid = ?
-                GROUP BY s.artist
-                ORDER BY count DESC
-                LIMIT 1
-            `).get(userJid)
-
-            const favSongRow = db.prepare(`
-                SELECT s.title, s.artist, COUNT(*) as count
-                FROM play_history h
-                JOIN songs s ON h.song_id = s.song_id
-                WHERE h.requested_by_jid = ?
-                GROUP BY s.song_id
-                ORDER BY count DESC
-                LIMIT 1
-            `).get(userJid)
+            const stats = await prisma.userStats.findUnique({ where: { userId: userJid } })
+            const totalListenSec = stats ? Number(stats.listeningTimeMs / 1000n) : 0
+            const requestsCount = stats ? stats.songsRequested : 0
 
             res.json({
                 success: true,
@@ -1565,8 +1654,8 @@ export function startRadioServer() {
                     stats: {
                         totalListeningHours: parseFloat((totalListenSec / 3600).toFixed(2)),
                         totalRequestsCount: requestsCount,
-                        favoriteArtist: favArtistRow ? favArtistRow.artist : '—',
-                        favoriteSong: favSongRow ? `${favSongRow.title} - ${favSongRow.artist}` : '—',
+                        favoriteArtist: '—',
+                        favoriteSong: '—',
                         currentListeningStreak: 1,
                         longestListeningStreak: 3
                     }
@@ -1583,24 +1672,29 @@ export function startRadioServer() {
         }
     })
 
-    apiV2.get('/leaderboard', (req, res) => {
+    apiV2.get('/leaderboard', async (req, res) => {
         const { timeframe } = req.query
         try {
-            const rows = db.prepare(`
-                SELECT u.jid, u.name, u.level, SUM(s.duration_seconds) as listeningTime
-                FROM listening_sessions s
-                JOIN users u ON s.user_jid = u.jid
-                GROUP BY u.jid
-                ORDER BY listeningTime DESC
-                LIMIT 10
-            `).all()
+            const rows = await prisma.userStats.findMany({
+                orderBy: {
+                    listeningTimeMs: 'desc'
+                },
+                take: 10,
+                include: {
+                    user: {
+                        select: {
+                            nickname: true
+                        }
+                    }
+                }
+            })
 
             const leaderboard = rows.map((row, idx) => ({
                 rank: idx + 1,
-                name: row.name,
-                userId: row.jid,
-                listeningTimeSeconds: row.listeningTime,
-                level: row.level
+                name: row.user.nickname,
+                userId: row.userId,
+                listeningTimeSeconds: Number(row.listeningTimeMs / 1000n),
+                level: 1
             }))
 
             res.json({
@@ -1620,7 +1714,6 @@ export function startRadioServer() {
             })
         }
     })
-
     apiV2.get('/achievements', (req, res) => {
         let userJid = req.query.userJid
         if (!userJid && req.headers['authorization']) {
@@ -1915,6 +2008,10 @@ export function stopRadioServer() {
     if (analyticsInterval) {
         clearInterval(analyticsInterval)
         analyticsInterval = null
+    }
+    if (archiverInterval) {
+        clearInterval(archiverInterval)
+        archiverInterval = null
     }
 
     if (logListenerCallback) {
