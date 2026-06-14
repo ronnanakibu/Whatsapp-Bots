@@ -6,6 +6,25 @@ This file documents the key milestones, architectural design patterns, and criti
 
 ## Key Milestones
 
+### v5.3.13 — Pterodactyl OpenSSL & Alpine Target Engine Compatibility Fix
+* **Achievement**: Resolved critical database client initialization crash on Alpine Linux based containers due to missing `libssl.so.1.1` shared libraries.
+* **Technical Details**:
+  * Programmed a fallback in `start.js` that checks for `openssl` CLI. If missing, it writes a mock shell script helper to `./storage/bin/openssl` returning `"OpenSSL 3.0.0"`.
+  * Pre-pended `./storage/bin` to `process.env.PATH` globally in the bootstrap script to guarantee Prisma CLI and Prisma Client correctly detect OpenSSL 3.x, forcing them to use the Musl 3.x engine (`libquery_engine-linux-musl-openssl-3.0.x.so.node`).
+  * Added `linux-musl-openssl-3.0.x` to `binaryTargets` in `prisma/schema.prisma` to generate the correct client binary.
+
+### v5.3.12 — Native JWT Signing (Dependency Elimination)
+* **Achievement**: Eliminated external `jsonwebtoken` library dependency to prevent startup crashes on minimal environments.
+* **Technical Details**:
+  * Rewrote JWT encoding and verification in `src/services/user-v2.js` using Node's native `crypto` module (HS256 signature algorithm), aligning signatures with WABOT2.0's middleware.
+
+### v5.3.11 — RonnBot Radio V2 Backend Layer & Telemetry Integration
+* **Achievement**: Migrated the radio backend to a PostgreSQL and Redis-backed service architecture, introducing a structured relational database (Prisma) and Socket.IO.
+* **Technical Details**:
+  * Added a comprehensive Prisma schema for users, credentials, listener sessions, achievements, chat messages, and activity feeds.
+  * Formulated a decoupled internal Event Bus to coordinate chat messages, presence updates, and activity feeds.
+  * Bridged guest JWT login states to match legacy WhatsApp JID mapping for seamless authentication.
+
 ### v4.1.0 — Backend Production Foundation (v2.8 Rearchitecture)
 * **Achievement**: Implemented hardened stream token access, dual-bounded SSE buffer replay mechanisms, structured envelopes for API v2, and bulk presence recovery on startup.
 * **Technical Details**:
@@ -123,3 +142,7 @@ This file documents the key milestones, architectural design patterns, and criti
 4. **Mobile App Stream Sessions & Loop Prevention**:
    * *Problem*: If external players or mobile apps connect to the `/stream` endpoint without a unique query JID, they get classified under the default `'anonymous'` JID, causing collision-based session termination on other connections (like the Discord bot's local stream connection). Additionally, enqueuing the `/stream` URL itself via song request API calls triggers self-referential download loops, leading to 100% CPU lockups and severe audio stuttering/choppiness.
    * *Solution*: Append a dedicated JID to client streams (`/stream?jid=android-app-client@s.whatsapp.net`) to separate mobile app connections from other clients. Bypassed song requesting logic on the mobile client when listening directly to the broadcast stream.
+
+5. **Prisma Engine & OpenSSL Version Compatibility on Alpine containers**:
+   * *Problem*: Alpine Linux containers lack OpenSSL 1.1 libraries, but Prisma Client defaults to looking for them if no `openssl` CLI command is found on the system. This leads to runtime crashes with missing `libssl.so.1.1`.
+   * *Solution*: Create a mock `openssl` CLI helper script returning `"OpenSSL 3.0.0"` in `./storage/bin/openssl` and prepend `./storage/bin` to `PATH` before `npx prisma generate` runs and before launching the main Node application. This tells Prisma to correctly load `libquery_engine-linux-musl-openssl-3.0.x.so.node`, which links perfectly against Alpine's native `libssl.so.3` libraries.

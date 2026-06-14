@@ -15,6 +15,12 @@ import fs from 'fs'
 import path from 'path'
 import https from 'https'
 
+// Prepend local bin folder to PATH so all spawned commands (ffmpeg, yt-dlp, openssl) are found
+const localBinPath = path.resolve('./storage/bin')
+if (!process.env.PATH.split(path.delimiter).includes(localBinPath)) {
+    process.env.PATH = localBinPath + path.delimiter + process.env.PATH
+}
+
 const log = (emoji, msg) => console.log(`${emoji} [Bootstrap] ${msg}`)
 const ok = (msg) => log('✅', msg)
 const inf = (msg) => log('⚙️ ', msg)
@@ -296,7 +302,61 @@ function validateEnv() {
 }
 
 // ─────────────────────────────────────────────
-// STEP 6: SUMMARY
+// STEP 5.5: OPENSSL HELPER FOR PRISMA
+// ─────────────────────────────────────────────
+
+async function setupOpenssl() {
+    inf('Checking OpenSSL CLI tool...')
+    const opensslPath = path.resolve('./storage/bin/openssl')
+    
+    // Check if openssl exists in PATH outside our local storage/bin directory
+    let hasSystemOpenssl = false
+    try {
+        const pathDirs = process.env.PATH.split(path.delimiter)
+        const systemDirs = pathDirs.filter(d => d !== localBinPath)
+        const systemPath = systemDirs.join(path.delimiter)
+        execSync('which openssl', { env: { ...process.env, PATH: systemPath }, stdio: 'pipe' })
+        hasSystemOpenssl = true
+    } catch (_) {}
+
+    if (hasSystemOpenssl) {
+        try {
+            const version = execSync('openssl version', { stdio: 'pipe' }).toString().trim()
+            ok(`OpenSSL (system): ${version}`)
+            // If a mock openssl was previously created, remove it to use the system one
+            if (fs.existsSync(opensslPath)) {
+                fs.unlinkSync(opensslPath)
+            }
+            return
+        } catch (_) {}
+    }
+
+    inf('OpenSSL CLI not found on system. Ensuring mock openssl helper exists for Prisma...')
+    try {
+        fs.writeFileSync(opensslPath, '#!/bin/sh\necho "OpenSSL 3.0.0"\n')
+        fs.chmodSync(opensslPath, '755')
+        ok('OpenSSL helper ready.')
+    } catch (e) {
+        wrn(`Failed to write OpenSSL helper: ${e.message}`)
+    }
+}
+
+// ─────────────────────────────────────────────
+// STEP 6: PRISMA
+// ─────────────────────────────────────────────
+
+async function setupPrisma() {
+    inf('Generating Prisma client database bindings...')
+    try {
+        execSync('npx prisma generate', { stdio: 'inherit' })
+        ok('Prisma client bindings generated successfully.')
+    } catch (e) {
+        wrn(`Prisma generate failed: ${e.message}`)
+    }
+}
+
+// ─────────────────────────────────────────────
+// STEP 7: SUMMARY
 // ─────────────────────────────────────────────
 
 function printSummary() {
@@ -319,7 +379,7 @@ function printSummary() {
 }
 
 // ─────────────────────────────────────────────
-// STEP 7: LAUNCH BOT
+// STEP 8: LAUNCH BOT
 // ─────────────────────────────────────────────
 
 function launchBot() {
@@ -349,7 +409,9 @@ async function main() {
         await setupFonts()
         await setupFfmpeg()
         await setupYtDlp()
+        await setupOpenssl()
         validateEnv()
+        await setupPrisma()
         printSummary()
         launchBot()
     } catch (e) {
