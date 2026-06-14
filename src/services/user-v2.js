@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import userRepository from '../repositories/user.repository.js';
 import { generateNickname } from '../utils/nickname-generator.js';
 import { appConfig } from '../config/index.js';
@@ -19,18 +19,25 @@ export class UserService {
   }
 
   /**
-   * Generates a JWT token for a given user.
+   * Generates a JWT token for a given user using native crypto.
    */
   generateToken(user) {
-    return jwt.sign(
-      {
-        jid: user.id, // Map id to jid to support legacy WABOT2.0 auth checks
-        name: user.nickname,
-        role: 'user', // Default role for anonymous sessions
-      },
-      appConfig.jwtSecret,
-      { expiresIn: '30d' } // Long session duration for frictionless guests
-    );
+    const header = { alg: 'HS256', typ: 'JWT' };
+    const payload = {
+      jid: user.id, // Map id to jid to support legacy WABOT2.0 auth checks
+      name: user.nickname,
+      role: 'user', // Default role for anonymous sessions
+      exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60, // 30 days expiration
+    };
+
+    const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+    const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    
+    const hmac = crypto.createHmac('sha256', appConfig.jwtSecret);
+    hmac.update(`${headerB64}.${payloadB64}`);
+    const signatureB64 = hmac.digest('base64url');
+    
+    return `${headerB64}.${payloadB64}.${signatureB64}`;
   }
 
   /**
