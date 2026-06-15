@@ -1,102 +1,684 @@
-import path from 'path';
-import fs from 'fs';
+// src/services/media.js
+import sharp from 'sharp'
+import fs from 'fs'
+import path from 'path'
+import https from 'https'
+import { exec } from 'child_process'
+import util from 'util'
+import crypto from 'crypto'
+import { logger } from '../utils/logger.js'
+import { addExif } from './exif.js'
 
-export class MediaService {
-  constructor() {
-    this.allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    this.maxSizeBytes = 5 * 1024 * 1024; // 5 MB
-    this.storageDir = path.resolve(process.cwd(), 'storage', 'uploads');
-    this.ensureStorageDirExists();
-  }
+const execPromise = util.promisify(exec)
 
-  ensureStorageDirExists() {
-    if (!fs.existsSync(this.storageDir)) {
-      fs.mkdirSync(this.storageDir, { recursive: true });
+const EMOJI_CACHE_DIR = path.resolve('./storage/media/emoji-cache')
+const NOTO_BASE = 'https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128'
+
+function emojiToCodepoint(emoji) {
+    const codepoints = []
+    const chars = [...emoji]
+    for (let i = 0; i < chars.length; i++) {
+        const cp = chars[i].codePointAt(0)
+        if (cp === 0xFE0F) continue
+        codepoints.push(cp.toString(16))
     }
-  }
-
-  /**
-   * Validate image input parameters.
-   */
-  validateImage(metadata) {
-    if (!this.allowedMimeTypes.includes(metadata.mimeType)) {
-      return {
-        isValid: false,
-        reason: `Format gambar tidak didukung. Format yang diizinkan: ${this.allowedMimeTypes.join(', ')}`,
-      };
-    }
-
-    if (metadata.sizeBytes > this.maxSizeBytes) {
-      return {
-        isValid: false,
-        reason: `Ukuran berkas melebihi batas maksimum 5MB.`,
-      };
-    }
-
-    return { isValid: true };
-  }
-
-  /**
-   * Compresses image to optimize resource utilization (placeholder logic for future dependency plugins).
-   */
-  async compressImage(buffer) {
-    return buffer;
-  }
-
-  /**
-   * Saves image buffer and returns the accessible asset path/url.
-   */
-  async saveAvatar(userId, buffer, filename) {
-    const ext = path.extname(filename) || '.png';
-    const relativePath = path.join('avatars', `${userId}_${Date.now()}${ext}`);
-    const absolutePath = path.join(this.storageDir, relativePath);
-
-    // Ensure avatars subdirectory exists
-    fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-
-    const processedBuffer = await this.compressImage(buffer);
-    fs.writeFileSync(absolutePath, processedBuffer);
-
-    return `/uploads/${relativePath.replace(/\\/g, '/')}`;
-  }
-
-  /**
-   * Saves banner buffer and returns the accessible asset path/url.
-   */
-  async saveBanner(userId, buffer, filename) {
-    const ext = path.extname(filename) || '.png';
-    const relativePath = path.join('banners', `${userId}_${Date.now()}${ext}`);
-    const absolutePath = path.join(this.storageDir, relativePath);
-
-    // Ensure banners subdirectory exists
-    fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-
-    const processedBuffer = await this.compressImage(buffer);
-    fs.writeFileSync(absolutePath, processedBuffer);
-
-    return `/uploads/${relativePath.replace(/\\/g, '/')}`;
-  }
-
-  /**
-   * Deletes a local media asset file.
-   */
-  deleteMedia(relativeUrlPath) {
-    if (!relativeUrlPath.startsWith('/uploads/')) return false;
-
-    const relativePath = relativeUrlPath.replace('/uploads/', '');
-    const absolutePath = path.join(this.storageDir, relativePath);
-
-    try {
-      if (fs.existsSync(absolutePath)) {
-        fs.unlinkSync(absolutePath);
-        return true;
-      }
-    } catch {
-      // failed to delete, ignore
-    }
-    return false;
-  }
+    return 'emoji_u' + codepoints.join('_')
 }
 
-export const mediaService = new MediaService();
-export default mediaService;
+async function fetchEmojiPng(emoji) {
+    if (!fs.existsSync(EMOJI_CACHE_DIR)) fs.mkdirSync(EMOJI_CACHE_DIR, { recursive: true })
+    const cp = emojiToCodepoint(emoji)
+    const cachePath = path.join(EMOJI_CACHE_DIR, `${cp}.png`)
+
+    if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 100) return cachePath
+    const url = `${NOTO_BASE}/${cp}.png`
+
+    return new Promise((resolve) => {
+        const file = fs.createWriteStream(cachePath)
+        https.get(url, (res) => {
+            if (res.statusCode === 301 || res.statusCode === 302) {
+                file.close()
+                https.get(res.headers.location, (res2) => {
+                    res2.pipe(file)
+                    file.on('finish', () => { file.close(); resolve(cachePath) })
+                }).on('error', () => { fs.unlink(cachePath, () => { }); resolve(null) })
+                return
+            }
+            if (res.statusCode !== 200) {
+                file.close()
+                fs.unlink(cachePath, () => { })
+                resolve(null)
+                return
+            }
+            res.pipe(file)
+            file.on('finish', () => { file.close(); resolve(cachePath) })
+        }).on('error', () => {
+            fs.unlink(cachePath, () => { })
+            resolve(null)
+        })
+    })
+}
+
+function pngToDataUri(filePath) {
+    const buf = fs.readFileSync(filePath)
+    return `data:image/png;base64,${buf.toString('base64')}`
+}
+
+const EMOJI_REGEX = /\p{Emoji_Presentation}\p{Emoji_Modifier_Base}?\p{Emoji_Modifier}?(\u200D\p{Emoji_Presentation}\p{Emoji_Modifier_Base}?\p{Emoji_Modifier}?)*\uFE0F?/gu;
+
+function detectEmojis(text) {
+    const matches = [...text.matchAll(EMOJI_REGEX)]
+    return [...new Set(matches.map(m => m[0]))]
+}
+
+async function prepareEmojiMap(text) {
+    const emojis = detectEmojis(text)
+    const map = new Map()
+    await Promise.all(emojis.map(async (emoji) => {
+        try {
+            const filePath = await fetchEmojiPng(emoji)
+            if (filePath) map.set(emoji, pngToDataUri(filePath))
+        } catch (e) { }
+    }))
+    return map
+}
+
+export class MediaService {
+    constructor() {
+        this.allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp']
+        this.maxSizeBytes = 5 * 1024 * 1024 // 5 MB
+        this.storageDir = path.resolve(process.cwd(), 'storage', 'uploads')
+        this.ensureStorageDirExists()
+        this.#initFontconfig()
+    }
+
+    ensureStorageDirExists() {
+        if (!fs.existsSync(this.storageDir)) {
+            fs.mkdirSync(this.storageDir, { recursive: true })
+        }
+    }
+
+    #initFontconfig() {
+        try {
+            const configDir = path.resolve('./storage/database')
+            const fontDir = path.resolve('./src/assets/fonts')
+            const cacheDir = path.resolve('./storage/database/fontcache')
+            const configFile = path.join(configDir, 'fonts.conf')
+
+            if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true })
+            if (!fs.existsSync(fontDir)) fs.mkdirSync(fontDir, { recursive: true })
+            if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true })
+
+            const config = `<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+    <dir>${fontDir}</dir>
+    <dir>/usr/share/fonts</dir>
+    <dir>/usr/local/share/fonts</dir>
+    <cachedir>${cacheDir}</cachedir>
+</fontconfig>`
+
+            fs.writeFileSync(configFile, config, 'utf8')
+            process.env.FONTCONFIG_FILE = configFile
+            console.log(`⚙️ [MediaService] Fontconfig ready → ${fontDir}`)
+        } catch (e) {
+            console.error('❌ [MediaService] Fontconfig init gagal:', e.message)
+        }
+    }
+
+    #wrapText(text, maxCharsPerLine = 11) {
+        const spaced = text.replace(EMOJI_REGEX, (m) => ` ${m} `)
+        const tokens = spaced.trim().split(/\s+/).filter(Boolean)
+        const visualLen = str => [...str].reduce((n, ch) => n + (ch.codePointAt(0) > 0x2000 ? 2 : 1), 0)
+
+        let lines = []
+        let currentLine = ''
+
+        tokens.forEach(word => {
+            const wLen = visualLen(word)
+            const lineLen = visualLen(currentLine)
+
+            if (wLen > maxCharsPerLine) {
+                if (currentLine.trim()) {
+                    lines.push(currentLine.trim())
+                    currentLine = ''
+                }
+                let tempWord = word
+                while (visualLen(tempWord) > maxCharsPerLine) {
+                    let cutIndex = 0
+                    let currentCutLen = 0
+                    for (let i = 0; i < tempWord.length; i++) {
+                        const cp = tempWord.codePointAt(i)
+                        const charLen = cp > 0x2000 ? 2 : 1
+                        if (currentCutLen + charLen > maxCharsPerLine) break
+                        currentCutLen += charLen
+                        cutIndex = i + 1
+                    }
+                    if (cutIndex === 0) cutIndex = 1
+                    lines.push(tempWord.substring(0, cutIndex))
+                    tempWord = tempWord.substring(cutIndex)
+                }
+                if (tempWord) currentLine = tempWord + ' '
+                return
+            }
+            if (lineLen + wLen > maxCharsPerLine) {
+                if (currentLine.trim()) lines.push(currentLine.trim())
+                currentLine = word + ' '
+            } else {
+                currentLine += word + ' '
+            }
+        })
+        if (currentLine.trim()) lines.push(currentLine.trim())
+        return lines
+    }
+
+    #escapeXml(str) {
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .trim()
+    }
+
+    #processTextAdaptive(text, isBottom = false) {
+        if (!text) return { lines: [], fontSize: 80, startY: 0, lineSpacing: 0 }
+
+        const words = text.trim().split(/\s+/)
+        let lines = []
+
+        if (text.length > 15 && words.length > 1) {
+            const mid = Math.ceil(words.length / 2)
+            lines.push(words.slice(0, mid).join(' '))
+            lines.push(words.slice(mid).join(' '))
+        } else {
+            lines.push(text)
+        }
+
+        const maxLineLength = Math.max(...lines.map(l => l.length))
+        let fontSize = Math.floor(490 / (maxLineLength * 0.55))
+        fontSize = Math.max(35, Math.min(85, fontSize))
+
+        const lineSpacing = fontSize * 1.05
+        const startY = isBottom
+            ? 485 - ((lines.length - 1) * lineSpacing)
+            : fontSize + 20
+
+        return { lines, fontSize, startY, lineSpacing }
+    }
+
+    #renderLine(line, y, fontSize, opts) {
+        const {
+            x = 25,
+            textAnchor = 'start',
+            fontFamily = "'Arial Narrow', Arial, sans-serif",
+            fontWeight = 'normal',
+            fill = '#000000',
+            stroke = null,
+            strokeWidth = '0',
+            emojiMap = new Map(),
+            letterSpacing = '-2px'
+        } = opts
+
+        const spaced = line.replace(EMOJI_REGEX, (m) => ` ${m} `)
+        const tokens = spaced.trim().split(/\s+/).filter(Boolean)
+
+        let elements = ''
+        const strokeAttr = stroke ? `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill"` : ''
+
+        if (textAnchor === 'middle') {
+            const textOnly = tokens.filter(t => detectEmojis(t).length === 0).join(' ').trim()
+            const emojisInLine = tokens.filter(t => detectEmojis(t).length > 0)
+            const safeText = this.#escapeXml(textOnly)
+
+            elements += `
+            <text x="${x}" y="${y}"
+                text-anchor="middle"
+                font-family="${fontFamily}"
+                font-weight="${fontWeight}"
+                font-size="${fontSize}px"
+                fill="${fill}"
+                ${strokeAttr}>${safeText}</text>\n`
+
+            const emojiSize = fontSize * 1.05
+            const estTextWidth = [...safeText].length * fontSize * 0.52
+            let emojiX = x + (estTextWidth / 2) + 10
+            const emojiY = y - emojiSize * 0.84
+
+            emojisInLine.forEach(emoji => {
+                const dataUri = emojiMap.get(emoji.trim()) ?? emojiMap.get(detectEmojis(emoji)[0])
+                if (dataUri) {
+                    elements += `<image href="${dataUri}" x="${emojiX}" y="${emojiY}" width="${emojiSize}" height="${emojiSize}"/>\n`
+                    emojiX += emojiSize * 1.05
+                }
+            })
+            return elements
+        }
+
+        const justifyWidth = 462
+        const emojiSize = fontSize * 1.05
+
+        if (tokens.length === 1) {
+            const token = tokens[0]
+            const isEmoji = detectEmojis(token).length > 0
+            if (isEmoji) {
+                const dataUri = emojiMap.get(token.trim()) ?? emojiMap.get(detectEmojis(token)[0])
+                if (dataUri) elements += `<image href="${dataUri}" x="${x}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
+            } else {
+                elements += `<text x="${x}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}">${this.#escapeXml(token)}</text>\n`
+            }
+        } else {
+            const tokenWidths = tokens.map(t => {
+                if (detectEmojis(t).length > 0) return emojiSize
+                return [...t].length * fontSize * 0.44
+            })
+
+            const totalContentWidth = tokenWidths.reduce((a, b) => a + b, 0)
+            let gap = (justifyWidth - totalContentWidth) / (tokens.length - 1)
+
+            const maxGap = fontSize * 0.22
+            if (gap > maxGap) gap = maxGap
+            if (gap < 0) gap = fontSize * 0.15
+
+            let currentX = x
+            tokens.forEach((token, index) => {
+                const isEmoji = detectEmojis(token).length > 0
+                if (isEmoji) {
+                    const dataUri = emojiMap.get(token.trim()) ?? emojiMap.get(detectEmojis(token)[0])
+                    if (dataUri) elements += `<image href="${dataUri}" x="${currentX}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
+                } else {
+                    elements += `<text x="${currentX}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}">${this.#escapeXml(token)}</text>\n`
+                }
+                currentX += tokenWidths[index] + gap
+            })
+        }
+
+        return elements
+    }
+
+    async #executeRembg(buffer) {
+        const tmpDir = path.resolve('./storage/media/tmp')
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+        const id = crypto.randomBytes(4).toString('hex')
+        const inputPath = path.join(tmpDir, `${id}_rb_in.png`)
+        const outputPath = path.join(tmpDir, `${id}_rb_out.png`)
+
+        fs.writeFileSync(inputPath, buffer)
+        try {
+            await execPromise(`python -m rembg i "${inputPath}" "${outputPath}"`)
+            return fs.readFileSync(outputPath)
+        } catch (err) {
+            logger.error('❌ [Rembg Error]:', err.message)
+            if (err.message.includes('No module named rembg') || err.message.includes('not found') || err.message.includes('not recognized')) {
+                throw new Error('Modul python "rembg" tidak ditemukan di sistem.\nUntuk menggunakan fitur --rmbg, silakan jalankan command "pip install rembg" terlebih dahulu.')
+            }
+            throw new Error('Gagal memproses hulu rmbg statis.')
+        } finally {
+            if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+        }
+    }
+
+    /**
+     * Validate image input parameters. (Used by v2 backend controllers)
+     */
+    validateImage(metadata) {
+        if (!this.allowedMimeTypes.includes(metadata.mimeType)) {
+            return {
+                isValid: false,
+                reason: `Format gambar tidak didukung. Format yang diizinkan: ${this.allowedMimeTypes.join(', ')}`,
+            }
+        }
+
+        if (metadata.sizeBytes > this.maxSizeBytes) {
+            return {
+                isValid: false,
+                reason: `Ukuran berkas melebihi batas maksimum 5MB.`,
+            }
+        }
+
+        return { isValid: true }
+    }
+
+    /**
+     * Compresses image to optimize resource utilization (placeholder logic for future dependency plugins).
+     */
+    async compressImage(buffer) {
+        return buffer
+    }
+
+    /**
+     * Saves image buffer and returns the accessible asset path/url.
+     */
+    async saveAvatar(userId, buffer, filename) {
+        const ext = path.extname(filename) || '.png'
+        const relativePath = path.join('avatars', `${userId}_${Date.now()}${ext}`)
+        const absolutePath = path.join(this.storageDir, relativePath)
+
+        // Ensure avatars subdirectory exists
+        fs.mkdirSync(path.dirname(absolutePath), { recursive: true })
+
+        const processedBuffer = await this.compressImage(buffer)
+        fs.writeFileSync(absolutePath, processedBuffer)
+
+        return `/uploads/${relativePath.replace(/\\/g, '/')}`
+    }
+
+    /**
+     * Saves banner buffer and returns the accessible asset path/url.
+     */
+    async saveBanner(userId, buffer, filename) {
+        const ext = path.extname(filename) || '.png'
+        const relativePath = path.join('banners', `${userId}_${Date.now()}${ext}`)
+        const absolutePath = path.join(this.storageDir, relativePath)
+
+        // Ensure banners subdirectory exists
+        fs.mkdirSync(path.dirname(absolutePath), { recursive: true })
+
+        const processedBuffer = await this.compressImage(buffer)
+        fs.writeFileSync(absolutePath, processedBuffer)
+
+        return `/uploads/${relativePath.replace(/\\/g, '/')}`
+    }
+
+    /**
+     * Deletes a local media asset file.
+     */
+    deleteMedia(relativeUrlPath) {
+        if (!relativeUrlPath.startsWith('/uploads/')) return false
+
+        const relativePath = relativeUrlPath.replace('/uploads/', '')
+        const absolutePath = path.join(this.storageDir, relativePath)
+
+        try {
+            if (fs.existsSync(absolutePath)) {
+                fs.unlinkSync(absolutePath)
+                return true
+            }
+        } catch {
+            // failed to delete, ignore
+        }
+        return false
+    }
+
+    // ─────────────────────────────────────────────
+    // BOT MEDIA PROCESSING API
+    // ─────────────────────────────────────────────
+
+    async toQuoteSticker(rawText) {
+        try {
+            const cleanText = rawText.trim().toLowerCase()
+            const lines = this.#wrapText(cleanText, 10)
+
+            const maxVisualLen = Math.max(...lines.map(l => {
+                return [...l].reduce((n, ch) => n + (ch.codePointAt(0) > 0x2000 ? 2 : 1), 0)
+            }))
+
+            let fontSize = Math.floor(462 / (maxVisualLen * 0.43))
+            const maxVerticalFontSize = Math.floor(400 / (lines.length * 1.05))
+            fontSize = Math.min(fontSize, maxVerticalFontSize)
+            fontSize = Math.max(46, Math.min(180, fontSize))
+
+            const lineSpacing = fontSize * 1.05
+            const totalTextHeight = lines.length * lineSpacing
+            const startY = (512 - totalTextHeight) / 2 + (fontSize * 0.75)
+
+            const emojiMap = await prepareEmojiMap(cleanText)
+            let svgContent = ''
+
+            lines.forEach((line, i) => {
+                const y = startY + (i * lineSpacing)
+                svgContent += this.#renderLine(line, y, fontSize, {
+                    x: 25,
+                    textAnchor: 'start',
+                    fontFamily: "'Arial Narrow', Arial, sans-serif",
+                    fontWeight: 'normal',
+                    fill: '#000000',
+                    emojiMap,
+                    letterSpacing: '-2.5px'
+                })
+            })
+
+            const svg = Buffer.from(`<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                ${svgContent}
+            </svg>`)
+
+            const rawWebp = await sharp({
+                create: { width: 512, height: 512, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } }
+            })
+                .composite([{ input: svg, top: 0, left: 0 }])
+                .webp({ quality: 95 })
+                .toBuffer()
+
+            return await addExif(rawWebp)
+
+        } catch (e) {
+            logger.error('❌ toQuoteSticker error:', e.message)
+            throw new Error('Gagal meracik stiker brat.')
+        }
+    }
+
+    async toMemeSticker(bufferImage, topText = '', bottomText = '', noCrop = false, removeBg = false) {
+        try {
+            if (removeBg) {
+                bufferImage = await this.#executeRembg(bufferImage)
+            }
+
+            const cleanTop = topText.trim().toUpperCase()
+            const cleanBottom = bottomText.trim().toUpperCase()
+
+            const topData = this.#processTextAdaptive(cleanTop, false)
+            const bottomData = this.#processTextAdaptive(cleanBottom, true)
+
+            const emojiMap = await prepareEmojiMap(cleanTop + ' ' + cleanBottom)
+            let svgContent = ''
+
+            topData.lines.forEach((line, i) => {
+                const y = topData.startY + (i * topData.lineSpacing)
+                svgContent += this.#renderLine(line, y, topData.fontSize, {
+                    x: 256,
+                    textAnchor: 'middle',
+                    fontFamily: "Impact, 'Arial Narrow', sans-serif",
+                    fontWeight: 'bold',
+                    fill: 'white',
+                    stroke: 'black',
+                    strokeWidth: topData.fontSize > 60 ? '8' : '5',
+                    emojiMap,
+                    letterSpacing: '0px'
+                })
+            })
+
+            bottomData.lines.forEach((line, i) => {
+                const y = bottomData.startY + (i * bottomData.lineSpacing)
+                svgContent += this.#renderLine(line, y, bottomData.fontSize, {
+                    x: 256,
+                    textAnchor: 'middle',
+                    fontFamily: "Impact, 'Arial Narrow', sans-serif",
+                    fontWeight: 'bold',
+                    fill: 'white',
+                    stroke: 'black',
+                    strokeWidth: bottomData.fontSize > 60 ? '8' : '5',
+                    emojiMap,
+                    letterSpacing: '0px'
+                })
+            })
+
+            const svg = Buffer.from(`<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                ${svgContent}
+            </svg>`)
+
+            const resizeOptions = noCrop
+                ? { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }
+                : { fit: 'cover', position: 'center' }
+
+            const rawWebp = await sharp(bufferImage)
+                .resize(512, 512, resizeOptions)
+                .composite([{ input: svg, top: 0, left: 0 }])
+                .webp({ quality: 85 })
+                .toBuffer()
+
+            return await addExif(rawWebp)
+
+        } catch (e) {
+            logger.error('❌ toMemeSticker error:', e.message)
+            throw new Error('Gagal memproses stiker meme.')
+        }
+    }
+
+    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '', noCrop = false, removeBg = false) {
+        const tmpDir = path.resolve('./storage/media/tmp')
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+        const id = crypto.randomBytes(4).toString('hex')
+        const isWebp = bufferVideo.length > 12 && bufferVideo.slice(8, 12).toString('ascii') === 'WEBP'
+
+        let finalBufferVideo = bufferVideo
+        let extension = 'mp4'
+
+        if (isWebp) {
+            logger.info('⏳ Converting Animated WebP to GIF for FFmpeg processing...')
+            finalBufferVideo = await sharp(bufferVideo, { animated: true }).gif().toBuffer()
+            extension = 'gif'
+        }
+
+        const inputPath = path.join(tmpDir, `${id}_in.${extension}`)
+        const overlayPath = path.join(tmpDir, `${id}_overlay.png`)
+        const outputPath = path.join(tmpDir, `${id}_out.webp`)
+
+        const framesInDir = path.join(tmpDir, `${id}_frames_in`)
+        const framesOutDir = path.join(tmpDir, `${id}_frames_out`)
+
+        try {
+            const cleanTop = topText.trim().toUpperCase()
+            const cleanBottom = bottomText.trim().toUpperCase()
+
+            const topData = this.#processTextAdaptive(cleanTop, false)
+            const bottomData = this.#processTextAdaptive(cleanBottom, true)
+
+            const emojiMap = await prepareEmojiMap(cleanTop + ' ' + cleanBottom)
+            let svgContent = ''
+
+            topData.lines.forEach((line, i) => {
+                const y = topData.startY + (i * topData.lineSpacing)
+                svgContent += this.#renderLine(line, y, topData.fontSize, {
+                    x: 256,
+                    textAnchor: 'middle',
+                    fontFamily: "Impact, 'Arial Narrow', sans-serif",
+                    fontWeight: 'bold',
+                    fill: 'white',
+                    stroke: 'black',
+                    strokeWidth: topData.fontSize > 60 ? '8' : '5',
+                    emojiMap,
+                    letterSpacing: '0px'
+                })
+            })
+
+            bottomData.lines.forEach((line, i) => {
+                const y = bottomData.startY + (i * bottomData.lineSpacing)
+                svgContent += this.#renderLine(line, y, bottomData.fontSize, {
+                    x: 256,
+                    textAnchor: 'middle',
+                    fontFamily: "Impact, 'Arial Narrow', sans-serif",
+                    fontWeight: 'bold',
+                    fill: 'white',
+                    stroke: 'black',
+                    strokeWidth: bottomData.fontSize > 60 ? '8' : '5',
+                    emojiMap,
+                    letterSpacing: '0px'
+                })
+            })
+
+            const svg = Buffer.from(`<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                ${svgContent}
+            </svg>`)
+
+            const overlayPng = await sharp({
+                create: { width: 512, height: 512, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+            })
+                .composite([{ input: svg, top: 0, left: 0 }])
+                .png()
+                .toBuffer()
+
+            fs.writeFileSync(inputPath, finalBufferVideo)
+            fs.writeFileSync(overlayPath, overlayPng)
+
+            // Dynamic argument loader untuk FFmpeg input
+            let ffmpegInputArgs = `-i ${inputPath}`
+
+            if (removeBg) {
+                logger.info('🔥 [Siksa CPU] Memulai proses pemecahan frame video/gif...')
+                fs.mkdirSync(framesInDir, { recursive: true })
+                fs.mkdirSync(framesOutDir, { recursive: true })
+
+                // Pecah video asal menjadi sequence gambar PNG stabil di rate 25 FPS
+                await execPromise(`ffmpeg -i ${inputPath} -vf "fps=25" "${framesInDir}/%04d.png"`)
+
+                logger.info('🔥 [Siksa CPU] Menembak modul "rembg p" untuk memproses massal seluruh frame...')
+                try {
+                    await execPromise(`python -m rembg p "${framesInDir}" "${framesOutDir}"`)
+                } catch (err) {
+                    logger.error('❌ [Rembg Error]:', err.message)
+                    if (err.message.includes('No module named rembg') || err.message.includes('not found') || err.message.includes('not recognized')) {
+                        throw new Error('Modul python "rembg" tidak ditemukan di sistem.\nUntuk menggunakan fitur --rmbg, silakan jalankan command "pip install rembg" terlebih dahulu.')
+                    }
+                    throw new Error('Gagal mengeksekusi siksaan rembg animasi.')
+                }
+
+                // Alihkan target input FFmpeg dari file video mentah ke folder sequence gambar transparan
+                ffmpegInputArgs = `-framerate 25 -i "${framesOutDir}/%04d.png"`
+            }
+
+            // FIX: Di sini gua bersihkan seutuhnya dari string ${rembgFilter} agar FFmpeg berjalan normal murni!
+            const videoFilter = noCrop
+                ? `scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=25,format=rgba`
+                : `scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba`
+
+            await execPromise(`ffmpeg ${ffmpegInputArgs} -i ${overlayPath} -filter_complex "[0:v]${videoFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 15 -loop 0 -preset default -an -vsync 0 -t 00:00:05 ${outputPath}`)
+
+            const finalWebpBuffer = fs.readFileSync(outputPath)
+            return await addExif(finalWebpBuffer)
+
+        } catch (e) {
+            logger.error('❌ toAnimatedMemeSticker error:', e.message)
+            throw new Error('Gagal mengeksekusi siksaan rembg animasi.')
+        } finally {
+            if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+            if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath)
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+
+            if (fs.existsSync(framesInDir)) fs.rmSync(framesInDir, { recursive: true, force: true })
+            if (fs.existsSync(framesOutDir)) fs.rmSync(framesOutDir, { recursive: true, force: true })
+        }
+    }
+
+    async boostMediaVolume(buffer, ext = 'mp4', volumeMultiplier = 2.0) {
+        let inputPath, outputPath
+        try {
+            const tmpDir = path.resolve('./storage/media/tmp')
+            if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+            const id = crypto.randomBytes(4).toString('hex')
+            inputPath = path.join(tmpDir, `${id}_in.${ext}`)
+            outputPath = path.join(tmpDir, `${id}_out.${ext}`)
+
+            fs.writeFileSync(inputPath, buffer)
+
+            const vcodec = ext === 'mp4' ? '-vcodec copy' : ''
+            await execPromise(`ffmpeg -y -i "${inputPath}" ${vcodec} -af "volume=${volumeMultiplier}" "${outputPath}"`)
+
+            return fs.readFileSync(outputPath)
+        } catch (err) {
+            logger.error('❌ [FFmpeg] Boost Volume Error:', err.message)
+            return buffer
+        } finally {
+            try {
+                if (inputPath && fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+                if (outputPath && fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+            } catch (e) { }
+        }
+    }
+}
+
+export const mediaService = new MediaService()
+export default mediaService

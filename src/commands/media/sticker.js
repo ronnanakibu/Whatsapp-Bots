@@ -126,7 +126,7 @@ export default {
             await react('✅')
 
         } catch (err) {
-            logger.error('❌ [Sticker Command Error]:', err.message)
+            logger.error(err, '❌ [Sticker Command Error]')
             await react('❌')
             await reply(`❌ Gagal mengeksekusi stiker: ${err.message}`)
         }

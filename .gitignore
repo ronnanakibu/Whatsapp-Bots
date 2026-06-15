@@ -34,3 +34,5 @@ src/app/dashboard/.next/
 src/app/dashboard/out/
 
 android/
+scratch/
+hf-backend/
