@@ -309,7 +309,7 @@ export class MediaService {
             await execPromise(`python -m rembg i "${inputPath}" "${outputPath}"`)
             return fs.readFileSync(outputPath)
         } catch (err) {
-            logger.error('❌ [Rembg Error]:', err.message)
+            logger.error(err, '❌ [Rembg Error]')
             if (err.message.includes('No module named rembg') || err.message.includes('not found') || err.message.includes('not recognized')) {
                 throw new Error('Modul python "rembg" tidak ditemukan di sistem.\nUntuk menggunakan fitur --rmbg, silakan jalankan command "pip install rembg" terlebih dahulu.')
             }
@@ -521,7 +521,7 @@ export class MediaService {
             return await addExif(rawWebp)
 
         } catch (e) {
-            logger.error('❌ toMemeSticker error:', e.message)
+            logger.error(e, '❌ toMemeSticker error')
             throw new Error('Gagal memproses stiker meme.')
         }
     }
@@ -618,7 +618,7 @@ export class MediaService {
                 try {
                     await execPromise(`python -m rembg p "${framesInDir}" "${framesOutDir}"`)
                 } catch (err) {
-                    logger.error('❌ [Rembg Error]:', err.message)
+                    logger.error(err, '❌ [Rembg Error]')
                     if (err.message.includes('No module named rembg') || err.message.includes('not found') || err.message.includes('not recognized')) {
                         throw new Error('Modul python "rembg" tidak ditemukan di sistem.\nUntuk menggunakan fitur --rmbg, silakan jalankan command "pip install rembg" terlebih dahulu.')
                     }
@@ -640,7 +640,7 @@ export class MediaService {
             return await addExif(finalWebpBuffer)
 
         } catch (e) {
-            logger.error('❌ toAnimatedMemeSticker error:', e.message)
+            logger.error(e, '❌ toAnimatedMemeSticker error')
             throw new Error('Gagal mengeksekusi siksaan rembg animasi.')
         } finally {
             if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)

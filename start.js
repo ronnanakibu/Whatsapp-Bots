@@ -462,6 +462,31 @@ async function main() {
         await setupFfmpeg()
         await setupYtDlp()
         await setupRembg()
+        try {
+            let diag = `--- DIAGNOSTICS ---\nTimestamp: ${new Date().toISOString()}\n`;
+            diag += `PATH: ${process.env.PATH}\n`;
+            diag += `CWD: ${process.cwd()}\n`;
+            const cmds = [
+                'python3 --version',
+                'python --version',
+                'pip --version',
+                'pip3 --version',
+                'python3 -c "import rembg; print(rembg.__file__)" 2>&1',
+                'python -c "import rembg; print(rembg.__file__)" 2>&1'
+            ];
+            for (const c of cmds) {
+                try {
+                    const out = execSync(c).toString();
+                    diag += `CMD: ${c}\nOUT:\n${out}\n`;
+                } catch (err) {
+                    diag += `CMD: ${c}\nERR:\n${err.message}\nSTDOUT:\n${err.stdout?.toString()}\nSTDERR:\n${err.stderr?.toString()}\n`;
+                }
+            }
+            fs.writeFileSync('./storage/logs/diagnostic.log', diag, 'utf8');
+            console.log('📝 Diagnostics written to ./storage/logs/diagnostic.log');
+        } catch (diagErr) {
+            console.error('Failed to run diagnostics:', diagErr);
+        }
         await setupOpenssl()
         validateEnv()
         await setupPrisma()
