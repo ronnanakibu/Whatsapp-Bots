@@ -302,9 +302,10 @@ export const botLogger = {
             ? `[GROUP] ${chatId}`
             : `[DM] ${sender}`
         const bodyPreview = body || ''
-        process.stdout.write(
-            `${C.gray}${ts()}${C.reset} 📩 ${C.bold}MSG${C.reset}   ${isGroup ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId}${C.reset}` : `${C.green}[DM]${C.reset}   ${C.dim}${sender}${C.reset}`} ${C.dim}type=${type}${C.reset} ${C.white}"${bodyPreview}"${C.reset}\n`
-        )
+        // Disabled by user request to keep console log focused on commands only
+        // process.stdout.write(
+        //     `${C.gray}${ts()}${C.reset} 📩 ${C.bold}MSG${C.reset}   ${isGroup ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId}${C.reset}` : `${C.green}[DM]${C.reset}   ${C.dim}${sender}${C.reset}`} ${C.dim}type=${type}${C.reset} ${C.white}"${bodyPreview}"${C.reset}\n`
+        // )
         
         // Broadcast to listeners for Message Observatory
         for (const listener of messageListeners) {
