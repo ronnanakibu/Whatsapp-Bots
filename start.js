@@ -464,10 +464,11 @@ async function main() {
     console.log('\n🚀 [Bootstrap] RonnBot v2.0 starting up...\n')
     try {
         setupDirectories()
-        await setupFonts()
-        await setupFfmpeg()
-        await setupYtDlp()
-        await setupRembg()
+        
+        // Write boot crash placeholder
+        try { fs.unlinkSync('./storage/logs/boot_crash.log') } catch (_) {}
+        
+        // Diagnostics
         try {
             let diag = `--- DIAGNOSTICS ---\nTimestamp: ${new Date().toISOString()}\n`;
             diag += `PATH: ${process.env.PATH}\n`;
@@ -476,9 +477,7 @@ async function main() {
                 'python3 --version',
                 'python --version',
                 'pip --version',
-                'pip3 --version',
-                'python3 -c "import rembg; print(rembg.__file__)" 2>&1',
-                'python -c "import rembg; print(rembg.__file__)" 2>&1'
+                'pip3 --version'
             ];
             for (const c of cmds) {
                 try {
@@ -493,6 +492,11 @@ async function main() {
         } catch (diagErr) {
             console.error('Failed to run diagnostics:', diagErr);
         }
+
+        await setupFonts()
+        await setupFfmpeg()
+        await setupYtDlp()
+        await setupRembg()
         await setupOpenssl()
         validateEnv()
         await setupPrisma()
@@ -501,6 +505,9 @@ async function main() {
     } catch (e) {
         err(`Bootstrap fatal error: ${e.message}`)
         console.error(e)
+        try {
+            fs.writeFileSync('./storage/logs/boot_crash.log', `Bootstrap fatal error: ${e.message}\nStack: ${e.stack}`, 'utf8');
+        } catch (_) {}
         process.exit(1)
     }
 }
