@@ -205,8 +205,8 @@ async function setupFfmpeg() {
 
 const YTDLP_SCRIPT_PATH = path.resolve('./storage/bin/yt-dlp')
 const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp'
-const PYTHON_DIR = path.resolve('./storage/bin/python')
-const PYTHON_BIN = path.resolve('./storage/bin/python/bin/python3')
+const PYTHON_DIR = path.resolve('./storage/python')
+const PYTHON_BIN = path.resolve('./storage/python/bin/python3')
 const PYTHON_URL = 'https://github.com/indygreg/python-build-standalone/releases/download/20240415/cpython-3.12.3+20240415-x86_64-unknown-linux-musl-install_only.tar.gz'
 const PYTHON_TAR = path.resolve('./storage/bin/python.tar.gz')
 
@@ -299,20 +299,26 @@ async function setupRembg() {
     if (!rembgInstalled) {
         inf(`Installing rembg[cpu] dependency via ${workingPython}...`)
         try {
-            execSync(`"${workingPython}" -m pip install "rembg[cpu]"`, { stdio: 'inherit' })
+            const installOut = execSync(`"${workingPython}" -m pip install "rembg[cpu]"`, { encoding: 'utf8', stdio: 'pipe' })
+            fs.writeFileSync('./storage/logs/pip_install.log', installOut || 'Success with no output', 'utf8')
             ok('rembg dependencies installed successfully.')
         } catch (e) {
-            wrn(`Gagal install rembg: ${e.message}`)
+            const errorLog = `Error: ${e.message}\nSTDOUT:\n${e.stdout?.toString()}\nSTDERR:\n${e.stderr?.toString()}`
+            fs.writeFileSync('./storage/logs/pip_install.log', errorLog, 'utf8')
+            wrn(`Gagal install rembg: ${e.message}. See storage/logs/pip_install.log`)
             return
         }
     }
 
     inf('Checking/Pre-downloading u2net background removal model...')
     try {
-        execSync(`"${workingPython}" -c "from rembg import remove; remove(b'')"`, { stdio: 'inherit' })
+        const downloadOut = execSync(`"${workingPython}" -c "from rembg import remove; remove(b'')"`, { encoding: 'utf8', stdio: 'pipe' })
+        fs.writeFileSync('./storage/logs/model_download.log', downloadOut || 'Model ready/downloaded successfully', 'utf8')
         ok('u2net background removal model ready and cached.')
     } catch (e) {
-        wrn(`Gagal cache model u2net: ${e.message}`)
+        const errorLog = `Error: ${e.message}\nSTDOUT:\n${e.stdout?.toString()}\nSTDERR:\n${e.stderr?.toString()}`
+        fs.writeFileSync('./storage/logs/model_download.log', errorLog, 'utf8')
+        wrn(`Gagal cache model u2net: ${e.message}. See storage/logs/model_download.log`)
     }
 }
 
