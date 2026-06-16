@@ -15,16 +15,26 @@ export default {
         let targetText = args.join(' ').trim()
 
         if (!targetText) {
+            const unwrapMessage = (m) => {
+                if (!m) return null
+                const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']
+                const mType = Object.keys(m)[0]
+                if (wrappers.includes(mType)) {
+                    return unwrapMessage(m[mType].message)
+                }
+                return m
+            }
+
             const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
-            let finalQuotedMsg = quotedMsg
-            if (quotedMsg) {
-                const quotedType = Object.keys(quotedMsg)[0]
-                const wrapperTypes = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2']
-                if (wrapperTypes.includes(quotedType)) {
-                    finalQuotedMsg = quotedMsg[quotedType].message
+            const unwrappedQuoted = unwrapMessage(quotedMsg)
+            if (unwrappedQuoted) {
+                const mType = Object.keys(unwrappedQuoted)[0]
+                if (mType === 'conversation') {
+                    targetText = unwrappedQuoted.conversation
+                } else {
+                    targetText = unwrappedQuoted[mType]?.text || unwrappedQuoted[mType]?.caption || ''
                 }
             }
-            targetText = finalQuotedMsg?.conversation || finalQuotedMsg?.extendedTextMessage?.text
         }
 
         if (!targetText) {

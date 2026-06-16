@@ -27,12 +27,16 @@ export async function handleIncomingMessage(sock, { messages }) {
         const sender = isGroup ? (msg.key.participant || from) : from
         const pushName = msg.pushName || (sender ? sender.split(':')[0].split('@')[0] : 'System')
 
-        // Unwrap ephemeral / viewonce / documentWithCaption
+        // Unwrap nested wrappers recursively (ephemeral, viewonce, documentWithCaption)
         let messageContent = msg.message
         const wrapperTypes = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']
-        const baseType = Object.keys(messageContent)[0]
-        if (wrapperTypes.includes(baseType)) {
-            messageContent = messageContent[baseType].message
+        while (messageContent) {
+            const baseType = Object.keys(messageContent)[0]
+            if (wrapperTypes.includes(baseType)) {
+                messageContent = messageContent[baseType].message
+            } else {
+                break
+            }
         }
         if (!messageContent) return
 
@@ -42,6 +46,7 @@ export async function handleIncomingMessage(sock, { messages }) {
             || messageContent?.extendedTextMessage?.text
             || messageContent?.imageMessage?.caption
             || messageContent?.videoMessage?.caption
+            || messageContent?.documentMessage?.caption
             || ''
 
         // Hook Anti-Delete

@@ -15,23 +15,51 @@ export default {
     async execute(ctx) {
         const { msg, messageContent, type, args, reply, react, from, pushName, sender, sock } = ctx
 
-        // 1. Cek validasi keberadaan media (langsung atau via quoted reply)
-        let isMedia = type === 'imageMessage' || type === 'videoMessage' || type === 'stickerMessage'
-        const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
-
-        let finalQuotedMsg = quotedMsg
-        if (quotedMsg) {
-            const quotedType = Object.keys(quotedMsg)[0]
-            const wrapperTypes = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2']
-            if (wrapperTypes.includes(quotedType)) {
-                finalQuotedMsg = quotedMsg[quotedType].message
+        // Helper function to recursively unwrap wrapper messages
+        const unwrapMessage = (m) => {
+            if (!m) return null
+            const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']
+            const mType = Object.keys(m)[0]
+            if (wrappers.includes(mType)) {
+                return unwrapMessage(m[mType].message)
             }
+            return m
         }
 
-        const finalQuotedType = finalQuotedMsg ? Object.keys(finalQuotedMsg)[0] : null
-        let isQuotedMedia = finalQuotedType === 'imageMessage' || finalQuotedType === 'videoMessage' || finalQuotedType === 'stickerMessage'
+        // Helper to check if unwrapped message contains media
+        const isMediaMsg = (m) => {
+            if (!m) return false
+            const mType = Object.keys(m)[0]
+            if (mType === 'imageMessage' || mType === 'videoMessage' || mType === 'stickerMessage') return true
+            if (mType === 'documentMessage') {
+                const mime = m.documentMessage?.mimetype || ''
+                return mime.startsWith('image/') || mime.startsWith('video/')
+            }
+            return false
+        }
 
-        if (!isMedia && !isQuotedMedia) {
+        // Helper to check if media is animated (video, gif, animated sticker)
+        const checkAnimated = (m) => {
+            if (!m) return false
+            const mType = Object.keys(m)[0]
+            if (mType === 'videoMessage') return true
+            if (mType === 'stickerMessage' && m.stickerMessage?.isAnimated) return true
+            if (mType === 'documentMessage') {
+                const mime = m.documentMessage?.mimetype || ''
+                return mime.startsWith('video/')
+            }
+            return false
+        }
+
+        // 1. Unwrap current message content and quoted message
+        const unwrappedDirect = unwrapMessage(messageContent)
+        const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
+        const unwrappedQuoted = unwrapMessage(quotedMsg)
+
+        const hasDirectMedia = isMediaMsg(unwrappedDirect)
+        const hasQuotedMedia = isMediaMsg(unwrappedQuoted)
+
+        if (!hasDirectMedia && !hasQuotedMedia) {
             return reply('⚠️ Mana gambarnya, cuy? 😭\n\nKirim gambar/video/stiker dengan caption atau balas media lama dengan perintah *.s Teks Atas | Teks Bawah* !')
         }
 
@@ -39,8 +67,12 @@ export default {
 
         try {
             let buffer
-            if (isMedia) {
-                buffer = await downloadMediaMessage(msg, 'buffer', {}, {
+            if (hasDirectMedia) {
+                const reconstructedMsg = {
+                    key: msg.key,
+                    message: unwrappedDirect
+                }
+                buffer = await downloadMediaMessage(reconstructedMsg, 'buffer', {}, {
                     logger: console, reconnectCount: 3, reuploadRequest: sock.updateMediaMessage
                 })
             } else {
@@ -51,7 +83,7 @@ export default {
                         id: quotedKey?.stanzaId ?? '',
                         fromMe: quotedKey?.participant === sock.user?.id,
                     },
-                    message: finalQuotedMsg,
+                    message: unwrappedQuoted,
                 }
                 buffer = await downloadMediaMessage(reconstructedQuotedMsg, 'buffer', {}, {
                     logger: console, reconnectCount: 3, reuploadRequest: sock.updateMediaMessage
@@ -89,10 +121,10 @@ export default {
 
             // 2. Deteksi status animasi media (Video / GIF / Sticker Animasi)
             let isAnimated = false
-            if (isMedia) {
-                isAnimated = type === 'videoMessage' || msg.message?.videoMessage?.gifPlayback || (type === 'stickerMessage' && msg.message?.stickerMessage?.isAnimated)
-            } else if (finalQuotedMsg) {
-                isAnimated = finalQuotedType === 'videoMessage' || finalQuotedMsg[finalQuotedType]?.gifPlayback || (finalQuotedType === 'stickerMessage' && finalQuotedMsg[finalQuotedType]?.isAnimated)
+            if (hasDirectMedia) {
+                isAnimated = checkAnimated(unwrappedDirect)
+            } else {
+                isAnimated = checkAnimated(unwrappedQuoted)
             }
 
             // Fallback: Cek biner header WebP jika tipe datanya tidak terbaca langsung oleh Baileys
