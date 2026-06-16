@@ -1,4 +1,7 @@
 // src/core/bot.js
+import dns from 'dns'
+dns.setDefaultResultOrder('ipv4first')
+
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,

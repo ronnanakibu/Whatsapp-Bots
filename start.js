@@ -14,6 +14,9 @@ import { execSync, spawn } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import https from 'https'
+import dns from 'dns'
+
+dns.setDefaultResultOrder('ipv4first')
 
 // Prepend local bin folder to PATH so all spawned commands (ffmpeg, yt-dlp, openssl) are found
 const localBinPath = path.resolve('./storage/bin')
