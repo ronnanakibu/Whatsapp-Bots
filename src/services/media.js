@@ -309,11 +309,31 @@ export class MediaService {
             await execPromise(`python -m rembg i "${inputPath}" "${outputPath}"`)
             return fs.readFileSync(outputPath)
         } catch (err) {
-            logger.error(err, '❌ [Rembg Error]')
-            if (err.message.includes('No module named rembg') || err.message.includes('not found') || err.message.includes('not recognized')) {
-                throw new Error('Modul python "rembg" tidak ditemukan di sistem.\nUntuk menggunakan fitur --rmbg, silakan jalankan command "pip install rembg" terlebih dahulu.')
+            logger.warn('⚠️ [Rembg Local Failed, falling back to Remote API]: ' + err.message)
+            try {
+                const { Client } = await import('@gradio/client')
+                const app = await Client.connect('KenjieDec/RemBG')
+                const blob = new Blob([buffer], { type: 'image/png' })
+                
+                const result = await app.predict('/inference', [
+                    blob,
+                    'u2net',
+                    0,
+                    0
+                ])
+                
+                const outImage = result.data[0]
+                if (!outImage || !outImage.url) {
+                    throw new Error('Gagal mendapatkan URL gambar transparan dari server API.')
+                }
+                
+                const axios = (await import('axios')).default
+                const response = await axios.get(outImage.url, { responseType: 'arraybuffer' })
+                return Buffer.from(response.data)
+            } catch (remoteErr) {
+                logger.error(remoteErr, '❌ [Rembg Remote Error]')
+                throw new Error('Gagal memproses penghapusan latar belakang (lokal & remote).')
             }
-            throw new Error('Gagal memproses hulu rmbg statis.')
         } finally {
             if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
             if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
@@ -618,11 +638,46 @@ export class MediaService {
                 try {
                     await execPromise(`python -m rembg p "${framesInDir}" "${framesOutDir}"`)
                 } catch (err) {
-                    logger.error(err, '❌ [Rembg Error]')
-                    if (err.message.includes('No module named rembg') || err.message.includes('not found') || err.message.includes('not recognized')) {
-                        throw new Error('Modul python "rembg" tidak ditemukan di sistem.\nUntuk menggunakan fitur --rmbg, silakan jalankan command "pip install rembg" terlebih dahulu.')
+                    logger.warn('⚠️ [Rembg Animated Local Failed, falling back to Remote API]: ' + err.message)
+                    try {
+                        const { Client } = await import('@gradio/client')
+                        const app = await Client.connect('KenjieDec/RemBG')
+                        const axios = (await import('axios')).default
+
+                        const files = fs.readdirSync(framesInDir).filter(f => f.endsWith('.png')).sort()
+                        
+                        // Process in parallel with concurrency limit (e.g. 5 concurrent requests)
+                        const concurrencyLimit = 5
+                        for (let i = 0; i < files.length; i += concurrencyLimit) {
+                            const chunk = files.slice(i, i + concurrencyLimit)
+                            await Promise.all(chunk.map(async (file) => {
+                                const localFrameIn = path.join(framesInDir, file)
+                                const localFrameOut = path.join(framesOutDir, file)
+                                
+                                const frameBuf = fs.readFileSync(localFrameIn)
+                                const blob = new Blob([frameBuf], { type: 'image/png' })
+                                
+                                const result = await app.predict('/inference', [
+                                    blob,
+                                    'u2net',
+                                    0,
+                                    0
+                                ])
+                                
+                                const outImage = result.data[0]
+                                if (!outImage || !outImage.url) {
+                                    throw new Error(`Gagal memproses frame ${file}`)
+                                }
+                                
+                                const response = await axios.get(outImage.url, { responseType: 'arraybuffer' })
+                                fs.writeFileSync(localFrameOut, Buffer.from(response.data))
+                            }))
+                            logger.info(`Processed frames ${i + 1} to ${Math.min(i + concurrencyLimit, files.length)} remotely...`)
+                        }
+                    } catch (remoteErr) {
+                        logger.error(remoteErr, '❌ [Rembg Animated Remote Error]')
+                        throw new Error('Gagal mengeksekusi penghapusan latar belakang animasi (lokal & remote).')
                     }
-                    throw new Error('Gagal mengeksekusi siksaan rembg animasi.')
                 }
 
                 // Alihkan target input FFmpeg dari file video mentah ke folder sequence gambar transparan
