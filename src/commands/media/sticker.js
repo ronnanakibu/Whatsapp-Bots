@@ -2,6 +2,7 @@
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import mediaService from '../../services/media.js'
 import { logger } from '../../utils/logger.js'
+import { unwrapMessage, getCleanQuoted } from '../../utils/message.js'
 
 export default {
     name: 'sticker',
@@ -15,16 +16,6 @@ export default {
     async execute(ctx) {
         const { msg, messageContent, type, args, reply, react, from, pushName, sender, sock } = ctx
 
-        // Helper function to recursively unwrap wrapper messages
-        const unwrapMessage = (m) => {
-            if (!m) return null
-            const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']
-            const mType = Object.keys(m)[0]
-            if (wrappers.includes(mType)) {
-                return unwrapMessage(m[mType].message)
-            }
-            return m
-        }
 
         // Helper to check if unwrapped message contains media
         const isMediaMsg = (m) => {
@@ -146,7 +137,7 @@ export default {
             }
 
             // 4. Kirimkan stiker hasil komposit ke room obrolan
-            await sock.sendMessage(from, { sticker: stickerBuffer }, { quoted: msg })
+            await sock.sendMessage(from, { sticker: stickerBuffer }, { quoted: getCleanQuoted(msg) })
 
             // Kirimkan salinan log ke channel internal jika dikonfigurasi
             if (process.env.LOG_CHANNEL_JID) {

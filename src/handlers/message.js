@@ -15,6 +15,7 @@ import { normalizeNumber } from '../utils/permissions.js'
 import { metricsService } from '../services/metrics.js'
 import { interactiveService } from '../services/interactive.js'
 import { processAiResponse, tryDirectRoute } from '../utils/aiRouter.js'
+import { unwrapMessage, getCleanQuoted } from '../utils/message.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
     try {
@@ -28,16 +29,7 @@ export async function handleIncomingMessage(sock, { messages }) {
         const pushName = msg.pushName || (sender ? sender.split(':')[0].split('@')[0] : 'System')
 
         // Unwrap nested wrappers recursively (ephemeral, viewonce, documentWithCaption)
-        let messageContent = msg.message
-        const wrapperTypes = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']
-        while (messageContent) {
-            const baseType = Object.keys(messageContent)[0]
-            if (wrapperTypes.includes(baseType)) {
-                messageContent = messageContent[baseType].message
-            } else {
-                break
-            }
-        }
+        const messageContent = unwrapMessage(msg.message)
         if (!messageContent) return
 
         const type = Object.keys(messageContent)[0]
@@ -120,7 +112,7 @@ export async function handleIncomingMessage(sock, { messages }) {
         // ─────────────────────────────────────────────
 
         const reply = async (text, options = {}) => {
-            const sent = await sock.sendMessage(from, { text, ...options }, { quoted: msg })
+            const sent = await sock.sendMessage(from, { text, ...options }, { quoted: getCleanQuoted(msg) })
             return sent
         }
 
@@ -160,7 +152,7 @@ export async function handleIncomingMessage(sock, { messages }) {
             downloadMedia,
             mentionedJids,
             replyMedia: async (content, mediaType, options = {}) => {
-                return sock.sendMessage(from, { [mediaType]: content, ...options }, { quoted: msg })
+                return sock.sendMessage(from, { [mediaType]: content, ...options }, { quoted: getCleanQuoted(msg) })
             }
         }
 

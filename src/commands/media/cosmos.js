@@ -1,5 +1,6 @@
 import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 import { logger } from '../../utils/logger.js'
+import { unwrapMessage, getCleanQuoted } from '../../utils/message.js'
 import { Client } from "@gradio/client"
 import { aiService } from '../../services/ai.js'
 import fs from 'fs'
@@ -32,23 +33,27 @@ export default {
             // Check if user replied to an image
             let imagePath = null
             const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
+            const unwrappedQuoted = unwrapMessage(quotedMsg)
             
-            if (quotedMsg && quotedMsg.imageMessage) {
-                // Download image
-                const stream = await downloadContentFromMessage(quotedMsg.imageMessage, 'image')
-                let buffer = Buffer.from([])
-                for await(const chunk of stream) {
-                    buffer = Buffer.concat([buffer, chunk])
+            if (unwrappedQuoted) {
+                const mType = Object.keys(unwrappedQuoted)[0]
+                if (mType === 'imageMessage' || (mType === 'documentMessage' && unwrappedQuoted.documentMessage?.mimetype?.startsWith('image/'))) {
+                    const imageMsg = unwrappedQuoted[mType]
+                    // Download image
+                    const stream = await downloadContentFromMessage(imageMsg, mType === 'imageMessage' ? 'image' : 'document')
+                    let buffer = Buffer.from([])
+                    for await(const chunk of stream) {
+                        buffer = Buffer.concat([buffer, chunk])
+                    }
+                    
+                    const tmpDir = path.resolve('./storage/media/tmp')
+                    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+                    
+                    imagePath = path.join(tmpDir, `cosmos_${crypto.randomBytes(4).toString('hex')}.jpg`)
+                    fs.writeFileSync(imagePath, buffer)
+                } else {
+                    return reply('⚠️ Yang kamu reply bukan gambar cuy. Reply gambar buat mode Image-to-Video, atau jangan reply apa-apa buat Text-to-Video.')
                 }
-                
-                const tmpDir = path.resolve('./storage/media/tmp')
-                if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
-                
-                imagePath = path.join(tmpDir, `cosmos_${crypto.randomBytes(4).toString('hex')}.jpg`)
-                fs.writeFileSync(imagePath, buffer)
-            } else if (quotedMsg && !quotedMsg.imageMessage) {
-                // Quoted something else
-                return reply('⚠️ Yang kamu reply bukan gambar cuy. Reply gambar buat mode Image-to-Video, atau jangan reply apa-apa buat Text-to-Video.')
             }
 
             // Connect to Gradio Space
@@ -101,7 +106,7 @@ export default {
             await sock.sendMessage(from, { 
                 video: { url: videoUrl }, 
                 caption: `✅ **Cosmos3-Nano**\n\nPrompt: _${prompt}_\nSeed: ${result.data[2]}`
-            }, { quoted: msg })
+            }, { quoted: getCleanQuoted(msg) })
 
         } catch (err) {
             logger.error('❌ [Cosmos] Error:', err.message)

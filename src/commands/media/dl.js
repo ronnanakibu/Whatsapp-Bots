@@ -10,6 +10,7 @@ import { downloadQueue } from '../../services/downloader/index.js'
 import { interactiveService } from '../../services/interactive.js'
 import mediaService from '../../services/media.js'
 import { logToChannel } from '../../utils/channelLogger.js'
+import { getCleanQuoted } from '../../utils/message.js'
 
 // Platform emoji map untuk display
 const PLATFORM_EMOJI = {
@@ -159,7 +160,7 @@ async function processDownload(ctx, url, platform, format, isBoost = false) {
 async function sendMedia(sock, chatId, quotedMsg, result) {
     const { buffer, mimeType, caption, type, ext } = result
 
-    const baseOpts = { quoted: quotedMsg }
+    const baseOpts = { quoted: getCleanQuoted(quotedMsg) }
 
     if (type === 'video' || mimeType?.startsWith('video/')) {
         await sock.sendMessage(chatId, {

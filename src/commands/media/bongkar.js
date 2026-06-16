@@ -1,4 +1,5 @@
 import { downloadContentFromMessage } from '@whiskeysockets/baileys'
+import { unwrapMessage, getCleanQuoted } from '../../utils/message.js'
 import { logger } from '../../utils/logger.js'
 import sharp from 'sharp'
 import { exec } from 'child_process'
@@ -22,26 +23,18 @@ export default {
 
         // Cari quoted message
         const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
-        if (!quotedMsg) {
+        const unwrappedQuoted = unwrapMessage(quotedMsg)
+        if (!unwrappedQuoted) {
             return reply('⚠️ Balas stikernya dong pakai perintah !bongkar')
         }
 
-        let finalQuotedMsg = quotedMsg
-        if (quotedMsg) {
-            const quotedType = Object.keys(quotedMsg)[0]
-            const wrapperTypes = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2']
-            if (wrapperTypes.includes(quotedType)) {
-                finalQuotedMsg = quotedMsg[quotedType].message
-            }
-        }
-
-        const finalQuotedType = finalQuotedMsg ? Object.keys(finalQuotedMsg)[0] : null
+        const finalQuotedType = Object.keys(unwrappedQuoted)[0]
         if (finalQuotedType !== 'stickerMessage') {
             return reply('⚠️ Yang dibalas harus berupa stiker, bukan teks atau gambar/video langsung.')
         }
 
         await react('⏳')
-        const stickerMsg = finalQuotedMsg.stickerMessage
+        const stickerMsg = unwrappedQuoted.stickerMessage
 
         try {
             // Download sticker
@@ -75,7 +68,7 @@ export default {
                 try {
                     await execPromise(`ffmpeg -i ${inputPath} -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -vcodec libx264 -pix_fmt yuv420p -preset fast ${outputPath}`)
                     const mp4Buffer = fs.readFileSync(outputPath)
-                    await sock.sendMessage(from, { video: mp4Buffer, gifPlayback: true, caption: '✅ Stiker berhasil dibongkar menjadi video animasi!' }, { quoted: msg })
+                    await sock.sendMessage(from, { video: mp4Buffer, gifPlayback: true, caption: '✅ Stiker berhasil dibongkar menjadi video animasi!' }, { quoted: getCleanQuoted(msg) })
                     
                     if (process.env.LOG_CHANNEL_JID) {
                         const { logToChannel } = await import('../../utils/channelLogger.js')
@@ -92,7 +85,7 @@ export default {
             } else {
                 // Sticker -> PNG menggunakan Sharp
                 const pngBuffer = await sharp(buffer).png().toBuffer()
-                await sock.sendMessage(from, { image: pngBuffer, caption: '✅ Stiker berhasil dibongkar menjadi gambar!' }, { quoted: msg })
+                await sock.sendMessage(from, { image: pngBuffer, caption: '✅ Stiker berhasil dibongkar menjadi gambar!' }, { quoted: getCleanQuoted(msg) })
                 
                 if (process.env.LOG_CHANNEL_JID) {
                     const { logToChannel } = await import('../../utils/channelLogger.js')

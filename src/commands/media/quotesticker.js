@@ -1,5 +1,6 @@
 // src/commands/media/quotesticker.js
 import mediaService from '../../services/media.js'
+import { unwrapMessage } from '../../utils/message.js'
 
 export default {
     name: 'anomali',
@@ -15,15 +16,6 @@ export default {
         let targetText = args.join(' ').trim()
 
         if (!targetText) {
-            const unwrapMessage = (m) => {
-                if (!m) return null
-                const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']
-                const mType = Object.keys(m)[0]
-                if (wrappers.includes(mType)) {
-                    return unwrapMessage(m[mType].message)
-                }
-                return m
-            }
 
             const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
             const unwrappedQuoted = unwrapMessage(quotedMsg)
