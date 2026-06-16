@@ -604,7 +604,7 @@ export class MediaService {
             fs.writeFileSync(overlayPath, overlayPng)
 
             // Dynamic argument loader untuk FFmpeg input
-            let ffmpegInputArgs = `-i ${inputPath}`
+            let ffmpegInputArgs = `-i "${inputPath}"`
 
             if (removeBg) {
                 logger.info('🔥 [Siksa CPU] Memulai proses pemecahan frame video/gif...')
@@ -612,7 +612,7 @@ export class MediaService {
                 fs.mkdirSync(framesOutDir, { recursive: true })
 
                 // Pecah video asal menjadi sequence gambar PNG stabil di rate 25 FPS
-                await execPromise(`ffmpeg -i ${inputPath} -vf "fps=25" "${framesInDir}/%04d.png"`)
+                await execPromise(`ffmpeg -i "${inputPath}" -vf "fps=25" "${path.join(framesInDir, '%04d.png')}"`)
 
                 logger.info('🔥 [Siksa CPU] Menembak modul "rembg p" untuk memproses massal seluruh frame...')
                 try {
@@ -626,7 +626,7 @@ export class MediaService {
                 }
 
                 // Alihkan target input FFmpeg dari file video mentah ke folder sequence gambar transparan
-                ffmpegInputArgs = `-framerate 25 -i "${framesOutDir}/%04d.png"`
+                ffmpegInputArgs = `-framerate 25 -i "${path.join(framesOutDir, '%04d.png')}"`
             }
 
             // FIX: Di sini gua bersihkan seutuhnya dari string ${rembgFilter} agar FFmpeg berjalan normal murni!
@@ -634,7 +634,7 @@ export class MediaService {
                 ? `scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=25,format=rgba`
                 : `scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba`
 
-            await execPromise(`ffmpeg ${ffmpegInputArgs} -i ${overlayPath} -filter_complex "[0:v]${videoFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 15 -loop 0 -preset default -an -vsync 0 -t 00:00:05 ${outputPath}`)
+            await execPromise(`ffmpeg ${ffmpegInputArgs} -i "${overlayPath}" -filter_complex "[0:v]${videoFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 15 -loop 0 -preset default -an -vsync 0 -t 00:00:05 "${outputPath}"`)
 
             const finalWebpBuffer = fs.readFileSync(outputPath)
             return await addExif(finalWebpBuffer)

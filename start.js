@@ -268,6 +268,55 @@ async function setupYtDlp() {
 }
 
 // ─────────────────────────────────────────────
+// STEP 4.5: REMBG (PYTHON BACKEND & MODEL SETUP)
+// ─────────────────────────────────────────────
+
+async function setupRembg() {
+    inf('Checking Python rembg module and dependencies...')
+    
+    let workingPython = null
+    for (const cmd of ['python3', 'python', PYTHON_BIN]) {
+        try {
+            if (cmd === PYTHON_BIN && !fs.existsSync(PYTHON_BIN)) continue
+            execSync(`"${cmd}" --version`, { stdio: 'ignore' })
+            workingPython = cmd
+            break
+        } catch (_) {}
+    }
+
+    if (!workingPython) {
+        wrn('Python runtime not found. Skipping rembg dependencies installation.')
+        return
+    }
+
+    let rembgInstalled = false
+    try {
+        execSync(`"${workingPython}" -c "import rembg"`, { stdio: 'ignore' })
+        rembgInstalled = true
+        ok('rembg module already installed.')
+    } catch (_) { }
+
+    if (!rembgInstalled) {
+        inf(`Installing rembg[cpu] dependency via ${workingPython}...`)
+        try {
+            execSync(`"${workingPython}" -m pip install "rembg[cpu]"`, { stdio: 'inherit' })
+            ok('rembg dependencies installed successfully.')
+        } catch (e) {
+            wrn(`Gagal install rembg: ${e.message}`)
+            return
+        }
+    }
+
+    inf('Checking/Pre-downloading u2net background removal model...')
+    try {
+        execSync(`"${workingPython}" -c "from rembg import remove; remove(b'')"`, { stdio: 'inherit' })
+        ok('u2net background removal model ready and cached.')
+    } catch (e) {
+        wrn(`Gagal cache model u2net: ${e.message}`)
+    }
+}
+
+// ─────────────────────────────────────────────
 // STEP 5: VALIDASI .env
 // ─────────────────────────────────────────────
 
@@ -412,6 +461,7 @@ async function main() {
         await setupFonts()
         await setupFfmpeg()
         await setupYtDlp()
+        await setupRembg()
         await setupOpenssl()
         validateEnv()
         await setupPrisma()
