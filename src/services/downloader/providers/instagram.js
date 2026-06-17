@@ -5,6 +5,7 @@
 
 import { fetchBuffer, sanitizeFilename } from '../utils.js'
 import { logger } from '../../../utils/logger.js'
+import { downloadYtdlp } from './ytdlp.js'
 import https from 'https'
 import http from 'http'
 
@@ -178,9 +179,20 @@ function parseInstaFinsta(data) {
 export async function downloadInstagram(url, options = {}) {
     let lastError = null
 
-    // ──── TAHAP 1: Coba Embed Scrape (tercepat, paling reliable) ────
+    // ──── TAHAP 1: Coba local yt-dlp (Primary, paling up-to-date & reliable) ────
     try {
-        logger.info('[Instagram] Trying: Embed Scrape (primary)')
+        logger.info('[Instagram] Trying: local yt-dlp (primary)')
+        const result = await downloadYtdlp(url, options)
+        logger.info('[Instagram] Downloaded successfully via local yt-dlp')
+        return result
+    } catch (err) {
+        logger.warn(`[Instagram] Local yt-dlp failed: ${err.message}`)
+        lastError = err
+    }
+
+    // ──── TAHAP 2: Fallback ke Embed Scrape ────
+    try {
+        logger.info('[Instagram] Trying fallback: Embed Scrape')
         const videoUrl = await downloadViaEmbed(url)
         logger.info(`[Instagram] Embed: Got CDN URL: ${videoUrl.substring(0, 80)}...`)
 
@@ -205,11 +217,11 @@ export async function downloadInstagram(url, options = {}) {
             multiple: null,
         }
     } catch (err) {
-        logger.warn(`[Instagram] Embed failed: ${err.message}`)
+        logger.warn(`[Instagram] Embed fallback failed: ${err.message}`)
         lastError = err
     }
 
-    // ──── TAHAP 2: Fallback ke API pihak ke-3 ────
+    // ──── TAHAP 3: Fallback ke API pihak ke-3 ────
     for (const api of IG_APIS) {
         try {
             logger.debug(`[Instagram] Trying API: ${api.name}`)
