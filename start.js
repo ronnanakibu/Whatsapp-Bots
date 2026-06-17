@@ -217,7 +217,34 @@ const PYTHON_URL = 'https://github.com/indygreg/python-build-standalone/releases
 const PYTHON_TAR = path.resolve('./storage/bin/python.tar.gz')
 
 async function setupYtDlp() {
-    // 1. Cek Python di sistem
+    // 1. Detect libc type (musl vs gnu)
+    let isMusl = false
+    try {
+        const lddOut = execSync('ldd --version', { stdio: 'pipe' }).toString()
+        if (lddOut.includes('musl')) isMusl = true
+    } catch (_) {
+        if (fs.existsSync('/lib/ld-musl-x86_64.so.1') || fs.existsSync('/lib/ld-musl-aarch64.so.1')) {
+            isMusl = true
+        }
+    }
+    const detectedLibc = isMusl ? 'musl' : 'gnu'
+    const pythonUrl = `https://github.com/indygreg/python-build-standalone/releases/download/20240415/cpython-3.12.3+20240415-x86_64-unknown-linux-${detectedLibc}-install_only.tar.gz`
+
+    // Check if we need to switch/redownload Python standalone due to libc mismatch
+    const libcMarkerFile = path.join(PYTHON_DIR, 'libc_type.txt')
+    let currentInstalledLibc = null
+    if (fs.existsSync(libcMarkerFile)) {
+        currentInstalledLibc = fs.readFileSync(libcMarkerFile, 'utf8').trim()
+    }
+
+    if (fs.existsSync(PYTHON_BIN) && currentInstalledLibc !== detectedLibc) {
+        inf(`Libc mismatch: detected ${detectedLibc} but installed is ${currentInstalledLibc || 'unknown'}. Re-installing Python standalone...`)
+        try {
+            fs.rmSync(PYTHON_DIR, { recursive: true, force: true })
+        } catch (_) {}
+    }
+
+    // 2. Cek Python di sistem
     let hasPython = false
     try {
         execSync('python3 --version', { stdio: 'ignore' })
@@ -225,22 +252,23 @@ async function setupYtDlp() {
         ok('Python3 system detected.')
     } catch (_) { }
 
-    // 2. Jika tidak ada Python, download Python standalone
+    // 3. Jika tidak ada Python, download Python standalone
     if (!hasPython && !fs.existsSync(PYTHON_BIN)) {
-        inf('Python3 tidak ditemukan. Downloading Python standalone (~35MB)...')
+        inf(`Python3 tidak ditemukan. Downloading Python standalone (${detectedLibc.toUpperCase()}) (~35MB)...`)
         try {
-            await downloadFile(PYTHON_URL, PYTHON_TAR)
+            await downloadFile(pythonUrl, PYTHON_TAR)
             inf('Extracting Python...')
             if (!fs.existsSync(PYTHON_DIR)) fs.mkdirSync(PYTHON_DIR, { recursive: true })
             execSync(`tar -xzf "${PYTHON_TAR}" -C "${PYTHON_DIR}" --strip-components=1`, { stdio: 'pipe' })
+            fs.writeFileSync(libcMarkerFile, detectedLibc, 'utf8')
             fs.unlinkSync(PYTHON_TAR)
-            ok('Python standalone installed.')
+            ok(`Python standalone (${detectedLibc}) installed.`)
         } catch (e) {
             wrn(`Gagal install Python: ${e.message}`)
             try { fs.unlinkSync(PYTHON_TAR) } catch (_) { }
         }
     } else if (!hasPython && fs.existsSync(PYTHON_BIN)) {
-        ok('Python standalone exists.')
+        ok(`Python standalone (${currentInstalledLibc || detectedLibc}) ready.`)
     }
 
     // Tambahkan Python standalone ke PATH
