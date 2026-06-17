@@ -314,7 +314,7 @@ async function setupRembg() {
         } catch (e) {
             const errorLog = `Error: ${e.message}\nSTDOUT:\n${e.stdout?.toString()}\nSTDERR:\n${e.stderr?.toString()}`
             fs.writeFileSync('./storage/logs/pip_install.log', errorLog, 'utf8')
-            wrn(`Gagal install rembg: ${e.message}. See storage/logs/pip_install.log`)
+            wrn(`Gagal install rembg lokal (compiler/make tools tidak ditemukan). Bot akan otomatis menggunakan Remote API (KenjieDec/RemBG). Detail: ./storage/logs/pip_install.log`)
             return
         }
     }
