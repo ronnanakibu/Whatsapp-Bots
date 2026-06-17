@@ -306,7 +306,8 @@ export class MediaService {
 
         fs.writeFileSync(inputPath, buffer)
         try {
-            await execPromise(`python -m rembg i "${inputPath}" "${outputPath}"`)
+            const pythonCmd = process.env.PYTHON_CMD || 'python3'
+            await execPromise(`"${pythonCmd}" -m rembg i "${inputPath}" "${outputPath}"`)
             return fs.readFileSync(outputPath)
         } catch (err) {
             logger.warn('⚠️ [Rembg Local Failed, falling back to Remote API]: ' + err.message)
@@ -636,7 +637,8 @@ export class MediaService {
 
                 logger.info('🔥 [Siksa CPU] Menembak modul "rembg p" untuk memproses massal seluruh frame...')
                 try {
-                    await execPromise(`python -m rembg p "${framesInDir}" "${framesOutDir}"`)
+                    const pythonCmd = process.env.PYTHON_CMD || 'python3'
+                    await execPromise(`"${pythonCmd}" -m rembg p "${framesInDir}" "${framesOutDir}"`)
                 } catch (err) {
                     logger.warn('⚠️ [Rembg Animated Local Failed, falling back to Remote API]: ' + err.message)
                     try {

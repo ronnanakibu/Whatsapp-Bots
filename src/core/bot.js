@@ -170,7 +170,8 @@ async function startBot() {
                     botLogger.warn('bot', `Reconnecting in ${delay / 1000}s (attempt ${reconnectCount}/${MAX_RECONNECT_ATTEMPTS})`)
                     setTimeout(() => startBot(), delay)
                 } else {
-                    botLogger.fatal('bot', 'Max reconnect attempts reached. Restart manually.')
+                    botLogger.fatal('bot', 'Max reconnect attempts reached. Exiting for automatic daemon restart.')
+                    process.exit(1)
                 }
             } else {
                 botLogger.warn('bot', 'Logged out. Delete session folder and restart.')

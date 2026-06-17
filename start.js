@@ -24,6 +24,14 @@ if (!process.env.PATH.split(path.delimiter).includes(localBinPath)) {
     process.env.PATH = localBinPath + path.delimiter + process.env.PATH
 }
 
+// Redirect all temp files and pip caches to the workspace to bypass container /tmp limits
+const globalTmpDir = path.resolve('./storage/media/tmp')
+if (!fs.existsSync(globalTmpDir)) {
+    fs.mkdirSync(globalTmpDir, { recursive: true })
+}
+process.env.TMPDIR = globalTmpDir
+process.env.PIP_CACHE_DIR = path.join(globalTmpDir, 'pip-cache')
+
 const log = (emoji, msg) => console.log(`${emoji} [Bootstrap] ${msg}`)
 const ok = (msg) => log('✅', msg)
 const inf = (msg) => log('⚙️ ', msg)
@@ -287,6 +295,9 @@ async function setupRembg() {
         return
     }
 
+    // Save the resolved python command to environment for runtime use in media.js
+    process.env.PYTHON_CMD = workingPython
+
     let rembgInstalled = false
     try {
         execSync(`"${workingPython}" -c "import rembg"`, { stdio: 'ignore' })
@@ -457,7 +468,6 @@ function launchBot() {
 // ─────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────
-
 async function main() {
     console.log('\n🚀 [Bootstrap] RonnBot v2.0 starting up...\n')
     try {
@@ -465,7 +475,12 @@ async function main() {
         
         // Write boot crash placeholder
         try { fs.unlinkSync('./storage/logs/boot_crash.log') } catch (_) {}
-        
+
+        await setupFonts()
+        await setupFfmpeg()
+        await setupYtDlp()
+        await setupRembg()
+
         // Diagnostics
         try {
             let diag = `--- DIAGNOSTICS ---\nTimestamp: ${new Date().toISOString()}\n`;
@@ -491,10 +506,6 @@ async function main() {
             console.error('Failed to run diagnostics:', diagErr);
         }
 
-        await setupFonts()
-        await setupFfmpeg()
-        await setupYtDlp()
-        await setupRembg()
         await setupOpenssl()
         validateEnv()
         await setupPrisma()
