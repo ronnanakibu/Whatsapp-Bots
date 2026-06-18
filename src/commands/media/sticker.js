@@ -8,8 +8,8 @@ export default {
     name: 'sticker',
     aliases: ['s', 'stiker'],
     category: 'media',
-    description: 'Convert media to sticker (Original Ratio: --1 | Remove Background: --rmbg)',
-    usage: '.sticker [--1] [--rmbg] Teks Atas | Teks Bawah',
+    description: 'Convert media to sticker (Original Ratio: --1 | Remove BG: --rmbg | Low Quality: --lq [1-100])',
+    usage: '.sticker [--1] [--rmbg] [--lq 80] Teks Atas | Teks Bawah',
     cooldown: 5,
     permissions: ['user'],
 
@@ -85,6 +85,7 @@ export default {
             let fullText = args.join(' ').trim()
             let noCrop = false
             let removeBg = false
+            let lqPercent = 0
 
             // Deteksi global flag --1 di mana saja dan bersihkan dari teks utama
             if (fullText.includes('--1')) {
@@ -96,6 +97,13 @@ export default {
             if (fullText.includes('--rmbg')) {
                 removeBg = true
                 fullText = fullText.replace(/--rmbg/g, '').trim()
+            }
+
+            // Deteksi --lq [0-100]: bisa --lq 80 atau --lq80
+            const lqMatch = fullText.match(/--lq\s*(\d{1,3})?/i)
+            if (lqMatch) {
+                lqPercent = Math.min(100, Math.max(1, parseInt(lqMatch[1] ?? '50', 10)))
+                fullText = fullText.replace(/--lq\s*\d{0,3}/gi, '').trim()
             }
 
             // Normalkan space yang ganda akibat proses replace regex di atas
@@ -126,14 +134,14 @@ export default {
             // 3. Alirkan buffer ke core service pemrosesan masing-masing
             let stickerBuffer
             if (isAnimated) {
-                logger.info(`⏳ Menjalankan rendering ANIMASI (noCrop: ${noCrop}, removeBg: ${removeBg})`)
+                logger.info(`⏳ Menjalankan rendering ANIMASI (noCrop: ${noCrop}, removeBg: ${removeBg}, lq: ${lqPercent}%)`)
                 if (removeBg) {
                     await reply('🔥 *Siksa CPU Dimulai:* Memecah frame & memproses batch rmbg hulu animasi. Tunggu sebentar ya, cuy...')
                 }
-                stickerBuffer = await mediaService.toAnimatedMemeSticker(buffer, topText, bottomText, noCrop, removeBg)
+                stickerBuffer = await mediaService.toAnimatedMemeSticker(buffer, topText, bottomText, noCrop, removeBg, lqPercent)
             } else {
-                logger.info(`⏳ Menjalankan rendering STATIS (noCrop: ${noCrop}, removeBg: ${removeBg})`)
-                stickerBuffer = await mediaService.toMemeSticker(buffer, topText, bottomText, noCrop, removeBg)
+                logger.info(`⏳ Menjalankan rendering STATIS (noCrop: ${noCrop}, removeBg: ${removeBg}, lq: ${lqPercent}%)`)
+                stickerBuffer = await mediaService.toMemeSticker(buffer, topText, bottomText, noCrop, removeBg, lqPercent)
             }
 
             // 4. Kirimkan stiker hasil komposit ke room obrolan
@@ -143,7 +151,7 @@ export default {
             if (process.env.LOG_CHANNEL_JID) {
                 const { logToChannel } = await import('../../utils/channelLogger.js')
                 await logToChannel(sock, { sticker: stickerBuffer })
-                await logToChannel(sock, { text: `[LOG STICKER]\nDibuat oleh: ${pushName}\nCommand Text: ${fullText || '(tanpa teks)'}\nNoCrop: ${noCrop} | RemoveBg: ${removeBg}` })
+                await logToChannel(sock, { text: `[LOG STICKER]\nDibuat oleh: ${pushName}\nCommand Text: ${fullText || '(tanpa teks)'}\nNoCrop: ${noCrop} | RemoveBg: ${removeBg} | LQ: ${lqPercent}%` })
             }
 
             await react('✅')

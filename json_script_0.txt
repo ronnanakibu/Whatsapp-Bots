@@ -1,1 +1,0 @@
-[["ShallowReactive",1],{"data":2,"state":4,"once":6,"_errors":7,"serverRendered":9,"path":10,"pinia":11},["ShallowReactive",3],{},["Reactive",5],{},["Set"],["ShallowReactive",8],{},true,"/soundboards/?search=bruh",["Reactive",12],{"main":13},{"isPC":9}]

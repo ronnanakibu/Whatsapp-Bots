@@ -480,10 +480,69 @@ export class MediaService {
         }
     }
 
-    async toMemeSticker(bufferImage, topText = '', bottomText = '', noCrop = false, removeBg = false) {
+    /**
+     * Apply low-quality meme effect — cascaded JPEG compression (image)
+     * lqPercent: 0 = original, 100 = maximum burik
+     * Progressive compression: encode JPEG at low quality multiple times
+     */
+    async applyLowQualityImage(buffer, lqPercent) {
+        if (!lqPercent || lqPercent <= 0) return buffer
+        const pct = Math.min(100, Math.max(1, lqPercent))
+
+        // Map 1-100% → JPEG quality 40→2 (non-linear, perceptually burik)
+        // At 0% → quality 40 (subtle), at 100% → quality 2 (mega burik)
+        const quality = Math.round(40 - (38 * (pct / 100)))
+        // Scale down factor: at 100% we shrink to ~32px then back
+        const scaleFactor = Math.max(0.0625, 1 - (pct / 100) * 0.9375) // 1.0 → 0.0625 (64px)
+        const downSize  = Math.max(32, Math.round(512 * scaleFactor))
+
+        // Pass 1: downscale + JPEG encode
+        let buf = await sharp(buffer)
+            .resize(downSize, downSize, { fit: 'fill' })
+            .jpeg({ quality, mozjpeg: false })
+            .toBuffer()
+
+        // Pass 2 (for extra burik effect): re-encode at even lower quality
+        if (pct >= 40) {
+            const q2 = Math.max(1, quality - 5)
+            buf = await sharp(buf).jpeg({ quality: q2 }).toBuffer()
+        }
+
+        // Scale back up to 512 (pixelated because no interpolation resampling)
+        buf = await sharp(buf)
+            .resize(512, 512, { fit: 'fill', kernel: 'nearest' })
+            .webp({ quality: 75 })
+            .toBuffer()
+
+        return buf
+    }
+
+    /**
+     * Apply low-quality effect to video via FFmpeg CRF degradation
+     * lqPercent: 0 = original, 100 = maximum burik
+     */
+    async applyLowQualityVideo(inputPath, outputPath, lqPercent) {
+        if (!lqPercent || lqPercent <= 0) return
+        const pct = Math.min(100, Math.max(1, lqPercent))
+        // CRF range 18 (good) → 51 (worst). At 100% → CRF 51
+        const crf = Math.round(18 + (33 * (pct / 100)))
+        // Scale down at high % values — pixelate effect
+        const scaleSize = Math.max(64, Math.round(512 * (1 - (pct / 100) * 0.875)))
+        const vfScale = `scale=${scaleSize}:${scaleSize}:flags=neighbor,scale=512:512:flags=neighbor`
+        await execPromise(
+            `ffmpeg -y -i "${inputPath}" -vf "${vfScale}" -crf ${crf} -preset ultrafast -an "${outputPath}"`
+        )
+    }
+
+    async toMemeSticker(bufferImage, topText = '', bottomText = '', noCrop = false, removeBg = false, lqPercent = 0) {
         try {
             if (removeBg) {
                 bufferImage = await this.#executeRembg(bufferImage)
+            }
+
+            // Apply LQ degradation BEFORE compositing (affect base image only)
+            if (lqPercent > 0) {
+                bufferImage = await this.applyLowQualityImage(bufferImage, lqPercent)
             }
 
             const cleanTop = topText.trim().toUpperCase()
@@ -533,10 +592,13 @@ export class MediaService {
                 ? { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }
                 : { fit: 'cover', position: 'center' }
 
+            // LQ applied to base image already — use standard quality for final WebP
+            const webpQuality = lqPercent > 0 ? Math.max(30, 85 - Math.round(lqPercent * 0.55)) : 85
+
             const rawWebp = await sharp(bufferImage)
                 .resize(512, 512, resizeOptions)
                 .composite([{ input: svg, top: 0, left: 0 }])
-                .webp({ quality: 85 })
+                .webp({ quality: webpQuality })
                 .toBuffer()
 
             return await addExif(rawWebp)
@@ -547,7 +609,7 @@ export class MediaService {
         }
     }
 
-    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '', noCrop = false, removeBg = false) {
+    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '', noCrop = false, removeBg = false, lqPercent = 0) {
         const tmpDir = path.resolve('./storage/media/tmp')
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
 
@@ -691,7 +753,16 @@ export class MediaService {
                 ? `scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=25,format=rgba`
                 : `scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba`
 
-            await execPromise(`ffmpeg ${ffmpegInputArgs} -i "${overlayPath}" -filter_complex "[0:v]${videoFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v 15 -loop 0 -preset default -an -vsync 0 -t 00:00:05 "${outputPath}"`)
+            // LQ mode: inject additional pixel-scale degradation into video filter
+            let lqFilter = ''
+            if (lqPercent > 0) {
+                const pct = Math.min(100, Math.max(1, lqPercent))
+                const scaleDown = Math.max(32, Math.round(512 * (1 - (pct / 100) * 0.9375)))
+                lqFilter = `,scale=${scaleDown}:${scaleDown}:flags=neighbor,scale=512:512:flags=neighbor`
+            }
+            const lqQv = lqPercent > 0 ? Math.round(15 + (80 * (lqPercent / 100))) : 15 // q:v 15=good → 95=worst
+
+            await execPromise(`ffmpeg ${ffmpegInputArgs} -i "${overlayPath}" -filter_complex "[0:v]${videoFilter}${lqFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v ${lqQv} -loop 0 -preset default -an -vsync 0 -t 00:00:05 "${outputPath}"`)
 
             const finalWebpBuffer = fs.readFileSync(outputPath)
             return await addExif(finalWebpBuffer)

@@ -1,9 +1,7 @@
 import axios from 'axios'
-import * as cheerio from 'cheerio'
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
-import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { logger } from '../../utils/logger.js'
 
 const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db')
@@ -13,7 +11,6 @@ let dbInstance = null
 function getDb() {
     if (dbInstance) return dbInstance
 
-    // Pastikan folder database ada
     const dir = path.dirname(DB_PATH)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
     if (!fs.existsSync(VN_DIR))  fs.mkdirSync(VN_DIR,  { recursive: true })
@@ -54,36 +51,36 @@ const MEME_SOUNDS = {
     'emotional':  'https://www.myinstants.com/media/sounds/emotional-damage-meme.mp3',
     'illuminati': 'https://www.myinstants.com/media/sounds/illuminati-confirmed.mp3',
     'windows':    'https://www.myinstants.com/media/sounds/windows-xp-startup.mp3',
-    'boom':       'https://www.myinstants.com/media/sounds/yamede-kudasai.mp3'
+    'boom':       'https://www.myinstants.com/media/sounds/yamede-kudasai.mp3',
 }
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
-// ─── Scraper 1: iMyFone Soundboard API ──────────────────────────────────────
-async function scrapeImyfone(query) {
+// ─── Source 1 (PRIORITY): MyInstants REST API ────────────────────────────────
+// Free, no key, clean JSON, 500k+ sounds
+async function searchMyInstants(query) {
     try {
-        const res = await axios.get('https://voxbox-voice-ma-api.imyfone.com/magicmic/web/sound-effects', {
-            params: { keyword: query, page: 1, pageSize: 5 },
-            headers: {
-                'User-Agent': UA,
-                'product-id': '3000',
-                'version': '1.0.0',
-                'Referer': 'https://filme.imyfone.com/'
-            },
-            timeout: 8000
+        const res = await axios.get('https://www.myinstants.com/api/v1/instants/', {
+            params: { name: query, page: 1, page_size: 5 },
+            headers: { 'User-Agent': UA },
+            timeout: 10000
         })
-        const list = res.data?.data?.data_list ?? []
-        if (list.length > 0 && list[0].resource_url) {
-            return { name: list[0].name, url: list[0].resource_url, source: 'imyfone' }
+        const results = res.data?.results ?? []
+        if (results.length > 0 && results[0].sound) {
+            return {
+                name: results[0].name,
+                url: results[0].sound,
+                source: 'myinstants'
+            }
         }
     } catch (err) {
-        logger.warn(`[Sound] iMyFone error: ${err.message}`)
+        logger.warn(`[Sound] MyInstants error: ${err.message}`)
     }
     return null
 }
 
-// ─── Scraper 2: SoundButtonsWorld API ───────────────────────────────────────
-async function scrapeSoundButtonsWorld(query) {
+// ─── Source 2 (FALLBACK): SoundButtonsWorld API ──────────────────────────────
+async function searchSoundButtonsWorld(query) {
     try {
         const res = await axios.get('https://soundbuttonsworld.com/api/memes/search', {
             params: { page: 0, pageSize: 5, q: query },
@@ -104,31 +101,11 @@ async function scrapeSoundButtonsWorld(query) {
     return null
 }
 
-// ─── Scraper 3: MyInstants (fallback) ───────────────────────────────────────
-async function scrapeMyInstants(query) {
-    try {
-        const searchUrl = `https://www.myinstants.com/search/?name=${encodeURIComponent(query)}`
-        const response = await axios.get(searchUrl, { headers: { 'User-Agent': UA }, timeout: 10000 })
-        const $ = cheerio.load(response.data)
-        const results = []
-        $('.instant').each((i, el) => {
-            const name = $(el).find('.instant-link').text().trim()
-            const onClickAttr = $(el).find('.small-button').attr('onclick') || ''
-            const match = onClickAttr.match(/play\('([^']+)'/)
-            if (match) results.push({ name, url: `https://www.myinstants.com${match[1]}` })
-        })
-        if (results.length > 0) return { name: results[0].name, url: results[0].url, source: 'myinstants' }
-    } catch (err) {
-        logger.warn(`[Sound] MyInstants error: ${err.message}`)
-    }
-    return null
-}
-
 export default {
     name: 'sound',
     aliases: ['snd', 'vn', 'voice'],
     category: 'entertainment',
-    description: 'Kirim voice note meme — lokal, database, simpan VN, atau cari di 3 sumber online',
+    description: 'Kirim voice note meme — lokal, database, simpan VN, atau cari di MyInstants & SoundButtonsWorld',
     usage: '.sound <nama> | .sound add <nama> (reply VN) | .sound del <nama>',
     example: '.sound bruh | .sound add rizz (reply VN)',
     cooldown: 3,
@@ -144,32 +121,38 @@ export default {
             if (!keyword) return reply('❌ Sebutkan nama/keyword untuk VN ini!\n*Contoh:* .sound add rizz (reply ke VN)')
 
             // Deteksi audio di quoted message atau pesan langsung
-            const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
-                ?? messageContent?.audioMessage
-                ?? null
-            const quotedKey = messageContent?.extendedTextMessage?.contextInfo
+            const contextInfo = messageContent?.extendedTextMessage?.contextInfo
+            const quotedMsg   = contextInfo?.quotedMessage ?? null
+            const quotedStanzaId = contextInfo?.stanzaId
+            const quotedParticipant = contextInfo?.participant
 
             let audioMsg = null
             let targetMsgForDownload = null
 
             if (type === 'audioMessage') {
-                // Pesan langsung adalah audio
-                audioMsg = messageContent.audioMessage
+                // Pesan langsung adalah audio/VN
+                audioMsg = messageContent?.audioMessage
                 targetMsgForDownload = msg
             } else if (quotedMsg) {
-                // Cari audioMessage di quoted
-                const qType = Object.keys(quotedMsg)[0]
-                const inner = qType === 'viewOnceMessage' || qType === 'ephemeralMessage'
-                    ? quotedMsg[qType]?.message
+                // Cari audioMessage di dalam quoted (handle wrapper types)
+                const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2']
+                const qType  = Object.keys(quotedMsg)[0]
+                const inner  = WRAPPERS.includes(qType)
+                    ? (quotedMsg[qType]?.message ?? quotedMsg)
                     : quotedMsg
-                const innerType = inner ? Object.keys(inner)[0] : null
+                const innerType = Object.keys(inner)[0]
+
                 if (innerType === 'audioMessage') {
                     audioMsg = inner.audioMessage
+                    // Bangun message object agar bisa didownload oleh Baileys
                     targetMsgForDownload = {
                         key: {
                             remoteJid: from,
-                            id: quotedKey?.stanzaId ?? msg.key.id,
-                            fromMe: false
+                            id: quotedStanzaId ?? msg.key.id,
+                            fromMe: quotedParticipant
+                                ? (quotedParticipant === sock.user?.id || quotedParticipant === sock.user?.lid)
+                                : false,
+                            participant: quotedParticipant || undefined,
                         },
                         message: inner
                     }
@@ -177,7 +160,7 @@ export default {
             }
 
             if (!audioMsg) {
-                return reply('❌ Reply ke pesan suara/VN dulu, lalu ketik:\n*.sound add <nama>*')
+                return reply('❌ Reply ke pesan suara/VN dulu, lalu ketik:\n*.sound add <nama>*\n\nAtau kirim VN langsung dengan caption *.sound add <nama>*')
             }
 
             // Cek apakah keyword sudah ada
@@ -189,19 +172,32 @@ export default {
 
             await react('⏳')
             try {
-                const buffer = await downloadMediaMessage(targetMsgForDownload, 'buffer', {})
-                if (!buffer || buffer.length === 0) throw new Error('Buffer kosong')
+                // Download media menggunakan sock (REQUIRED oleh Baileys untuk private media)
+                const { downloadMediaMessage } = await import('@whiskeysockets/baileys')
+                const buffer = await downloadMediaMessage(
+                    targetMsgForDownload,
+                    'buffer',
+                    {},
+                    { logger: logger, reuploadRequest: sock.updateMediaMessage }
+                )
 
-                const filePath = path.join(VN_DIR, `${keyword.replace(/[^a-z0-9_-]/g, '_')}_${Date.now()}.ogg`)
+                if (!buffer || buffer.length === 0) throw new Error('Buffer kosong — media tidak bisa diunduh')
+
+                // Simpan ke disk
+                const safeKeyword = keyword.replace(/[^a-z0-9_-]/g, '_')
+                const ext = audioMsg.mimetype?.includes('ogg') ? 'ogg' : 'mp3'
+                const filePath = path.join(VN_DIR, `${safeKeyword}_${Date.now()}.${ext}`)
                 fs.writeFileSync(filePath, buffer)
 
-                db.prepare('INSERT OR REPLACE INTO sound_vn (keyword, file_path, added_by) VALUES (?, ?, ?)').run(keyword, filePath, sender)
+                db.prepare('INSERT OR REPLACE INTO sound_vn (keyword, file_path, added_by) VALUES (?, ?, ?)')
+                    .run(keyword, filePath, sender)
+
                 await react('✅')
                 return reply(`✅ VN berhasil disimpan sebagai *"${keyword}"*!\nGunakan: *.sound ${keyword}*`)
             } catch (err) {
-                logger.error('[Sound] VN add error:', err.message)
+                logger.error('[Sound] VN add error:', err.message, err.stack?.split('\n')[1])
                 await react('❌')
-                return reply('❌ Gagal menyimpan VN. Coba lagi.')
+                return reply(`❌ Gagal menyimpan VN: ${err.message}\n\nPastikan kamu reply ke pesan VN yang valid.`)
             }
         }
 
@@ -212,7 +208,6 @@ export default {
 
             const existing = db.prepare('SELECT file_path FROM sound_vn WHERE keyword = ?').get(keyword)
             if (!existing) {
-                // Coba hapus dari cache juga
                 const cacheRows = db.prepare('DELETE FROM sound_cache WHERE keyword = ?').run(keyword)
                 if (cacheRows.changes > 0) return reply(`🗑️ Sound cache *"${keyword}"* berhasil dihapus.`)
                 return reply(`❌ Keyword *"${keyword}"* tidak ditemukan di database.`)
@@ -250,7 +245,8 @@ export default {
                 `*Cara pakai:*\n` +
                 `- *.sound bruh* — kirim sound\n` +
                 `- *(reply VN)* *.sound add nama* — simpan VN\n` +
-                `- *.sound del nama* — hapus dari database`
+                `- *.sound del nama* — hapus dari database\n\n` +
+                `*Sumber:* MyInstants API → SoundButtonsWorld`
             )
         }
 
@@ -293,18 +289,17 @@ export default {
             }
         }
 
-        // 4. Scrape online: iMyFone → SoundButtonsWorld → MyInstants
+        // 4. Search online: MyInstants (priority) → SoundButtonsWorld (fallback)
         if (!soundUrl && !isFile) {
             await react('⏳')
             let scraped = null
 
-            scraped = await scrapeImyfone(query)
-            if (!scraped) scraped = await scrapeSoundButtonsWorld(query)
-            if (!scraped) scraped = await scrapeMyInstants(query)
+            scraped = await searchMyInstants(query)
+            if (!scraped) scraped = await searchSoundButtonsWorld(query)
 
             if (scraped) {
-                soundUrl   = scraped.url
-                soundName  = scraped.name
+                soundUrl    = scraped.url
+                soundName   = scraped.name
                 sourceLabel = scraped.source
 
                 // Cache di database
@@ -323,19 +318,22 @@ export default {
         // 5. Tidak ditemukan di manapun
         if (!soundUrl && !isFile) {
             await react('❌')
-            return reply(`❌ Sound *"${query}"* tidak ditemukan di lokal, database, iMyFone, SoundButtonsWorld, maupun MyInstants.`)
+            return reply(`❌ Sound *"${query}"* tidak ditemukan.\n\n_Coba kata kunci lain atau gunakan .sound untuk lihat daftar yang tersedia._`)
         }
 
         // 6. Kirim ke WA
         await react('⏳')
         try {
             if (isFile) {
+                // VN lokal — kirim sebagai PTT (voice note)
+                const ext = fileBuffer?.[0] === 0x4F ? 'audio/ogg; codecs=opus' : 'audio/mpeg'
                 await sock.sendMessage(from, {
                     audio: fileBuffer,
-                    mimetype: 'audio/ogg; codecs=opus',
+                    mimetype: ext,
                     ptt: true
                 }, { quoted: msg })
             } else {
+                // URL online — kirim sebagai audio biasa (bukan PTT)
                 await sock.sendMessage(from, {
                     audio: { url: soundUrl },
                     mimetype: 'audio/mpeg',
