@@ -79,33 +79,12 @@ async function searchMyInstants(query) {
     return null
 }
 
-// ─── Source 2 (FALLBACK): SoundButtonsWorld API ──────────────────────────────
-async function searchSoundButtonsWorld(query) {
-    try {
-        const res = await axios.get('https://soundbuttonsworld.com/api/memes/search', {
-            params: { page: 0, pageSize: 5, q: query },
-            headers: { 'User-Agent': UA },
-            timeout: 8000
-        })
-        const list = res.data?.data ?? []
-        if (list.length > 0 && list[0].fileName) {
-            return {
-                name: list[0].name,
-                url: `https://soundbuttonsworld.com/uploads/${list[0].fileName}`,
-                source: 'soundbuttonsworld'
-            }
-        }
-    } catch (err) {
-        logger.warn(`[Sound] SoundButtonsWorld error: ${err.message}`)
-    }
-    return null
-}
 
 export default {
     name: 'sound',
     aliases: ['snd', 'vn', 'voice'],
     category: 'entertainment',
-    description: 'Kirim voice note meme — lokal, database, simpan VN, atau cari di MyInstants & SoundButtonsWorld',
+    description: 'Kirim voice note meme — lokal, database, simpan VN, atau cari di MyInstants',
     usage: '.sound <nama> | .sound add <nama> (reply VN) | .sound del <nama>',
     example: '.sound bruh | .sound add rizz (reply VN)',
     cooldown: 3,
@@ -246,7 +225,7 @@ export default {
                 `- *.sound bruh* — kirim sound\n` +
                 `- *(reply VN)* *.sound add nama* — simpan VN\n` +
                 `- *.sound del nama* — hapus dari database\n\n` +
-                `*Sumber:* MyInstants API → SoundButtonsWorld`
+                `*Sumber:* MyInstants API`
             )
         }
 
@@ -289,13 +268,12 @@ export default {
             }
         }
 
-        // 4. Search online: MyInstants (priority) → SoundButtonsWorld (fallback)
+        // 4. Search online: MyInstants
         if (!soundUrl && !isFile) {
             await react('⏳')
             let scraped = null
 
             scraped = await searchMyInstants(query)
-            if (!scraped) scraped = await searchSoundButtonsWorld(query)
 
             if (scraped) {
                 soundUrl    = scraped.url
