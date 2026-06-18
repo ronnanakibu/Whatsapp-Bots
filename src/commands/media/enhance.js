@@ -51,7 +51,7 @@ export async function getImageBuffer(ctx) {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 export const enhanceCommand = {
     name: 'enhance',
-    aliases: ['hd', 'upscale', 'perbagus', 'tingkatkan'],
+    aliases: ['hd', 'perbagus', 'tingkatkan'],
     category: 'media',
     description: 'Tingkatkan kualitas gambar (AI upscale + enhance) via Finegrain',
     usage: '.enhance [prompt deskripsi] (reply gambar)',

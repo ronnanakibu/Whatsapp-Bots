@@ -3,7 +3,7 @@ import { radioService, AVAILABLE_EQ } from '../../services/radio.js'
 
 export default {
     name: 'eq',
-    aliases: ['equalizer', 'eq'],
+    aliases: ['equalizer'],
     category: 'radio',
     description: 'Ubah preset equalizer audio radio',
     usage: '.eq [nama_preset]',

@@ -6,7 +6,7 @@ import { aiService } from '../../services/ai.js'
 
 export default {
     name: 'buat',
-    aliases: ['imagine', 'generate', 'gen'],
+    aliases: ['generate'],
     category: 'ai',
     description: 'Generate gambar dari deskripsi teks menggunakan AI.',
     usage: '.buat [deskripsi gambar]',

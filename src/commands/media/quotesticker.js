@@ -4,7 +4,7 @@ import { unwrapMessage } from '../../utils/message.js'
 
 export default {
     name: 'anomali',
-    aliases: ['qs', 'qc', 'quote', 'brat'],
+    aliases: ['qs', 'qc', 'brat'],
     category: 'media',
     description: 'Mengubah teks menjadi stiker anomali kurus tipis ala brat generator',
     usage: '.anomali <teks kamu>',

@@ -9,7 +9,7 @@ import crypto from 'crypto'
 
 export default {
     name: 'cosmos',
-    aliases: ['cosmos3', 'vidgen'],
+    aliases: ['cosmos3'],
     category: 'media',
     description: 'Bikin Physical AI Video dari prompt text atau gambar pakai NVIDIA Cosmos3-Nano',
     usage: '.cosmos <prompt> | atau reply gambar dengan .cosmos <prompt>',
