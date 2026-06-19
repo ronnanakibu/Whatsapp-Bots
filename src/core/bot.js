@@ -19,6 +19,7 @@ import { handleRevokeMessage } from '../handlers/revoke.js'
 import { logger, botLogger, setSocket } from '../utils/logger.js'
 import { initReminderScheduler } from '../commands/general/remindme.js'
 import { initWeatherScheduler } from '../commands/utility/cuaca.js'
+import { initRecapScheduler } from '../commands/radio/recap.js'
 import { startRadioServer, updateBotStatus } from '../server/radio.js'
 import { metricsService } from '../services/metrics.js'
 
@@ -152,6 +153,10 @@ async function startBot() {
             // Start weather scheduler setelah connected
             initWeatherScheduler(sock)
             botLogger.system('Weather scheduler started ✓')
+
+            // Start weekly recap scheduler setelah connected
+            initRecapScheduler(sock)
+            botLogger.system('Weekly recap scheduler started ✓')
         }
 
         if (connection === 'close') {
