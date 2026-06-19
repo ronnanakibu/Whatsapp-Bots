@@ -66,6 +66,8 @@ export function startDiscordBot() {
             GatewayIntentBits.GuildMessages,
             GatewayIntentBits.MessageContent,
             GatewayIntentBits.GuildVoiceStates,
+            GatewayIntentBits.GuildPresences,
+            GatewayIntentBits.GuildMembers,
         ]
     })
 
@@ -83,6 +85,50 @@ export function startDiscordBot() {
     discordClient.once('clientReady', () => {
         logger.info(`[Discord] Bot online sebagai ${discordClient.user.tag}`)
         setBotPresence()
+    })
+
+    discordClient.on('presenceUpdate', async (oldPresence, newPresence) => {
+        if (!radioService.spotifySyncActive) return
+
+        const ownerId = process.env.DISCORD_OWNER_ID
+        if (!ownerId || newPresence?.userId !== ownerId) return
+
+        // Cari aktivitas Spotify di presence baru
+        const newSpotify = newPresence.activities?.find(
+            act => act.name === 'Spotify' && act.type === ActivityType.Listening
+        )
+        // Cari aktivitas Spotify di presence lama
+        const oldSpotify = oldPresence?.activities?.find(
+            act => act.name === 'Spotify' && act.type === ActivityType.Listening
+        )
+
+        if (newSpotify) {
+            const newTrack = newSpotify.details
+            const newArtist = newSpotify.state
+            const oldTrack = oldSpotify?.details
+            const oldArtist = oldSpotify?.state
+
+            // Jika lagu berubah atau baru mulai diputar
+            if (newTrack !== oldTrack || newArtist !== oldArtist) {
+                logger.info(`[Spotify Sync] Owner mengganti lagu: ${newArtist} - ${newTrack}`)
+                try {
+                    const query = `${newArtist} - ${newTrack}`
+                    // bypassSyncActive = true (argumen ketiga) untuk menembus lock di addToQueue
+                    const track = await radioService.search(query, ownerId + '@discord', 'Spotify Sync')
+                    
+                    radioService.clearQueue()
+                    radioService.addToQueue(track, null, true)
+
+                    if (radioService.isPlaying) {
+                        await radioService.skip()
+                    } else {
+                        await radioService.start()
+                    }
+                } catch (err) {
+                    logger.error(`[Spotify Sync] Gagal sinkronisasi lagu otomatis: ${err.message}`)
+                }
+            }
+        }
     })
 
     discordClient.on('messageCreate', async (message) => {
@@ -957,4 +1003,53 @@ export function startDiscordBot() {
     discordClient.login(token).catch(err => {
         logger.error(`[Discord] Gagal login: ${err.message}`)
     })
+}
+
+/**
+ * Mengambil informasi lagu Spotify aktif saat ini dari presence Owner Discord
+ */
+export async function getOwnerSpotifyTrack() {
+    if (!discordClient) {
+        throw new Error('Discord bot belum diinisialisasi atau dinonaktifkan.')
+    }
+    const ownerId = process.env.DISCORD_OWNER_ID
+    if (!ownerId) {
+        throw new Error('DISCORD_OWNER_ID belum dikonfigurasi di file .env.')
+    }
+
+    // Cari member owner di seluruh guild yang diikuti bot
+    let member = null
+    for (const guild of discordClient.guilds.cache.values()) {
+        try {
+            member = await guild.members.fetch(ownerId)
+            if (member) break
+        } catch (e) {
+            // Lanjut cari di guild lain
+        }
+    }
+
+    if (!member) {
+        throw new Error('Owner tidak ditemukan di server Discord mana pun yang diikuti bot.')
+    }
+
+    const presence = member.presence
+    if (!presence) {
+        throw new Error('Presence owner tidak terdeteksi. Pastikan status owner aktif di Discord (tidak Invisible) dan bot memiliki Presence Intent.')
+    }
+
+    const spotify = presence.activities.find(
+        act => act.name === 'Spotify' && act.type === ActivityType.Listening
+    )
+
+    if (!spotify) {
+        throw new Error('Owner sedang tidak memutar lagu di Spotify.')
+    }
+
+    const songTitle = spotify.details
+    const artist = spotify.state
+    return {
+        songTitle,
+        artist,
+        query: artist ? `${artist} - ${songTitle}` : songTitle
+    }
 }

@@ -111,6 +111,51 @@ let flushTimeout = null
 let isFlushing = false
 let isLogging = false // Mencegah infinite loop logging re-entrant
 
+// Error logger buffer to send only errors/fatal errors directly to owner
+let errorBuffer = []
+let errorFlushTimeout = null
+let isErrorFlushing = false
+
+function sendErrorToOwner(text) {
+    const ownerRaw = process.env.OWNER_NUMBER
+    if (!ownerRaw || !sockInstance || isLogging) return
+
+    errorBuffer.push(text)
+
+    if (!errorFlushTimeout && !isErrorFlushing) {
+        errorFlushTimeout = setTimeout(flushErrorsToOwner, 2000)
+    }
+}
+
+async function flushErrorsToOwner() {
+    errorFlushTimeout = null
+    if (errorBuffer.length === 0 || !sockInstance) return
+
+    isErrorFlushing = true
+    const batch = [...errorBuffer]
+    errorBuffer = []
+
+    isLogging = true
+    try {
+        const ownerRaw = process.env.OWNER_NUMBER || ''
+        const owners = ownerRaw.split(',').map(n => n.trim()).filter(Boolean)
+        
+        for (const owner of owners) {
+            const formattedJid = owner.includes('@') ? owner : `${owner.replace(/[^0-9]/g, '')}@s.whatsapp.net`
+            const messageText = `⚠️ *[ALERT ERROR BOT]*\n\n${batch.join('\n\n')}`
+            await sockInstance.sendMessage(formattedJid, { text: messageText })
+        }
+    } catch (err) {
+        console.error('❌ [ErrorLogger] Gagal mengirim error log ke owner:', err.message)
+    } finally {
+        isLogging = false
+        isErrorFlushing = false
+        if (errorBuffer.length > 0) {
+            errorFlushTimeout = setTimeout(flushErrorsToOwner, 2000)
+        }
+    }
+}
+
 export function setSocket(sock) {
     sockInstance = sock
 }
@@ -255,7 +300,13 @@ function rawLog(level, module, ...args) {
 
     // Kirim ke WhatsApp Channel (kecuali trace/debug agar tidak spamming/rate limit)
     if (level !== 'trace' && level !== 'debug') {
-        sendWhatsAppLog(`${icon} *[${level.toUpperCase()}]* ${module ? `[${module.toUpperCase()}] ` : ''}${message}`)
+        const logMsg = `${icon} *[${level.toUpperCase()}]* ${module ? `[${module.toUpperCase()}] ` : ''}${message}`
+        sendWhatsAppLog(logMsg)
+        
+        // Kirim log error / fatal langsung ke WhatsApp owner
+        if (level === 'error' || level === 'fatal') {
+            sendErrorToOwner(logMsg)
+        }
     }
 }
 
@@ -397,7 +448,10 @@ export const botLogger = {
         process.stdout.write(
             `${C.gray}${ts()}${C.reset} ❌ ${C.bold}${C.red}ERROR${C.reset}  ${C.red}[${module}]${C.reset} ${context ? C.dim + context + ' ' + C.reset : ''}${errMsg}${err instanceof Error && err.stack ? `\n${C.dim}${err.stack}${C.reset}` : ''}\n`
         )
-        sendWhatsAppLog(`❌ *[ERROR]* [${module.toUpperCase()}] ${context ? `(${context}) ` : ''}${errMsg}${stack}`)
+        const logMsg = `❌ *[ERROR]* [${module.toUpperCase()}] ${context ? `(${context}) ` : ''}${errMsg}${stack}`
+        sendWhatsAppLog(logMsg)
+        // Kirim log error langsung ke WhatsApp owner
+        sendErrorToOwner(logMsg)
     },
 
     /** Separator / section header */

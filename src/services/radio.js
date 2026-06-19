@@ -462,6 +462,9 @@ class RadioService extends EventEmitter {
     #skipRequested = false
     #playTimeout = null
     #currentStream = null   // play-dl stream reference untuk cleanup
+    
+    // Status sinkronisasi Spotify owner aktif
+    spotifySyncActive = false
 
     constructor() {
         super()
@@ -612,7 +615,10 @@ class RadioService extends EventEmitter {
     // QUEUE
     // ─────────────────────────────────────────────
 
-    addToQueue(track, correlationId = null) {
+    addToQueue(track, correlationId = null, bypassSyncActive = false) {
+        if (this.spotifySyncActive && !bypassSyncActive) {
+            throw new Error('Antrean radio sedang dikunci karena sinkronisasi Spotify Owner aktif.')
+        }
         if (this.#queue.length >= MAX_QUEUE) throw new Error(`Queue penuh (max ${MAX_QUEUE}).`)
         
         // Save song metadata to DB
