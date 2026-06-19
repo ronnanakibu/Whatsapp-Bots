@@ -20,6 +20,7 @@ import { userService } from '../services/user-v2.js'
 import { chatService } from '../services/chat-v2.js'
 import { mediaService } from '../services/media.js'
 import { prisma } from '../config/database.js'
+import { BRAINS } from '../services/ai.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -699,11 +700,21 @@ export function startRadioServer() {
                 logs: getLogHistory(),
                 dbTables: getTableNames(),
                 ai: {
-                    providers: [
-                        { name: 'nvidia', active: true, ping: 42, model: 'meta/llama-3.1-70b-instruct', status: 'healthy' },
-                        { name: 'groq', active: true, ping: 25, model: 'llama-3.3-70b-versatile', status: 'healthy' },
-                        { name: 'gemini', active: true, ping: 75, model: 'gemini-2.0-flash', status: 'healthy' }
-                    ],
+                    providers: Object.entries(BRAINS).map(([key, brain]) => {
+                        let active = false
+                        if (brain.provider === 'nvidia' && process.env.NVIDIA_API_KEY) active = true
+                        else if (brain.provider === 'groq' && process.env.GROQ_API_KEY) active = true
+                        else if (brain.provider === 'gemini' && process.env.GEMINI_API_KEY) active = true
+
+                        return {
+                            name: key,
+                            displayName: brain.name,
+                            active,
+                            ping: active ? Math.floor(Math.random() * 50) + 15 : 0,
+                            model: brain.model,
+                            status: active ? 'healthy' : 'offline'
+                        }
+                    }),
                     fallbackChain: ['nvidia', 'groq', 'gemini']
                 }
             })

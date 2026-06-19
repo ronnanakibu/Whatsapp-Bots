@@ -19,6 +19,22 @@ const nvidiaClient = process.env.NVIDIA_API_KEY ? new OpenAI({
     baseURL: 'https://integrate.api.nvidia.com/v1'
 }) : null
 
+export const BRAINS = {
+    nvidia: { name: 'NVIDIA Nemotron 70B', model: 'nvidia/llama-3.1-nemotron-70b-instruct', provider: 'nvidia' },
+    groq: { name: 'Groq Llama 3.3', model: 'llama-3.3-70b-versatile', provider: 'groq' },
+    gemini: { name: 'Google Gemini Flash', model: 'gemini-2.0-flash', provider: 'gemini' },
+    gpt_oss: { name: 'OpenAI GPT-OSS 120B', model: 'openai/gpt-oss-120b', provider: 'nvidia' },
+    nemotron_super: { name: 'NVIDIA Nemotron-3 Super 120B', model: 'nvidia/nemotron-3-super-120b-a12b', provider: 'nvidia' },
+    llama3_3: { name: 'Meta Llama 3.3 70B', model: 'meta/llama-3.3-70b-instruct', provider: 'nvidia' },
+    qwen3: { name: 'Qwen3 Next 80B', model: 'qwen/qwen3-next-80b-a3b-instruct', provider: 'nvidia' },
+    gemma4: { name: 'Google Gemma 4 31B', model: 'google/gemma-4-31b-it', provider: 'nvidia' },
+    kimi: { name: 'Moonshot AI Kimi K2.6', model: 'moonshotai/kimi-k2.6', provider: 'nvidia' },
+    deepseek_flash: { name: 'DeepSeek V4 Flash', model: 'deepseek-ai/deepseek-v4-flash', provider: 'nvidia' },
+    deepseek_pro: { name: 'DeepSeek V4 Pro', model: 'deepseek-ai/deepseek-v4-pro', provider: 'nvidia' },
+    nemotron_voice: { name: 'NVIDIA Nemotron VoiceChat', model: 'nvidia/nemotron-voicechat', provider: 'nvidia' },
+}
+
+
 // ─────────────────────────────────────────────
 // MODEL POOL
 // Rotasi otomatis kalau satu model rate-limited
@@ -488,26 +504,88 @@ function cleanMemoryMessage(text) {
     return text
 }
 
+async function nvidiaChatWithModel(chatId, userMessage, model, providerName, retryCount = 0) {
+    if (!nvidiaClient) throw new Error('NVIDIA API Key not configured')
+    const history = memoryService.getHistory(chatId)
+
+    const messages = [
+        { role: 'system', content: getDynamicSystemPrompt() },
+        ...history,
+        { role: 'user', content: userMessage }
+    ]
+
+    try {
+        const isReasoning = providerName.includes('kimi') || providerName.includes('pro')
+        const res = await nvidiaClient.chat.completions.create({
+            model,
+            messages,
+            max_tokens: 2048,
+            temperature: isReasoning ? 0.3 : 0.7,
+        })
+
+        const reply = res.choices[0]?.message?.content?.trim()
+        if (!reply) throw new Error(`Empty response from NVIDIA model ${model}`)
+
+        return { text: reply, model, provider: providerName }
+
+    } catch (err) {
+        logger.error(`[AI/${providerName}] Error calling model ${model}: ${err.message}`)
+        throw err
+    }
+}
+
 async function chat(chatId, userMessage, forcedProvider = null) {
     // Tentukan provider utama (dari parameter, database memori, atau default 'groq')
     let provider = forcedProvider || memoryService.getAiProvider(chatId) || 'groq'
     let result = null
 
-    if (provider === 'nvidia') {
-        if (!nvidiaClient) {
-            logger.warn('[AI] NVIDIA API key not configured, falling back to Groq')
-            provider = 'groq'
-        } else {
-            try {
-                result = await nvidiaChat(chatId, userMessage)
-            } catch (err) {
-                logger.warn(`[AI] NVIDIA failed (${err.message}), falling back to Groq`)
+    if (BRAINS[provider]) {
+        const brain = BRAINS[provider];
+        if (brain.provider === 'nvidia') {
+            if (!nvidiaClient) {
+                logger.warn(`[AI] NVIDIA API key not configured for brain ${provider}, falling back to Groq`)
                 provider = 'groq'
+            } else {
+                try {
+                    result = await nvidiaChatWithModel(chatId, userMessage, brain.model, provider)
+                } catch (err) {
+                    logger.warn(`[AI] NVIDIA brain ${provider} failed (${err.message}), falling back to Groq`)
+                    provider = 'groq'
+                }
+            }
+        } else if (brain.provider === 'groq') {
+            try {
+                result = await groqChat(chatId, userMessage)
+            } catch (err) {
+                logger.warn(`[AI] Groq failed (${err.message}), falling back to Gemini`)
+                provider = 'gemini'
+            }
+        } else if (brain.provider === 'gemini') {
+            try {
+                result = await geminiChat(chatId, userMessage)
+            } catch (err) {
+                logger.error('[AI] Gemini failed:', err.message)
+                throw new Error('Semua AI provider sedang sibuk. Coba lagi sebentar.')
+            }
+        }
+    } else {
+        // Fallback jika provider legacy/tidak terdaftar
+        if (provider === 'nvidia') {
+            if (!nvidiaClient) {
+                logger.warn('[AI] NVIDIA API key not configured, falling back to Groq')
+                provider = 'groq'
+            } else {
+                try {
+                    result = await nvidiaChat(chatId, userMessage)
+                } catch (err) {
+                    logger.warn(`[AI] NVIDIA failed (${err.message}), falling back to Groq`)
+                    provider = 'groq'
+                }
             }
         }
     }
 
-    if (provider === 'groq') {
+    if (provider === 'groq' && !result) {
         try {
             result = await groqChat(chatId, userMessage)
         } catch (err) {
@@ -516,7 +594,7 @@ async function chat(chatId, userMessage, forcedProvider = null) {
         }
     }
 
-    if (provider === 'gemini') {
+    if (provider === 'gemini' && !result) {
         try {
             result = await geminiChat(chatId, userMessage)
         } catch (err) {
@@ -535,6 +613,7 @@ async function chat(chatId, userMessage, forcedProvider = null) {
 
     return result
 }
+
 
 // ─────────────────────────────────────────────
 // FACT CHECKER — Standalone Gemini Tanpa Memori
@@ -572,8 +651,10 @@ export const aiService = {
     debugCode,  // sudah handle chatId
     getDailyFact,
     nvidiaChat,
+    nvidiaChatWithModel,
     groqChat,
     geminiChat,
     geminiFactCheck,
     kimiChat,
+    BRAINS,
 }

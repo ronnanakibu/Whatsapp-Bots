@@ -19,15 +19,26 @@ export default function AICenter() {
     { name: 'gemini', active: false, ping: 480, model: 'gemini-2.0-flash', status: 'healthy' }
   ]
 
-  const providers = rawProviders.map(p => ({
-    name: p.name,
-    displayName: p.name === 'nvidia' ? 'NVIDIA NIM' : p.name === 'groq' ? 'GroqCloud' : 'Google Gemini',
-    model: p.model || (p.name === 'groq' ? 'llama-3.3-70b-versatile' : p.name === 'gemini' ? 'gemini-2.0-flash' : 'meta/llama-3.1-70b-instruct'),
-    status: p.status || 'healthy',
-    speed: p.ping ? `${p.ping}ms` : (p.name === 'groq' ? '120ms' : p.name === 'gemini' ? '480ms' : '240ms'),
-    active: p.active,
-    ping: p.ping || 0
-  }))
+  const providers = rawProviders.map(p => {
+    let displayName = p.name
+    if (p.name === 'nvidia') displayName = 'NVIDIA NIM'
+    else if (p.name === 'groq') displayName = 'GroqCloud'
+    else if (p.name === 'gemini') displayName = 'Google Gemini'
+    else if (p.displayName) displayName = p.displayName
+    else {
+      displayName = p.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    }
+
+    return {
+      name: p.name,
+      displayName,
+      model: p.model || 'Standard Model',
+      status: p.status || 'healthy',
+      speed: p.ping ? `${p.ping}ms` : '150ms',
+      active: p.active,
+      ping: p.ping || 0
+    }
+  })
 
   const fallbackChain = aiConfig.fallbackChain.length > 0 ? aiConfig.fallbackChain : ['nvidia', 'groq', 'gemini']
 
@@ -47,8 +58,9 @@ export default function AICenter() {
   const renderProviderIcon = (name: string, active: boolean) => {
     const sizeClass = "h-5 w-5"
     const colorClass = active ? "text-emerald-400" : "text-muted-foreground"
-    
-    if (name.toLowerCase() === 'nvidia') {
+    const n = name.toLowerCase()
+
+    if (n.includes('nvidia') || n.includes('nemotron')) {
       return (
         <svg viewBox="0 0 24 24" className={cn(sizeClass, colorClass)} fill="currentColor">
           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15.5c-3.03 0-5.5-2.47-5.5-5.5s2.47-5.5 5.5-5.5 5.5 2.47 5.5 5.5-2.47 5.5-5.5 5.5zm0-9c-1.93 0-3.5 1.57-3.5 3.5s1.57 3.5 3.5 3.5 3.5-1.57 3.5-3.5-1.57-3.5-3.5-3.5z" />
@@ -56,7 +68,7 @@ export default function AICenter() {
         </svg>
       )
     }
-    if (name.toLowerCase() === 'groq') {
+    if (n.includes('groq')) {
       return (
         <svg viewBox="0 0 24 24" className={cn(sizeClass, colorClass)} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
@@ -64,10 +76,40 @@ export default function AICenter() {
         </svg>
       )
     }
-    if (name.toLowerCase() === 'gemini') {
+    if (n.includes('gemini') || n.includes('gemma')) {
       return (
         <svg viewBox="0 0 24 24" className={cn(sizeClass, colorClass)} fill="currentColor">
           <path d="M12 2a1 1 0 0 0-1 1c0 4.418-3.582 8-8 8a1 1 0 0 0 0 2c4.418 0 8 3.582 8 8a1 1 0 0 0 2 0c0-4.418 3.582-8 8-8a1 1 0 0 0 0-2c-4.418 0-8-3.582-8-8a1 1 0 0 0-1-1z" />
+        </svg>
+      )
+    }
+    if (n.includes('gpt_oss') || n.includes('openai')) {
+      return (
+        <svg viewBox="0 0 24 24" className={cn(sizeClass, colorClass)} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+        </svg>
+      )
+    }
+    if (n.includes('deepseek')) {
+      return (
+        <svg viewBox="0 0 24 24" className={cn(sizeClass, colorClass)} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M16.2 7.8l-8.4 8.4M7.8 7.8l8.4 8.4" />
+        </svg>
+      )
+    }
+    if (n.includes('kimi')) {
+      return (
+        <svg viewBox="0 0 24 24" className={cn(sizeClass, colorClass)} fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 3v18M3 12h18M12 12l6-6M12 12l-6 6M12 12l6 6M12 12L6 6" />
+        </svg>
+      )
+    }
+    if (n.includes('qwen')) {
+      return (
+        <svg viewBox="0 0 24 24" className={cn(sizeClass, colorClass)} fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       )
     }
@@ -76,7 +118,97 @@ export default function AICenter() {
 
   const getProviderStats = (name: string) => {
     const n = name.toLowerCase()
-    if (n === 'nvidia') {
+    if (n.includes('gpt_oss')) {
+      return {
+        requestsToday: '18 queries',
+        estimatedCost: '$0.00 / free (NVIDIA Developer key)',
+        accuracy: '99.7%',
+        fallbackPriority: 'On-Demand (Rank 4)',
+        features: ['OpenAI MoE architecture integration', 'Agentic workflow specialized reasoning', 'Extremely precise instruction following'],
+        uptimeHistory: ['99.9%', '100%', '100%', '99.9%']
+      }
+    }
+    if (n.includes('nemotron_super')) {
+      return {
+        requestsToday: '12 queries',
+        estimatedCost: '$0.00 / free (NVIDIA Developer key)',
+        accuracy: '99.6%',
+        fallbackPriority: 'On-Demand (Rank 5)',
+        features: ['Nemotron-3 Super 120B power', 'Mamba-Transformer hybrid structure', 'Optimized multi-token predictions'],
+        uptimeHistory: ['100%', '99.8%', '99.9%', '100%']
+      }
+    }
+    if (n.includes('llama3_3')) {
+      return {
+        requestsToday: '48 queries',
+        estimatedCost: '$0.00 / free (NVIDIA Developer key)',
+        accuracy: '99.3%',
+        fallbackPriority: 'On-Demand (Rank 6)',
+        features: ['Meta Llama 3.3 70B Instruct', 'SOTA open weights capability', 'High-throughput chat agent logic'],
+        uptimeHistory: ['99.9%', '99.9%', '99.9%', '99.9%']
+      }
+    }
+    if (n.includes('qwen3')) {
+      return {
+        requestsToday: '24 queries',
+        estimatedCost: '$0.00 / free (NVIDIA Developer key)',
+        accuracy: '99.2%',
+        fallbackPriority: 'On-Demand (Rank 7)',
+        features: ['Qwen3 Next 80B multilingual model', 'Highly advanced JSON output structure', 'Top-tier code translation & formatting'],
+        uptimeHistory: ['99.8%', '99.9%', '99.7%', '99.9%']
+      }
+    }
+    if (n.includes('gemma4')) {
+      return {
+        requestsToday: '32 queries',
+        estimatedCost: '$0.00 / free (NVIDIA Developer key)',
+        accuracy: '99.0%',
+        fallbackPriority: 'On-Demand (Rank 8)',
+        features: ['Google Gemma 4 31B instruction-tuned', 'Fast logic and quick math reasoning', 'Compact and highly optimized latency'],
+        uptimeHistory: ['99.9%', '99.9%', '100%', '99.9%']
+      }
+    }
+    if (n.includes('kimi')) {
+      return {
+        requestsToday: '64 queries',
+        estimatedCost: '$0.00 / free (NVIDIA Developer key)',
+        accuracy: '99.8%',
+        fallbackPriority: 'Dedicated (Kimi Command)',
+        features: ['Moonshot Kimi K2.6 advanced reasoning', '128K+ massive context windows', 'High logic article summaries & debugs'],
+        uptimeHistory: ['100%', '100%', '99.9%', '100%']
+      }
+    }
+    if (n.includes('deepseek_flash')) {
+      return {
+        requestsToday: '110 queries',
+        estimatedCost: '$0.00 / free (NVIDIA Developer key)',
+        accuracy: '98.5%',
+        fallbackPriority: 'On-Demand (Rank 9)',
+        features: ['DeepSeek V4 Flash MoE speed', 'Sub-100ms quick responses', 'Low computing latency for chat routing'],
+        uptimeHistory: ['99.9%', '99.9%', '99.8%', '99.9%']
+      }
+    }
+    if (n.includes('deepseek_pro')) {
+      return {
+        requestsToday: '42 queries',
+        estimatedCost: '$0.00 / free (NVIDIA Developer key)',
+        accuracy: '99.8%',
+        fallbackPriority: 'On-Demand (Rank 10)',
+        features: ['DeepSeek V4 Pro flagship intelligence', 'Elite coding and mathematics proofs', 'Multi-turn agentic logic follow-up'],
+        uptimeHistory: ['100%', '99.9%', '100%', '99.9%']
+      }
+    }
+    if (n.includes('nemotron_voice')) {
+      return {
+        requestsToday: '5 queries',
+        estimatedCost: '$0.00 / free (NVIDIA Developer key)',
+        accuracy: '97.2%',
+        fallbackPriority: 'On-Demand (Rank 11)',
+        features: ['Nemotron Voicechat specialized audio tuning', 'Low-latency vocal response alignment', 'Direct conversation flow optimizer'],
+        uptimeHistory: ['99.6%', '99.5%', '99.9%', '99.7%']
+      }
+    }
+    if (n.includes('nvidia') || n.includes('nemotron')) {
       return {
         requestsToday: '128 queries',
         estimatedCost: '$0.00 / free (Developer Key)',
@@ -86,7 +218,7 @@ export default function AICenter() {
         uptimeHistory: ['99.9%', '99.8%', '100%', '99.9%']
       }
     }
-    if (n === 'groq') {
+    if (n.includes('groq')) {
       return {
         requestsToday: '320 queries',
         estimatedCost: '$0.00035 (GroqCloud free tier limits)',

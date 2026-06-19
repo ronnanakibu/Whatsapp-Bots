@@ -19,12 +19,28 @@ export default {
 
         let forcedProvider = null
         let cleanArgs = []
-        
+
+        const MODEL_FLAGS = {
+            '--groq': 'groq',
+            '--nvidia': 'nvidia',
+            '--gemini': 'gemini',
+            '--gpt_oss': 'gpt_oss',
+            '--nemotron_super': 'nemotron_super',
+            '--llama3_3': 'llama3_3',
+            '--qwen3': 'qwen3',
+            '--gemma4': 'gemma4',
+            '--kimi': 'kimi',
+            '--deepseek_flash': 'deepseek_flash',
+            '--deepseek_pro': 'deepseek_pro',
+            '--nemotron_voice': 'nemotron_voice'
+        }
+
         for (const arg of args) {
-            if (arg === '--groq') forcedProvider = 'groq'
-            else if (arg === '--nvidia') forcedProvider = 'nvidia'
-            else if (arg === '--gemini') forcedProvider = 'gemini'
-            else cleanArgs.push(arg)
+            if (MODEL_FLAGS[arg]) {
+                forcedProvider = MODEL_FLAGS[arg]
+            } else {
+                cleanArgs.push(arg)
+            }
         }
 
         const question = cleanArgs.join(' ')
@@ -49,7 +65,23 @@ export default {
 
         if (!question && !hasImage) {
             if (forcedProvider) return // Kalau cuma setting param tanpa tanya, stop di sini
-            return reply(`*Cara pakai:*\n!q [pertanyaan kamu]\n\nAtau ganti AI sementara/permanen:\n!q --nvidia [tanya sesuatu]\n!q --groq\n\nKetik !resetparamai untuk reset otak ke default.`)
+            return reply(
+                `*Cara pakai:*\n!q [pertanyaan kamu]\n\n` +
+                `*Atau ganti AI sementara/permanen:*\n` +
+                `- !q --nvidia (Nemotron 70B)\n` +
+                `- !q --groq (Llama 3.3)\n` +
+                `- !q --gemini (Gemini 2.0 Flash)\n` +
+                `- !q --gpt_oss (GPT-OSS 120B)\n` +
+                `- !q --nemotron_super (Nemotron-3 Super)\n` +
+                `- !q --llama3_3 (Llama 3.3 70B)\n` +
+                `- !q --qwen3 (Qwen3 80B)\n` +
+                `- !q --gemma4 (Gemma 4 31B)\n` +
+                `- !q --kimi (Kimi K2.6)\n` +
+                `- !q --deepseek_flash (DeepSeek V4 Flash)\n` +
+                `- !q --deepseek_pro (DeepSeek V4 Pro)\n` +
+                `- !q --nemotron_voice (Nemotron VoiceChat)\n\n` +
+                `💡 Ketik *!resetparamai* untuk mereset otak bot ke default.`
+            )
         }
 
         const { executeAiFlow } = await import('../../utils/aiRouter.js')
