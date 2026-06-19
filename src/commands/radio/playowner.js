@@ -21,9 +21,10 @@ export default {
 
         let currentTrackMsg = 'Belum ada lagu yang diputar di Spotify.'
         let initialTrack = null
+        let spotifyInfo = null
 
         try {
-            const spotifyInfo = await getOwnerSpotifyTrack()
+            spotifyInfo = await getOwnerSpotifyTrack()
             currentTrackMsg = `Lagu saat ini: *${spotifyInfo.artist} - ${spotifyInfo.songTitle}*`
             initialTrack = spotifyInfo.query
         } catch (err) {
@@ -50,7 +51,7 @@ export default {
             try {
                 // bypassSyncActive = true (argumen ketiga) untuk menembus lock
                 const track = await radioService.search(initialTrack, sender, 'Spotify Sync')
-                track.startSeek = spotifyInfo.startSeek || 0
+                track.startSeek = spotifyInfo ? (spotifyInfo.startSeek || 0) : 0
                 radioService.clearQueue()
                 radioService.addToQueue(track, null, true)
 
