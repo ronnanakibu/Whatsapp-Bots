@@ -50,6 +50,7 @@ export default {
             try {
                 // bypassSyncActive = true (argumen ketiga) untuk menembus lock
                 const track = await radioService.search(initialTrack, sender, 'Spotify Sync')
+                track.startSeek = spotifyInfo.startSeek || 0
                 radioService.clearQueue()
                 radioService.addToQueue(track, null, true)
 

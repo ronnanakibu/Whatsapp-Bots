@@ -93,13 +93,13 @@ export function startDiscordBot() {
         const ownerId = process.env.DISCORD_OWNER_ID
         if (!ownerId || newPresence?.userId !== ownerId) return
 
-        // Cari aktivitas Spotify di presence baru
+        // Cari aktivitas Spotify / Bajakan di presence baru
         const newSpotify = newPresence.activities?.find(
-            act => act.name === 'Spotify' && act.type === ActivityType.Listening
+            act => (act.name === 'Spotify' || act.name === 'Bajakan') && act.type === ActivityType.Listening
         )
-        // Cari aktivitas Spotify di presence lama
+        // Cari aktivitas Spotify / Bajakan di presence lama
         const oldSpotify = oldPresence?.activities?.find(
-            act => act.name === 'Spotify' && act.type === ActivityType.Listening
+            act => (act.name === 'Spotify' || act.name === 'Bajakan') && act.type === ActivityType.Listening
         )
 
         if (newSpotify) {
@@ -108,24 +108,53 @@ export function startDiscordBot() {
             const oldTrack = oldSpotify?.details
             const oldArtist = oldSpotify?.state
 
-            // Jika lagu berubah atau baru mulai diputar
-            if (newTrack !== oldTrack || newArtist !== oldArtist) {
-                logger.info(`[Spotify Sync] Owner mengganti lagu: ${newArtist} - ${newTrack}`)
+            const newStartMs = newSpotify.timestamps?.start ? new Date(newSpotify.timestamps.start).getTime() : Date.now()
+            const elapsedSec = Math.max(0, Math.floor((Date.now() - newStartMs) / 1000))
+
+            const isSameSong = newTrack === oldTrack && newArtist === oldArtist
+            let shouldSync = false
+
+            if (!isSameSong) {
+                // Lagu baru
+                shouldSync = true
+            } else {
+                // Lagu sama, cek apakah timestamp melompat jauh (owner seek manual / skip timestamp)
+                const radioElapsed = radioService.currentTrack 
+                    ? Math.floor((Date.now() - radioService.currentTrack.addedAt) / 1000) + (radioService.currentTrack.startSeek || 0) 
+                    : 0
+                const diff = Math.abs(elapsedSec - radioElapsed)
+                if (diff > 8) { // Beda > 8 detik, asumsikan seek manual
+                    shouldSync = true
+                    logger.info(`[Spotify Sync] Owner melakukan seek manual (selisih ${diff}s). Menyelaraskan timestamp ke ${elapsedSec}s.`)
+                }
+            }
+
+            if (shouldSync) {
+                logger.info(`[Spotify Sync] Owner memutar: ${newArtist} - ${newTrack} pada posisi ${elapsedSec}s`)
                 try {
                     const query = `${newArtist} - ${newTrack}`
-                    // bypassSyncActive = true (argumen ketiga) untuk menembus lock di addToQueue
-                    const track = await radioService.search(query, ownerId + '@discord', 'Spotify Sync')
-
-                    radioService.clearQueue()
-                    radioService.addToQueue(track, null, true)
-
-                    if (radioService.isPlaying) {
-                        await radioService.skip()
+                    
+                    if (isSameSong && radioService.currentTrack) {
+                        // Jika lagunya sama tapi hanya seek, perbarui startSeek dan restart stream
+                        radioService.currentTrack.startSeek = elapsedSec
+                        radioService.currentTrack.addedAt = Date.now()
+                        await radioService.restartCurrent()
                     } else {
-                        await radioService.start()
+                        // Cari dan putar lagu baru dari seek position
+                        const track = await radioService.search(query, ownerId + '@discord', 'Spotify Sync')
+                        track.startSeek = elapsedSec
+
+                        radioService.clearQueue()
+                        radioService.addToQueue(track, null, true)
+
+                        if (radioService.isPlaying) {
+                            await radioService.skip()
+                        } else {
+                            await radioService.start()
+                        }
                     }
                 } catch (err) {
-                    logger.error(`[Spotify Sync] Gagal sinkronisasi lagu otomatis: ${err.message}`)
+                    logger.error(`[Spotify Sync] Gagal sinkronisasi lagu/timestamp otomatis: ${err.message}`)
                 }
             }
         }
@@ -1038,7 +1067,7 @@ export async function getOwnerSpotifyTrack() {
     }
 
     const spotify = presence.activities.find(
-        act => act.name === 'Bajakan' && act.type === ActivityType.Listening
+        act => (act.name === 'Bajakan' || act.name === 'Spotify') && act.type === ActivityType.Listening
     )
 
     if (!spotify) {
@@ -1047,9 +1076,15 @@ export async function getOwnerSpotifyTrack() {
 
     const songTitle = spotify.details
     const artist = spotify.state
+    
+    // Hitung posisi durasi saat ini (startSeek)
+    const startMs = spotify.timestamps?.start ? new Date(spotify.timestamps.start).getTime() : Date.now()
+    const elapsedSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000))
+
     return {
         songTitle,
         artist,
-        query: artist ? `${artist} - ${songTitle}` : songTitle
+        query: artist ? `${artist} - ${songTitle}` : songTitle,
+        startSeek: elapsedSec
     }
 }

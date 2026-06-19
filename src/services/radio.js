@@ -426,7 +426,7 @@ export function dbUnlockAchievement(userJid, achievementId) {
 // ─────────────────────────────────────────────
 
 export class Track {
-    constructor({ title, url, duration, thumbnail, requestedBy, source, songId, artist, requestedByJid }) {
+    constructor({ title, url, duration, thumbnail, requestedBy, source, songId, artist, requestedByJid, startSeek }) {
         this.title = title
         this.url = url
         this.duration = duration
@@ -437,6 +437,7 @@ export class Track {
         this.addedAt = Date.now()
         this.songId = songId || getSongId(url, this.source)
         this.artist = artist || 'Unknown'
+        this.startSeek = startSeek || 0
     }
 
     get durationFormatted() {
@@ -695,7 +696,8 @@ class RadioService extends EventEmitter {
         botLogger.info('radio', `▶ Now playing: ${this.#currentTrack.title}`)
 
         try {
-            await this.#streamTrack(this.#currentTrack)
+            const seek = this.#currentTrack.startSeek || 0
+            await this.#streamTrack(this.#currentTrack, seek)
         } catch (err) {
             botLogger.err('radio', err, 'streamTrack')
             this.emit('track:error', { track: this.#currentTrack, error: err.message })
@@ -711,16 +713,18 @@ class RadioService extends EventEmitter {
      * YouTube tracks:    yt-dlp --get-url → fetchStream(CDN URL) → ffmpeg stdin → broadcast
      * SoundCloud tracks: play-dl.stream → ffmpeg stdin → broadcast
      */
-    async #streamTrack(track) {
+    async #streamTrack(track, seek = 0) {
         return new Promise(async (resolve, reject) => {
             try {
                 const filters = [FX_PRESETS[this.#activeFx], EQ_PRESETS[this.#activeEq]].filter(Boolean)
 
-                // Tambahkan efek Fade In selama 3 detik di awal lagu
-                filters.push('afade=t=in:st=0:d=3')
+                // Tambahkan efek Fade In selama 3 detik di awal lagu (hanya jika mulai dari 0)
+                if (seek === 0) {
+                    filters.push('afade=t=in:st=0:d=3')
+                }
 
-                // Tambahkan efek Fade Out selama 3 detik di akhir lagu (jika durasinya diketahui)
-                if (track.duration && track.duration > 6) {
+                // Tambahkan efek Fade Out selama 3 detik di akhir lagu (hanya jika mulai dari 0)
+                if (seek === 0 && track.duration && track.duration > 6) {
                     filters.push(`afade=t=out:st=${track.duration - 3}:d=3`)
                 }
 
@@ -963,6 +967,8 @@ class RadioService extends EventEmitter {
                     ] : []),
                     '-re',
                     '-i', isDirectUrl ? inputStream : 'pipe:0',
+                    // Seek di posisi output setelah -i agar bekerja dengan lancar untuk direct URL maupun pipe stdin
+                    ...(seek > 0 ? ['-ss', String(seek)] : []),
                     '-vn',
                     '-acodec', 'libmp3lame',
                     '-ab', process.env.RADIO_BITRATE || '128k',
