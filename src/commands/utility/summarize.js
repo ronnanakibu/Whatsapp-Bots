@@ -44,7 +44,7 @@ export default {
                 .replace(/<[^>]+>/g, ' ')
                 .replace(/\s+/g, ' ')
                 .trim()
-                .slice(0, 4000) // Batas context AI
+                .slice(0, 20000) // Batas context AI (diperbesar untuk Kimi K2.6)
 
             if (text.length < 100) throw new Error('Konten artikel tidak bisa diambil atau terlalu pendek.')
 
@@ -61,7 +61,7 @@ export default {
 Artikel:
 ${text}`
 
-            const result = await aiService.chat('__summarize__', prompt)
+            const result = await aiService.kimiChat(prompt, 'Kamu adalah asisten AI yang jago meringkas teks panjang secara detail, runut, dan padat.')
             await reply(`${result.text}\n\n🔗 _Sumber: ${url}_`)
             await react('✅')
 

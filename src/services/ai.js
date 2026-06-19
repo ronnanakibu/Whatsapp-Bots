@@ -379,8 +379,38 @@ async function generateImage(rawPrompt) {
 // CODE DEBUGGER
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// NVIDIA KIMI K2.6 CHAT
+// ─────────────────────────────────────────────
+
+async function kimiChat(prompt, systemInstruction = null) {
+    if (!nvidiaClient) throw new Error('NVIDIA_API_KEY tidak dikonfigurasi di file .env')
+
+    const messages = []
+    if (systemInstruction) {
+        messages.push({ role: 'system', content: systemInstruction })
+    }
+    messages.push({ role: 'user', content: prompt })
+
+    try {
+        const res = await nvidiaClient.chat.completions.create({
+            model: 'moonshotai/kimi-k2.6',
+            messages,
+            max_tokens: 4096,
+            temperature: 0.3,
+        })
+
+        const reply = res.choices[0]?.message?.content?.trim()
+        if (!reply) throw new Error('Empty response from NVIDIA Kimi K2.6')
+
+        return { text: reply, model: 'moonshotai/kimi-k2.6', provider: 'nvidia-kimi' }
+    } catch (err) {
+        logger.error(`[AI/Kimi] Gagal memanggil Kimi K2.6: ${err.message}`)
+        throw err
+    }
+}
+
 async function debugCode(code, language = 'auto', chatId = null) {
-    const isolatedId = chatId ? `__debug__${chatId}` : `__debug__`
     const prompt = `Kamu adalah senior software engineer.
 Analisa kode berikut dan berikan:
 1. **Bug/Error** yang ditemukan (kalau ada)
@@ -396,7 +426,7 @@ ${code}
 
 Jawab dalam bahasa Indonesia, format rapi dengan markdown.`
 
-    return groqChat(isolatedId, prompt)
+    return kimiChat(prompt, 'Kamu adalah asisten pengembang senior yang andal dalam menganalisis kode dan memberikan solusi perbaikan bug secara akurat.')
 }
 
 // ─────────────────────────────────────────────
@@ -545,4 +575,5 @@ export const aiService = {
     groqChat,
     geminiChat,
     geminiFactCheck,
+    kimiChat,
 }
