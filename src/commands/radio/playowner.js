@@ -14,7 +14,7 @@ export default {
         const { reply, react, sender } = ctx
 
         if (radioService.spotifySyncActive) {
-            return reply('⚠️ Sinkronisasi Spotify Owner sudah aktif cuy!')
+            return reply('⚠️ Sinkronisasi Radio Owner sudah aktif cuy!')
         }
 
         await react('🔄')

@@ -1,13 +1,13 @@
 import { Client, GatewayIntentBits, ActivityType } from 'discord.js'
 import { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } from '@discordjs/voice'
-import { 
-    radioService, 
-    AVAILABLE_FX, 
+import {
+    radioService,
+    AVAILABLE_FX,
     AVAILABLE_EQ,
-    Track, 
-    dbAddFavorite, 
-    dbRemoveFavorite, 
-    dbGetFavorites, 
+    Track,
+    dbAddFavorite,
+    dbRemoveFavorite,
+    dbGetFavorites,
     dbIsFavorite,
     dbCreatePlaylist,
     dbAddSongToPlaylist,
@@ -115,7 +115,7 @@ export function startDiscordBot() {
                     const query = `${newArtist} - ${newTrack}`
                     // bypassSyncActive = true (argumen ketiga) untuk menembus lock di addToQueue
                     const track = await radioService.search(query, ownerId + '@discord', 'Spotify Sync')
-                    
+
                     radioService.clearQueue()
                     radioService.addToQueue(track, null, true)
 
@@ -430,13 +430,13 @@ export function startDiscordBot() {
 
                 const list = dbGetFavorites(targetJid)
                 if (!list || list.length === 0) {
-                    return message.reply(isSelf 
+                    return message.reply(isSelf
                         ? '📭 **Daftar lagu favoritmu masih kosong.**\nPutar lagu yang kamu suka di radio, lalu ketik `!fav` untuk menambahkannya ke list ini!'
                         : `📭 **Daftar lagu favorit @${targetUser.username} masih kosong.**`
                     )
                 }
 
-                let text = isSelf 
+                let text = isSelf
                     ? `❤️ **Daftar Lagu Favoritmu (${list.length} lagu):**\n\n`
                     : `❤️ **Daftar Lagu Favorit ${targetUser.username} (${list.length} lagu):**\n\n`
 
@@ -449,8 +449,8 @@ export function startDiscordBot() {
 
                 if (isSelf) {
                     text += `\n💡 **Tips:**\n` +
-                            `• Putar lagu favorit: \`!playfav <nomor/random/all>\`\n` +
-                            `• Hapus dari favorit: \`!unfav <nomor>\``
+                        `• Putar lagu favorit: \`!playfav <nomor/random/all>\`\n` +
+                        `• Hapus dari favorit: \`!unfav <nomor>\``
                 }
 
                 return message.reply(text)
@@ -702,10 +702,10 @@ export function startDiscordBot() {
                     `).all(userJid, startEpoch, endEpoch)
 
                     let text = `🎧 **YOUR RADIO WRAPPED - ${monthName.toUpperCase()} ${year}** 🎧\n` +
-                               `Halo, **${pushName}**! Ini rangkuman perjalanan musikmu bulan ini:\n\n` +
-                               `⭐ **Level Anda:** ${level} (${xp} XP)\n` +
-                               `🎵 **Total Request:** ${reqCount} lagu diputar\n` +
-                               `⏱️ **Waktu Mendengar:** ${formatDuration(listenTime)}\n\n`
+                        `Halo, **${pushName}**! Ini rangkuman perjalanan musikmu bulan ini:\n\n` +
+                        `⭐ **Level Anda:** ${level} (${xp} XP)\n` +
+                        `🎵 **Total Request:** ${reqCount} lagu diputar\n` +
+                        `⏱️ **Waktu Mendengar:** ${formatDuration(listenTime)}\n\n`
 
                     if (topSongs && topSongs.length > 0) {
                         text += `🏆 **3 Lagu Favoritmu Bulan Ini:**\n`
@@ -761,8 +761,8 @@ export function startDiscordBot() {
                 `).all(startEpoch, endEpoch)
 
                 let text = `📻 **RADIO RECAP & WRAPPED - ${monthName.toUpperCase()} ${year}** 📻\n` +
-                           `Statistik siaran dan pendengar radio global:\n\n` +
-                           `📊 **Total Lagu Diputar:** ${totalPlayed} kali\n\n`
+                    `Statistik siaran dan pendengar radio global:\n\n` +
+                    `📊 **Total Lagu Diputar:** ${totalPlayed} kali\n\n`
 
                 if (topSongs && topSongs.length > 0) {
                     text += `🔥 **5 Lagu Paling Banyak Diputar:**\n`
@@ -1038,7 +1038,7 @@ export async function getOwnerSpotifyTrack() {
     }
 
     const spotify = presence.activities.find(
-        act => act.name === 'Spotify' && act.type === ActivityType.Listening
+        act => act.name === 'Bajakan' && act.type === ActivityType.Listening
     )
 
     if (!spotify) {
