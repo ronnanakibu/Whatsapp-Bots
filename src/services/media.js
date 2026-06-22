@@ -427,7 +427,7 @@ export class MediaService {
     // BOT MEDIA PROCESSING API
     // ─────────────────────────────────────────────
 
-    async toQuoteSticker(rawText) {
+    async toQuoteSticker(rawText, lqPercent = 0) {
         try {
             const cleanText = rawText.trim().toLowerCase()
             const lines = this.#wrapText(cleanText, 10)
@@ -465,12 +465,16 @@ export class MediaService {
                 ${svgContent}
             </svg>`)
 
-            const rawWebp = await sharp({
+            let rawWebp = await sharp({
                 create: { width: 512, height: 512, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } }
             })
                 .composite([{ input: svg, top: 0, left: 0 }])
                 .webp({ quality: 95 })
                 .toBuffer()
+
+            if (lqPercent > 0) {
+                rawWebp = await this.applyLowQualityImage(rawWebp, lqPercent)
+            }
 
             return await addExif(rawWebp)
 

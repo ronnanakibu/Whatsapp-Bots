@@ -26,7 +26,7 @@ export default function AICenter() {
     else if (p.name === 'gemini') displayName = 'Google Gemini'
     else if (p.displayName) displayName = p.displayName
     else {
-      displayName = p.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      displayName = p.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
     }
 
     return {

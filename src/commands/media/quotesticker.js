@@ -14,9 +14,16 @@ export default {
         const { messageContent, args, reply, replyMedia } = ctx
 
         let targetText = args.join(' ').trim()
+        let lqPercent = 0
+
+        // Parse --lq flag (e.g. --lq 90, --lq90, --lq)
+        const lqMatch = targetText.match(/--lq\s*(\d{1,3})?/i)
+        if (lqMatch) {
+            lqPercent = Math.min(100, Math.max(1, parseInt(lqMatch[1] ?? '50', 10)))
+            targetText = targetText.replace(/--lq\s*\d{0,3}/gi, '').trim()
+        }
 
         if (!targetText) {
-
             const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
             const unwrappedQuoted = unwrapMessage(quotedMsg)
             if (unwrappedQuoted) {
@@ -36,7 +43,7 @@ export default {
         await reply('⏳ Merender stiker teks anomali kurus tipis...')
 
         try {
-            const buffer = await mediaService.toQuoteSticker(targetText)
+            const buffer = await mediaService.toQuoteSticker(targetText, lqPercent)
             await replyMedia(buffer, 'sticker')
         } catch (err) {
             console.error('❌ Anomali sticker error:', err.message)
