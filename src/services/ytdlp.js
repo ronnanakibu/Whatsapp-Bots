@@ -121,23 +121,21 @@ export async function ensureYtdlp() {
 
 function downloadFile(url, dest) {
     return new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(dest)
+        let file = null
         let downloaded = 0
 
         function doRequest(reqUrl) {
             https.get(reqUrl, (res) => {
                 // Handle redirect
                 if (res.statusCode === 301 || res.statusCode === 302) {
-                    file.close()
                     return doRequest(res.headers.location)
                 }
 
                 if (res.statusCode !== 200) {
-                    file.close()
-                    fs.unlinkSync(dest)
                     return reject(new Error(`Download gagal: HTTP ${res.statusCode}`))
                 }
 
+                file = fs.createWriteStream(dest)
                 const total = parseInt(res.headers['content-length'] ?? '0')
 
                 res.on('data', chunk => {
@@ -150,10 +148,13 @@ function downloadFile(url, dest) {
 
                 res.pipe(file)
                 file.on('finish', () => { file.close(); resolve() })
-                file.on('error', e => { fs.unlinkSync(dest); reject(e) })
+                file.on('error', e => { 
+                    try { fs.unlinkSync(dest) } catch(_) {}
+                    reject(e) 
+                })
 
             }).on('error', e => {
-                fs.unlinkSync(dest)
+                try { fs.unlinkSync(dest) } catch(_) {}
                 reject(e)
             })
         }

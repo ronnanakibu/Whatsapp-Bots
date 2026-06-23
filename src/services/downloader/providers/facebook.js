@@ -4,6 +4,7 @@
 
 import { fetchBuffer, fetchJson, sanitizeFilename } from '../utils.js'
 import { logger } from '../../../utils/logger.js'
+import { downloadYtdlp } from './ytdlp.js'
 
 const FB_APIS = [
     {
@@ -89,6 +90,20 @@ export async function downloadFacebook(url, options = {}) {
     // Resolve fb.watch short links
     const cleanUrl = url.replace('fb.watch', 'www.facebook.com/watch?v=')
 
+    // ── 1. Coba via yt-dlp first (sangat stabil) ──────────────────────
+    try {
+        logger.debug(`[Facebook] Trying local/HF yt-dlp first`)
+        const ytdlpResult = await downloadYtdlp(cleanUrl, options)
+        if (ytdlpResult && ytdlpResult.buffer) {
+            logger.info(`[Facebook] Download success via yt-dlp`)
+            ytdlpResult.platform = 'facebook'
+            return ytdlpResult
+        }
+    } catch (err) {
+        logger.warn(`[Facebook] yt-dlp fallback failed: ${err.message}`)
+    }
+
+    // ── 2. Fallback ke public APIs jika yt-dlp gagal/belum siap ─────────
     let lastError = null
 
     for (const api of FB_APIS) {
