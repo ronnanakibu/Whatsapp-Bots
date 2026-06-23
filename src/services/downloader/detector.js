@@ -35,6 +35,7 @@ const PLATFORM_PATTERNS = [
             /facebook\.com\/.*\/videos\//i,
             /facebook\.com\/watch\?v=/i,
             /facebook\.com\/reel\//i,
+            /facebook\.com\/share\//i,
             /fb\.watch\//i,
             /fb\.com\//i,
         ]
@@ -66,7 +67,9 @@ export function detectPlatform(url = '') {
 export function extractUrl(text = '') {
     const urlRegex = /https?:\/\/[^\s]+/gi
     const matches = text.match(urlRegex)
-    return matches?.[0] ?? null
+    if (!matches) return null
+    // Strip trailing brackets/punctuation often copy-pasted by users
+    return matches[0].replace(/[\]\),.!>;]+$/, '')
 }
 
 /**
