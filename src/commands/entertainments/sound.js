@@ -2,6 +2,7 @@ import axios from 'axios'
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
+import crypto from 'crypto'
 import { logger } from '../../utils/logger.js'
 
 const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db')
@@ -97,23 +98,25 @@ export default {
         // ── SUB-COMMAND: add ─────────────────────────────────────────────────
         if (args[0]?.toLowerCase() === 'add') {
             const keyword = args.slice(1).join(' ').toLowerCase().trim()
-            if (!keyword) return reply('❌ Sebutkan nama/keyword untuk VN ini!\n*Contoh:* .sound add rizz (reply ke VN)')
+            if (!keyword) return reply('❌ Sebutkan nama/keyword untuk VN ini!\n*Contoh:* .sound add rizz (reply ke VN atau Video)')
 
-            // Deteksi audio di quoted message atau pesan langsung
+            // Deteksi audio/video di quoted message atau pesan langsung
             const contextInfo = messageContent?.extendedTextMessage?.contextInfo
             const quotedMsg   = contextInfo?.quotedMessage ?? null
             const quotedStanzaId = contextInfo?.stanzaId
             const quotedParticipant = contextInfo?.participant
 
             let audioMsg = null
+            let videoMsg = null
             let targetMsgForDownload = null
 
             if (type === 'audioMessage') {
-                // Pesan langsung adalah audio/VN
                 audioMsg = messageContent?.audioMessage
                 targetMsgForDownload = msg
+            } else if (type === 'videoMessage') {
+                videoMsg = messageContent?.videoMessage
+                targetMsgForDownload = msg
             } else if (quotedMsg) {
-                // Cari audioMessage di dalam quoted (handle wrapper types)
                 const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2']
                 const qType  = Object.keys(quotedMsg)[0]
                 const inner  = WRAPPERS.includes(qType)
@@ -123,7 +126,19 @@ export default {
 
                 if (innerType === 'audioMessage') {
                     audioMsg = inner.audioMessage
-                    // Bangun message object agar bisa didownload oleh Baileys
+                    targetMsgForDownload = {
+                        key: {
+                            remoteJid: from,
+                            id: quotedStanzaId ?? msg.key.id,
+                            fromMe: quotedParticipant
+                                ? (quotedParticipant === sock.user?.id || quotedParticipant === sock.user?.lid)
+                                : false,
+                            participant: quotedParticipant || undefined,
+                        },
+                        message: inner
+                    }
+                } else if (innerType === 'videoMessage') {
+                    videoMsg = inner.videoMessage
                     targetMsgForDownload = {
                         key: {
                             remoteJid: from,
@@ -138,8 +153,8 @@ export default {
                 }
             }
 
-            if (!audioMsg) {
-                return reply('❌ Reply ke pesan suara/VN dulu, lalu ketik:\n*.sound add <nama>*\n\nAtau kirim VN langsung dengan caption *.sound add <nama>*')
+            if (!audioMsg && !videoMsg) {
+                return reply('❌ Reply ke pesan suara/VN atau video dulu, lalu ketik:\n*.sound add <nama>*\n\nAtau kirim VN/Video langsung dengan caption *.sound add <nama>*')
             }
 
             // Cek apakah keyword sudah ada
@@ -157,26 +172,53 @@ export default {
                     targetMsgForDownload,
                     'buffer',
                     {},
-                    { logger: logger, reuploadRequest: sock.updateMediaMessage }
+                    { logger: logger, reconnectCount: 3, reuploadRequest: sock.updateMediaMessage }
                 )
 
                 if (!buffer || buffer.length === 0) throw new Error('Buffer kosong — media tidak bisa diunduh')
 
-                // Simpan ke disk
                 const safeKeyword = keyword.replace(/[^a-z0-9_-]/g, '_')
-                const ext = audioMsg.mimetype?.includes('ogg') ? 'ogg' : 'mp3'
+                let ext = 'mp3'
+                let finalBuffer = buffer
+
+                if (videoMsg) {
+                    const tmpDir = path.resolve('./storage/media/tmp')
+                    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+                    const id = crypto.randomBytes(4).toString('hex')
+                    const tempVideoPath = path.join(tmpDir, `${id}_sound_in.mp4`)
+                    const tempAudioPath = path.join(tmpDir, `${id}_sound_out.mp3`)
+
+                    fs.writeFileSync(tempVideoPath, buffer)
+
+                    // Execute FFmpeg to extract audio
+                    const { exec } = await import('child_process')
+                    const util = await import('util')
+                    const execPromise = util.promisify(exec)
+
+                    try {
+                        await execPromise(`ffmpeg -y -i "${tempVideoPath}" -vn -acodec libmp3lame -q:a 2 "${tempAudioPath}"`)
+                        finalBuffer = fs.readFileSync(tempAudioPath)
+                    } finally {
+                        if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath)
+                        if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath)
+                    }
+                } else {
+                    ext = audioMsg.mimetype?.includes('ogg') ? 'ogg' : 'mp3'
+                }
+
                 const filePath = path.join(VN_DIR, `${safeKeyword}_${Date.now()}.${ext}`)
-                fs.writeFileSync(filePath, buffer)
+                fs.writeFileSync(filePath, finalBuffer)
 
                 db.prepare('INSERT OR REPLACE INTO sound_vn (keyword, file_path, added_by) VALUES (?, ?, ?)')
                     .run(keyword, filePath, sender)
 
                 await react('✅')
-                return reply(`✅ VN berhasil disimpan sebagai *"${keyword}"*!\nGunakan: *.sound ${keyword}*`)
+                return reply(`✅ VN/Audio dari video berhasil disimpan sebagai *"${keyword}"*!\nGunakan: *.sound ${keyword}*`)
             } catch (err) {
-                logger.error('[Sound] VN add error:', err.message, err.stack?.split('\n')[1])
+                logger.error('[Sound] VN/Video add error:', err.message, err.stack?.split('\n')[1])
                 await react('❌')
-                return reply(`❌ Gagal menyimpan VN: ${err.message}\n\nPastikan kamu reply ke pesan VN yang valid.`)
+                return reply(`❌ Gagal menyimpan VN/Audio: ${err.message}\n\nPastikan kamu reply ke pesan VN atau Video yang valid.`)
             }
         }
 

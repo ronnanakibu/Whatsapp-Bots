@@ -129,7 +129,10 @@ export class MediaService {
     #wrapText(text, maxCharsPerLine = 11) {
         const spaced = text.replace(EMOJI_REGEX, (m) => ` ${m} `)
         const tokens = spaced.trim().split(/\s+/).filter(Boolean)
-        const visualLen = str => [...str].reduce((n, ch) => n + (ch.codePointAt(0) > 0x2000 ? 2 : 1), 0)
+        const visualLen = str => {
+            const noEmoji = str.replace(EMOJI_REGEX, 'XX')
+            return [...noEmoji].reduce((n, ch) => n + (ch.codePointAt(0) > 0x2000 ? 2 : 1), 0)
+        }
 
         let lines = []
         let currentLine = ''
@@ -223,56 +226,56 @@ export class MediaService {
         const spaced = line.replace(EMOJI_REGEX, (m) => ` ${m} `)
         const tokens = spaced.trim().split(/\s+/).filter(Boolean)
 
+        if (tokens.length === 0) return ''
+
         let elements = ''
         const strokeAttr = stroke ? `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill"` : ''
+        const emojiSize = fontSize * 1.05
+
+        // Estimate character/space widths based on font family
+        const isImpact = fontFamily.toLowerCase().includes('impact')
+        const charWidth = isImpact ? fontSize * 0.50 : fontSize * 0.44
+        const spaceWidth = isImpact ? fontSize * 0.25 : fontSize * 0.22
+
+        const tokenWidths = tokens.map(t => {
+            if (detectEmojis(t).length > 0) return emojiSize
+            return [...t].length * charWidth
+        })
 
         if (textAnchor === 'middle') {
-            const textOnly = tokens.filter(t => detectEmojis(t).length === 0).join(' ').trim()
-            const emojisInLine = tokens.filter(t => detectEmojis(t).length > 0)
-            const safeText = this.#escapeXml(textOnly)
+            const totalContentWidth = tokenWidths.reduce((a, b) => a + b, 0)
+            const totalWidth = totalContentWidth + (tokens.length - 1) * spaceWidth
+            let currentX = x - totalWidth / 2
 
-            elements += `
-            <text x="${x}" y="${y}"
-                text-anchor="middle"
-                font-family="${fontFamily}"
-                font-weight="${fontWeight}"
-                font-size="${fontSize}px"
-                fill="${fill}"
-                ${strokeAttr}>${safeText}</text>\n`
-
-            const emojiSize = fontSize * 1.05
-            const estTextWidth = [...safeText].length * fontSize * 0.52
-            let emojiX = x + (estTextWidth / 2) + 10
-            const emojiY = y - emojiSize * 0.84
-
-            emojisInLine.forEach(emoji => {
-                const dataUri = emojiMap.get(emoji.trim()) ?? emojiMap.get(detectEmojis(emoji)[0])
-                if (dataUri) {
-                    elements += `<image href="${dataUri}" x="${emojiX}" y="${emojiY}" width="${emojiSize}" height="${emojiSize}"/>\n`
-                    emojiX += emojiSize * 1.05
+            tokens.forEach((token, index) => {
+                const isEmoji = detectEmojis(token).length > 0
+                if (isEmoji) {
+                    const dataUri = emojiMap.get(token.trim()) ?? emojiMap.get(detectEmojis(token)[0])
+                    if (dataUri) {
+                        elements += `<image href="${dataUri}" x="${currentX}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
+                    }
+                } else {
+                    elements += `<text x="${currentX}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}" ${strokeAttr}>${this.#escapeXml(token)}</text>\n`
                 }
+                currentX += tokenWidths[index] + spaceWidth
             })
             return elements
         }
 
+        // textAnchor !== 'middle' (e.g. 'start')
         const justifyWidth = 462
-        const emojiSize = fontSize * 1.05
-
         if (tokens.length === 1) {
             const token = tokens[0]
             const isEmoji = detectEmojis(token).length > 0
             if (isEmoji) {
                 const dataUri = emojiMap.get(token.trim()) ?? emojiMap.get(detectEmojis(token)[0])
-                if (dataUri) elements += `<image href="${dataUri}" x="${x}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
+                if (dataUri) {
+                    elements += `<image href="${dataUri}" x="${x}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
+                }
             } else {
-                elements += `<text x="${x}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}">${this.#escapeXml(token)}</text>\n`
+                elements += `<text x="${x}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}" ${strokeAttr}>${this.#escapeXml(token)}</text>\n`
             }
         } else {
-            const tokenWidths = tokens.map(t => {
-                if (detectEmojis(t).length > 0) return emojiSize
-                return [...t].length * fontSize * 0.44
-            })
-
             const totalContentWidth = tokenWidths.reduce((a, b) => a + b, 0)
             let gap = (justifyWidth - totalContentWidth) / (tokens.length - 1)
 
@@ -285,9 +288,11 @@ export class MediaService {
                 const isEmoji = detectEmojis(token).length > 0
                 if (isEmoji) {
                     const dataUri = emojiMap.get(token.trim()) ?? emojiMap.get(detectEmojis(token)[0])
-                    if (dataUri) elements += `<image href="${dataUri}" x="${currentX}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
+                    if (dataUri) {
+                        elements += `<image href="${dataUri}" x="${currentX}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
+                    }
                 } else {
-                    elements += `<text x="${currentX}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}">${this.#escapeXml(token)}</text>\n`
+                    elements += `<text x="${currentX}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}" ${strokeAttr}>${this.#escapeXml(token)}</text>\n`
                 }
                 currentX += tokenWidths[index] + gap
             })
