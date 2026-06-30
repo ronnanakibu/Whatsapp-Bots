@@ -178,33 +178,34 @@ export default {
                 if (!buffer || buffer.length === 0) throw new Error('Buffer kosong — media tidak bisa diunduh')
 
                 const safeKeyword = keyword.replace(/[^a-z0-9_-]/g, '_')
-                let ext = 'mp3'
+                let ext = 'ogg'
                 let finalBuffer = buffer
 
-                if (videoMsg) {
+                const isAlreadyOgg = audioMsg && audioMsg.mimetype?.includes('ogg') && buffer[0] === 0x4F && buffer[1] === 0x67 && buffer[2] === 0x67
+
+                if (!isAlreadyOgg) {
                     const tmpDir = path.resolve('./storage/media/tmp')
                     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
 
                     const id = crypto.randomBytes(4).toString('hex')
-                    const tempVideoPath = path.join(tmpDir, `${id}_sound_in.mp4`)
-                    const tempAudioPath = path.join(tmpDir, `${id}_sound_out.mp3`)
+                    const inExt = videoMsg ? 'mp4' : 'mp3'
+                    const tempInPath = path.join(tmpDir, `${id}_in.${inExt}`)
+                    const tempOutPath = path.join(tmpDir, `${id}_out.ogg`)
 
-                    fs.writeFileSync(tempVideoPath, buffer)
+                    fs.writeFileSync(tempInPath, buffer)
 
-                    // Execute FFmpeg to extract audio
+                    // Execute FFmpeg to convert/extract to OGG/Opus
                     const { exec } = await import('child_process')
                     const util = await import('util')
                     const execPromise = util.promisify(exec)
 
                     try {
-                        await execPromise(`ffmpeg -y -i "${tempVideoPath}" -vn -acodec libmp3lame -q:a 2 "${tempAudioPath}"`)
-                        finalBuffer = fs.readFileSync(tempAudioPath)
+                        await execPromise(`ffmpeg -y -i "${tempInPath}" -vn -c:a libopus -b:a 64k "${tempOutPath}"`)
+                        finalBuffer = fs.readFileSync(tempOutPath)
                     } finally {
-                        if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath)
-                        if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath)
+                        if (fs.existsSync(tempInPath)) fs.unlinkSync(tempInPath)
+                        if (fs.existsSync(tempOutPath)) fs.unlinkSync(tempOutPath)
                     }
-                } else {
-                    ext = audioMsg.mimetype?.includes('ogg') ? 'ogg' : 'mp3'
                 }
 
                 const filePath = path.join(VN_DIR, `${safeKeyword}_${Date.now()}.${ext}`)
@@ -237,6 +238,35 @@ export default {
             db.prepare('DELETE FROM sound_vn WHERE keyword = ?').run(keyword)
             try { fs.unlinkSync(existing.file_path) } catch (_) {}
             return reply(`🗑️ VN *"${keyword}"* berhasil dihapus dari database.`)
+        }
+
+        // ── SUB-COMMAND: list ─────────────────────────────────────────────────
+        if (args[0]?.toLowerCase() === 'list') {
+            const builtInList = Object.keys(MEME_SOUNDS).map(s => `- ${s}`).join('\n')
+            let dbList = ''
+            try {
+                const vnSounds = db.prepare('SELECT keyword FROM sound_vn ORDER BY keyword ASC').all()
+                const vnList = vnSounds.map(s => `- ${s.keyword} (added)`).join('\n')
+
+                const cachedSounds = db.prepare('SELECT keyword, sound_name FROM sound_cache ORDER BY keyword ASC').all()
+                const cachedList = cachedSounds.map(s => `- ${s.keyword} _(${s.sound_name})_`).join('\n')
+
+                if (vnList) {
+                    dbList += `\n\n*🎤 VN Tersimpan (Lokal):*\n${vnList}`
+                }
+                if (cachedList) {
+                    dbList += `\n\n*🌐 Sound Online (Cached):*\n${cachedList}`
+                }
+            } catch (err) {
+                logger.error('❌ [Sound] DB List Command Error:', err.message)
+            }
+
+            return reply(
+                `🔊 *Daftar Seluruh Sound Bot* 🔊\n\n` +
+                `*📦 Sound Bawaan (Built-in):*\n${builtInList}` +
+                dbList +
+                `\n\n*Cara pakai:* Ketik *.sound <nama>*`
+            )
         }
 
         // ── LIST (no args) ───────────────────────────────────────────────────
