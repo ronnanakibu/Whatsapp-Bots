@@ -39,15 +39,17 @@ export async function downloadYtdlp(url, options = {}) {
     args.push('--max-filesize', '100M')
 
     if (format === 'audio') {
+        const quality = options.audioQuality === 'normal' ? '128K' : '320K'
         args.push(
             '--extract-audio',
             '--audio-format', 'mp3',
-            '--audio-quality', '320K'
+            '--audio-quality', quality
         )
     } else {
-        // Video MP4
+        // Video MP4 with target resolution limit
+        const res = options.resolution || '1080'
         args.push(
-            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            '-f', `bestvideo[height<=${res}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${res}]+bestaudio/best[height<=${res}]/best`,
             '--merge-output-format', 'mp4'
         )
     }

@@ -29,11 +29,11 @@ const PLATFORM_NAME = {
 
 export default {
     name: 'dl',
-    aliases: ['download', 'unduh', 'reels', 'tiktok', 'tt', 'ytmp3', 'ig', 'fb'],
+    aliases: ['download', 'unduh', 'reels', 'tiktok', 'tt', 'ytmp3', 'ytmp4', 'yt', 'mp3', 'mp4', 'ig', 'fb'],
     category: 'media',
     description: 'Download video dari Instagram, TikTok, YouTube, Facebook.',
-    usage: '.dl [link] [--boost] | .ytmp3 [link] untuk audio',
-    example: '.dl https://www.tiktok.com/xxx --boost',
+    usage: '.dl [link] [--boost] [--720p] [--320kbps]',
+    example: '.dl https://www.youtube.com/watch?v=xxx --720p',
     cooldown: 10,
     permissions: ['user'],
 
@@ -45,6 +45,26 @@ export default {
         const isBoost = rawInput.includes('--boost')
         rawInput = rawInput.replace('--boost', '').trim()
 
+        let targetResolution = null
+        let audioQuality = null
+        let format = null
+
+        // Detect parameter resolution (e.g. --720p, --1080)
+        const resMatch = rawInput.match(/--(1080|720|480|360|240|144)p?/i)
+        if (resMatch) {
+            targetResolution = resMatch[1]
+            format = 'video'
+            rawInput = rawInput.replace(resMatch[0], '').trim()
+        }
+
+        // Detect parameter audio quality (e.g. --320kbps, --128kbps)
+        const audMatch = rawInput.match(/--(320|128)kbps/i)
+        if (audMatch) {
+            audioQuality = audMatch[1] === '320' ? 'high' : 'normal'
+            format = 'audio'
+            rawInput = rawInput.replace(audMatch[0], '').trim()
+        }
+
         const url = extractUrl(rawInput) ?? (rawInput.startsWith('http') ? rawInput : null)
 
         if (!url) {
@@ -53,11 +73,11 @@ export default {
                 `Kirim link dari:\n` +
                 `• 📸 Instagram (Reels/Post/IGTV)\n` +
                 `• 🎵 TikTok (no watermark)\n` +
-                `• 🎬 YouTube (!dl = video, !ytmp3 = audio)\n` +
+                `• 🎬 YouTube (Video / Audio)\n` +
                 `• 📘 Facebook (Video/Reels)\n\n` +
                 `*Cara pakai:*\n` +
-                `!dl [link] [--boost]\n\n` +
-                `_Contoh: !dl https://instagram.com/reel/xxx --boost_`
+                `!dl [link] [--boost] [--720p] [--320kbps]\n\n` +
+                `_Contoh: !dl https://youtube.com/watch?v=xxx --720p_`
             )
         }
 
@@ -78,24 +98,33 @@ export default {
 
         // ── 4. Determine format atau Prompt Interaktif ─────
         const isAudioCommand = ['ytmp3', 'ytaudio', 'mp3'].includes(commandName)
-        const isVideoCommand = ['ytmp4', 'ytvideo', 'mp4'].includes(commandName)
-        
-        let format = 'video' // default
+        const isVideoCommand = ['ytmp4', 'ytvideo', 'mp4', 'yt'].includes(commandName)
 
         if (isAudioCommand) {
             format = 'audio'
-            await processDownload(ctx, url, platform, format, isBoost)
-        } else if (isVideoCommand || platform !== 'youtube') {
+            if (!audioQuality) audioQuality = 'high'
+        } else if (isVideoCommand) {
             format = 'video'
-            await processDownload(ctx, url, platform, format, isBoost)
+            if (!targetResolution) targetResolution = '1080'
+        }
+
+        if (format || platform !== 'youtube') {
+            const opt = {}
+            if (format === 'video') opt.resolution = targetResolution || '1080'
+            if (format === 'audio') opt.audioQuality = audioQuality || 'high'
+            await processDownload(ctx, url, platform, format || 'video', isBoost, opt)
         } else {
             // Interactive Prompt hanya untuk YouTube jika tidak spesifik
             const promptMsg = await reply(
-                `📥 *Downloader*\n\n` +
-                `Pilih format untuk diunduh:\n` +
-                `1️⃣ Video (MP4)\n` +
-                `2️⃣ Audio (MP3)\n\n` +
-                `_Balas pesan ini dengan angka 1 atau 2_`
+                `📥 *YouTube Downloader* 📥\n\n` +
+                `Pilih format & resolusi:\n` +
+                `1️⃣ Video - 1080p (FHD)\n` +
+                `2️⃣ Video - 720p (HD)\n` +
+                `3️⃣ Video - 480p (SD)\n` +
+                `4️⃣ Video - 360p (Low)\n` +
+                `5️⃣ Audio - High Quality (320kbps)\n` +
+                `6️⃣ Audio - Normal Quality (128kbps)\n\n` +
+                `_Balas pesan ini dengan angka 1 sampai 6_`
             )
 
             interactiveService.createSession(
@@ -103,13 +132,23 @@ export default {
                 chatId,
                 ctx.sender,
                 async (replyCtx, answer) => {
+                    let opt = {}
                     if (answer === '1') {
-                        await processDownload(replyCtx, url, platform, 'video', isBoost)
+                        opt = { format: 'video', resolution: '1080' }
                     } else if (answer === '2') {
-                        await processDownload(replyCtx, url, platform, 'audio', isBoost)
+                        opt = { format: 'video', resolution: '720' }
+                    } else if (answer === '3') {
+                        opt = { format: 'video', resolution: '480' }
+                    } else if (answer === '4') {
+                        opt = { format: 'video', resolution: '360' }
+                    } else if (answer === '5') {
+                        opt = { format: 'audio', audioQuality: 'high' }
+                    } else if (answer === '6') {
+                        opt = { format: 'audio', audioQuality: 'normal' }
                     } else {
-                        await replyCtx.reply('❌ Pilihan tidak valid. Silakan ulangi perintah !dl')
+                        return await replyCtx.reply('❌ Pilihan tidak valid. Silakan ulangi perintah !dl')
                     }
+                    await processDownload(replyCtx, url, platform, opt.format, isBoost, opt)
                 }
             )
         }
@@ -120,20 +159,23 @@ export default {
 // PROSES DOWNLOAD (Pisah Fungsi biar rapi)
 // ─────────────────────────────────────────────
 
-async function processDownload(ctx, url, platform, format, isBoost = false) {
+async function processDownload(ctx, url, platform, format, isBoost = false, downloadOptions = {}) {
     const { reply, react, sock, chatId, msg, pushName, sender } = ctx
     
     await react('⏳')
     const emoji = PLATFORM_EMOJI[platform] || '📥'
-    const platformName = PLATFORM_NAME[platform] || 'Downloader'
+    
+    let details = ''
+    if (downloadOptions.resolution) details = ` (${downloadOptions.resolution}p)`
+    if (downloadOptions.audioQuality) details = ` (${downloadOptions.audioQuality === 'high' ? '320kbps' : '128kbps'})`
 
     await reply(
-        `${emoji} *Sedang download ${format === 'audio' ? 'Audio' : 'Video'}...*\n` +
+        `${emoji} *Sedang download ${format === 'audio' ? 'Audio' : 'Video'}${details}...*\n` +
         `_Mohon tunggu sebentar_`
     )
 
     try {
-        const result = await download(url, { format })
+        const result = await download(url, { format, ...downloadOptions })
 
         if (isBoost) {
             const ext = result.ext || (format === 'audio' ? 'mp3' : 'mp4')
