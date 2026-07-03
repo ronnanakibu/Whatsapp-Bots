@@ -2013,8 +2013,18 @@ export function startRadioServer() {
             return res.redirect('/dashboard')
         }
 
-        // Serve index.html for BotOS dashboard fallback routes
+        // Redirect standalone /sunoautomation to /dashboard/sunoautomation
+        if (url === '/sunoautomation') {
+            return res.redirect('/dashboard/sunoautomation')
+        }
+
+        // Serve index.html or page-specific HTML for BotOS dashboard fallback routes
         if (url.startsWith('/dashboard') && !url.includes('/_next/') && !path.extname(url)) {
+            const subPath = url.slice('/dashboard'.length) || '/'
+            const filePath = path.join(dashboardDir, (subPath === '/' ? 'index' : subPath) + '.html')
+            if (fs.existsSync(filePath)) {
+                return res.sendFile(filePath)
+            }
             const indexPath = path.join(dashboardDir, 'index.html')
             if (fs.existsSync(indexPath)) {
                 return res.sendFile(indexPath)
