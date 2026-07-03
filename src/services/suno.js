@@ -107,11 +107,14 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
 
                 let genResponse
                 try {
+                    const sunoHeaders = process.env.SUNO_COOKIE
+                        ? { Cookie: process.env.SUNO_COOKIE }
+                        : {}
                     genResponse = await axios.post(generateUrl, {
                         prompt: finalPrompt,
                         make_instrumental: true,
                         wait_audio: false
-                    }, { timeout: 10000 })
+                    }, { timeout: 10000, headers: sunoHeaders })
                 } catch (err) {
                     throw new Error(`Suno API Connection Refused (${err.message}). Pastikan service Suno API wrapper aktif di ${apiBaseUrl}`)
                 }
@@ -135,7 +138,10 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
 
                     let pollResponse
                     try {
-                        pollResponse = await axios.get(`${apiBaseUrl}/api/get?ids=${clipId}`, { timeout: 10000 })
+                        const sunoHeaders = process.env.SUNO_COOKIE
+                            ? { Cookie: process.env.SUNO_COOKIE }
+                            : {}
+                        pollResponse = await axios.get(`${apiBaseUrl}/api/get?ids=${clipId}`, { timeout: 10000, headers: sunoHeaders })
                     } catch (err) {
                         throw new Error(`Gagal menghubungi Suno API saat polling (${err.message})`)
                     }
