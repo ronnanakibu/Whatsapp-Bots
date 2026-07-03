@@ -163,7 +163,8 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         updateJob('suno_gen', 45, '✅ [StableAudio] Berhasil melakukan generasi audio!')
                         const audioFileObj = result.data[0]
                         if (audioFileObj && audioFileObj.url) {
-                            return audioFileObj.url
+                            audioUrl = audioFileObj.url
+                            return audioUrl
                         }
                         throw new Error('No audio URL found in Gradio response')
                     } catch (err) {
