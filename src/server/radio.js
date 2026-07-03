@@ -1,6 +1,7 @@
 // src/server/radio.js
 // Express & Socket.IO Server serving real-time BotOS Dashboard & radio stream
 import express from 'express'
+import multer from 'multer'
 import { createServer } from 'http'
 import { Server as SocketServer } from 'socket.io'
 import fs from 'fs'
@@ -2031,9 +2032,9 @@ export function startRadioServer() {
             return res.redirect('/dashboard')
         }
 
-        // Redirect standalone /sunoautomation to /dashboard/sunoautomation
-        if (url === '/sunoautomation') {
-            return res.redirect('/dashboard/sunoautomation')
+        // Redirect standalone /sunoautomation and /music to /dashboard/music
+        if (url === '/sunoautomation' || url === '/music') {
+            return res.redirect('/dashboard/music')
         }
 
         // Serve index.html or page-specific HTML for BotOS dashboard fallback routes

@@ -1,4 +1,115 @@
-// src/services/suno.js
+const sunoPromise = (async () => {
+                if (model === 'manual') {
+                    updateJob('suno_gen', 50, '🎵 [Manual] Menggunakan MP3 hasil upload user...')
+                    if (!manualAudioPath) throw new Error('Audio file not provided for manual mode.')
+                    return 'MANUAL_MODE'
+                }
+                
+                if (model === 'stable') {
+                    updateJob('suno_gen', 20, '🎵 [StableAudio] Menyambung ke HuggingFace Space: stabilityai/stable-audio-3...')
+                    const { client } = await import('@gradio/client')
+                    try {
+                        const app = await client('stabilityai/stable-audio-3')
+                        updateJob('suno_gen', 25, '📤 [StableAudio] Space terhubung. Mengirim parameter inferensi...')
+                        
+                        const result = await app.predict('/predict', [
+                            finalPrompt, // Prompt
+                            47, // Seconds total
+                            100, // Steps
+                            7, // CFG Scale
+                            0.3, // Sigma min
+                            500, // Sigma max
+                            "dpmpp-3m-sde", // Sampler type
+                            "", // Device override
+                            1, // APG scale
+                            6, // Duration padding
+                            true, // Cut to seconds total
+                            null, // Init audio
+                            0.9, // Init noise level
+                            null, // Inpaint audio
+                            0, // Mask start
+                            0, // Mask end
+                            0 // Preview
+                        ])
+                        updateJob('suno_gen', 45, '✅ [StableAudio] Berhasil melakukan generasi audio!')
+                        // result.data[0] contains the file object
+                        const audioFileObj = result.data[0]
+                        if (audioFileObj && audioFileObj.url) {
+                            return audioFileObj.url
+                        }
+                        throw new Error('No audio URL found in Gradio response')
+                    } catch (err) {
+                        updateJob('suno_gen', 25, `❌ [StableAudio] ERROR: ${err.message}`)
+                        throw new Error(`Stable Audio API Error: ${err.message}`)
+                    }
+                }
+
+                // Default Suno API Logic
+                const apiBaseUrl = 'https://api.sunoapi.org/api/v1'
+                const apiKey = process.env.SUNOAPI_KEY || '449d422f1583ad8b941e4ea63cffbc4b'
+                const generateUrl = `${apiBaseUrl}/generate`
+
+                updateJob('suno_gen', 20, `🎵 [Suno] Target URL: ${generateUrl}`)
+                updateJob('suno_gen', 22, `📤 [Suno] Mengirim request generate ke SunoAPI.org...`)
+
+                let genResponse
+                try {
+                    const requestPayload = { prompt: finalPrompt, customMode: false, instrumental: true, model: 'V5_5', callBackUrl: 'https://google.com' }
+                    genResponse = await axios.post(generateUrl, requestPayload, {
+                        timeout: 30000,
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        }
+                    })
+                    updateJob('suno_gen', 26, `✅ [Suno] HTTP ${genResponse.status} — Request diterima!`)
+                } catch (err) {
+                    const httpStatus = err.response?.status || 'N/A'
+                    const httpBody = JSON.stringify(err.response?.data || err.message)
+                    throw new Error(`Suno API Error [HTTP ${httpStatus}]: ${httpBody}`)
+                }
+
+                const resultData = genResponse.data
+                if (resultData.code !== 200 || !resultData.data) {
+                    throw new Error(`Suno API tidak mengembalikan data yang valid: ${resultData.msg || 'Unknown'}`)
+                }
+
+                let clipIds = ''
+                let pollQuery = ''
+                if (Array.isArray(resultData.data)) {
+                    if (resultData.data.length === 0) throw new Error('Data array kosong dari Suno API')
+                    clipIds = resultData.data.map(c => c.id).join(',')
+                    pollQuery = `ids=${clipIds}`
+                } else if (resultData.data.taskId) {
+                    clipIds = resultData.data.taskId
+                    pollQuery = `taskId=${clipIds}`
+                }
+
+                updateJob('suno_gen', 28, `⏳ [Suno] Memulai polling status setiap 8 detik...`)
+
+                let complete = false
+                let pollAttempts = 0
+                const maxAttempts = 60
+
+                while (!complete && pollAttempts < maxAttempts) {
+                    await new Promise(r => setTimeout(r, 8000))
+                    pollAttempts++
+                    const pollRes = await axios.get(`${apiBaseUrl}/get?${pollQuery}`, { headers: { 'Authorization': `Bearer ${apiKey}` } })
+                    
+                    const clips = Array.isArray(pollRes.data.data) ? pollRes.data.data : [pollRes.data.data]
+                    const status = clips[0]?.status?.toUpperCase()
+
+                    if (status === 'SUCCESS' || status === 'COMPLETED') {
+                        complete = true
+                        return clips[0].audio_url || clips[0].video_url
+                    } else if (status === 'FAILED') {
+                        throw new Error('Status polling FAILED.')
+                    }
+                    updateJob('suno_gen', 28 + (pollAttempts * 0.5), `🔄 Polling ${pollAttempts}/${maxAttempts} [Status: ${status || 'WAITING'}]`)
+                }
+                
+                throw new Error('Suno API timeout waiting for audio generation')
+            })()// src/services/suno.js
 import axios from 'axios'
 import fs from 'fs'
 import path from 'path'
@@ -40,7 +151,7 @@ async function downloadFile(url, destPath) {
 /**
  * Starts the Suno Music Video generation pipeline in the background.
  */
-export async function startSunoPipeline({ prompt, title, enhance = false, source = 'web', chatId = null }) {
+export async function startSunoPipeline({ prompt, title, enhance = false, source = 'web', chatId = null, model = 'suno', manualAudioPath = null }) {
     const jobId = `job-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
     
     const job = {
@@ -54,6 +165,8 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
         youtubeUrl: null,
         source,
         chatId,
+        model,
+        manualAudioPath,
         timestamp: Date.now()
     }
 
@@ -94,7 +207,7 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
             // ─────────────────────────────────────────────
             // 1. AI ENHANCE PROMPT
             // ─────────────────────────────────────────────
-            if (enhance) {
+            if (enhance && model !== 'manual') {
                 updateJob('ai_enhance', 8, '🤖 [AI Enhance] Memulai penyempurnaan prompt dengan Groq...')
                 try {
                     const aiInstructions = `You are an expert music producer and Suno AI prompt engineer.
@@ -135,9 +248,9 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             }
 
             // ─────────────────────────────────────────────
-            // 2. PARALLEL: SUNO GENERATION + GEMINI METADATA
+            // 2. PARALLEL: GENERATION + GEMINI METADATA
             // ─────────────────────────────────────────────
-            updateJob('suno_gen', 18, '━━━ [PARALLEL START] Meluncurkan Suno + Gemini secara bersamaan ━━━')
+            updateJob('suno_gen', 18, '━━━ [PARALLEL START] Meluncurkan Audio Gen + Gemini secara bersamaan ━━━')
 
             let audioUrl = null
 

@@ -9,7 +9,7 @@ export default function Automations() {
     { id: '1', name: 'Auto-Welcome Message', trigger: 'User Joined', action: 'Send Welcome Banner', active: true },
     { id: '2', name: 'Notify Admin on Error', trigger: 'Log Error Generated', action: 'Notify Admin via WhatsApp', active: true },
     { id: '3', name: 'Toxic Auto-Warn Counter', trigger: 'Message Contains Toxicity', action: 'Increment Warnings', active: true },
-    { id: '4', name: 'Suno Music Video Generator', trigger: 'WhatsApp Command / Dashboard Input', action: 'Loop Video & Upload to YouTube', active: true, route: '/sunoautomation' }
+    { id: '4', name: 'AI Music Video Generator', trigger: 'WhatsApp Command / Dashboard Input', action: 'Multi-Model Generation & Upload to YouTube', active: true, route: '/music' }
   ])
 
   const handleToggle = (id: string, current: boolean) => {
