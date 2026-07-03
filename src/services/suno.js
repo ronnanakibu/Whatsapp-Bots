@@ -154,7 +154,8 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     updateJob('suno_gen', 20, '🎵 [StableAudio] Menyambung ke HuggingFace Space: stabilityai/stable-audio-3...')
                     const { client } = await import('@gradio/client')
                     try {
-                        const app = await client('stabilityai/stable-audio-3')
+                        const hfToken = (process.env.HF_TOKEN || '').replace(/^["']|["']$/g, '')
+                        const app = await client('stabilityai/stable-audio-3', hfToken ? { hf_token: hfToken } : {})
                         updateJob('suno_gen', 25, '📤 [StableAudio] Space terhubung. Mengirim parameter inferensi...')
                         
                         const result = await app.predict('/infer', [
