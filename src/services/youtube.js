@@ -16,6 +16,9 @@ import { logger } from '../utils/logger.js'
  * @returns {Promise<string>} - The YouTube video URL (https://youtu.be/ID).
  */
 export async function uploadVideo({ videoPath, title, description, tags, privacyStatus = 'private', onProgress }) {
+    let cleanPrivacyStatus = privacyStatus || 'private'
+    if (cleanPrivacyStatus) cleanPrivacyStatus = cleanPrivacyStatus.replace(/^["']|["']$/g, '')
+
     if (!fs.existsSync(videoPath)) {
         throw new Error(`Video file not found at: ${videoPath}`)
     }
@@ -56,7 +59,7 @@ export async function uploadVideo({ videoPath, title, description, tags, privacy
                     defaultAudioLanguage: 'id'
                 },
                 status: {
-                    privacyStatus,
+                    privacyStatus: cleanPrivacyStatus,
                     selfDeclaredMadeForKids: false
                 }
             },
