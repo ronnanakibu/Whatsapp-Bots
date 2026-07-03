@@ -102,10 +102,10 @@ Enhance this song idea into a highly descriptive music prompt: "${prompt}"
 Describe the genre, tempo, instruments, mood, and vocal style (if any).
 IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.`
                     
-                    const { groq, GROQ_MODELS, getAvailableModel } = require('./ai')
                     let enhanced = ""
                     
                     try {
+                        const { groq, GROQ_MODELS, getAvailableModel } = await import('./ai.js')
                         const groqModel = getAvailableModel(GROQ_MODELS)
                         const res = await groq.chat.completions.create({
                             model: groqModel,
@@ -115,7 +115,9 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         enhanced = res.choices[0]?.message?.content?.trim()
                     } catch (groqErr) {
                         updateJob('ai_enhance', 12, `⚠️ [AI Enhance] Groq sibuk, fallback ke Gemini...`)
-                        const genAI = require('./ai').genAI || new (require('@google/generative-ai').GoogleGenerativeAI)(process.env.GEMINI_API_KEY)
+                        const ai = await import('./ai.js')
+                        const { GoogleGenerativeAI } = await import('@google/generative-ai')
+                        const genAI = ai.genAI || new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
                         const enhancerModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
                         const enhanceRes = await enhancerModel.generateContent(aiInstructions)
                         enhanced = enhanceRes.response.text()?.trim()
@@ -167,13 +169,25 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                 }
 
                 const resultData = genResponse.data
-                if (resultData.code !== 200 || !Array.isArray(resultData.data) || resultData.data.length === 0) {
+                if (resultData.code !== 200 || !resultData.data) {
                     updateJob('suno_gen', 26, `❌ [Suno] Response tidak valid: ${JSON.stringify(resultData).slice(0, 200)}`)
                     throw new Error(`Suno API tidak mengembalikan data yang valid: ${resultData.msg || 'Unknown'}`)
                 }
 
-                const clipIds = resultData.data.map(c => c.id).join(',')
-                updateJob('suno_gen', 28, `🆔 [Suno] Clip IDs diterima: ${clipIds}`)
+                let clipIds = ''
+                let pollQuery = ''
+                if (Array.isArray(resultData.data)) {
+                    if (resultData.data.length === 0) throw new Error('Data array kosong dari Suno API')
+                    clipIds = resultData.data.map(c => c.id).join(',')
+                    pollQuery = `ids=${clipIds}`
+                } else if (resultData.data.taskId) {
+                    clipIds = resultData.data.taskId
+                    pollQuery = `taskId=${clipIds}`
+                } else {
+                    throw new Error(`Format data tidak dikenali dari Suno API: ${JSON.stringify(resultData.data)}`)
+                }
+
+                updateJob('suno_gen', 28, `🆔 [Suno] ID diterima: ${clipIds}`)
                 updateJob('suno_gen', 30, `⏳ [Suno] Memulai polling status setiap 8 detik...`)
 
                 let complete = false
@@ -186,7 +200,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
 
                     let pollResponse
                     try {
-                        pollResponse = await axios.get(`${apiBaseUrl}/generate/record-info?ids=${clipIds}`, {
+                        pollResponse = await axios.get(`${apiBaseUrl}/generate/record-info?${pollQuery}`, {
                             timeout: 15000,
                             headers: { 'Authorization': `Bearer ${apiKey}` }
                         })
@@ -197,8 +211,17 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     }
 
                     const pollResult = pollResponse.data
-                    if (pollResult.code === 200 && Array.isArray(pollResult.data) && pollResult.data.length > 0) {
-                        const firstClip = pollResult.data[0]
+                    let firstClip = null
+                    
+                    if (pollResult.code === 200 && pollResult.data) {
+                        if (Array.isArray(pollResult.data) && pollResult.data.length > 0) {
+                            firstClip = pollResult.data[0]
+                        } else if (!Array.isArray(pollResult.data) && (pollResult.data.status || pollResult.data.id)) {
+                            firstClip = pollResult.data
+                        }
+                    }
+
+                    if (firstClip) {
                         const status = firstClip.status
                         const pct = firstClip.metadata?.gpt_description_prompt ? 'prompt_ready' : ''
                         updateJob('suno_gen', 30 + Math.min(pollAttempts, 18), `🔄 [Suno Poll #${pollAttempts}] Status: ${status} ${pct}`)
