@@ -18,7 +18,6 @@ const config = {
 const ignoreList = [
     'node_modules',
     'storage',
-    '.env',
     '.git',
     '.vscode',
     'package-lock.json',
@@ -207,6 +206,12 @@ async function main() {
 
         // Deduplicate files to upload
         filesToUpload = Array.from(new Set(filesToUpload));
+
+        // Always push .env to Pterodactyl (even if gitignored, critical for env vars)
+        if (fs.existsSync('.env') && !filesToUpload.includes('.env')) {
+            console.log('🔑 [SFTP] Auto-including .env (environment variables) in upload queue...');
+            filesToUpload.push('.env');
+        }
 
         if (filesToUpload.length === 0) {
             console.log('👍 [SFTP] Tidak ada file baru/delta yang perlu diunggah. Skip SFTP.');
