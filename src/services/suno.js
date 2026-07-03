@@ -102,14 +102,19 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
             const sunoPromise = (async () => {
                 const apiBaseUrl = process.env.SUNO_API_URL || 'http://localhost:3000'
                 const generateUrl = `${apiBaseUrl}/api/generate`
-                
+
                 updateJob('suno_gen', 25, `Mengirim request ke Suno API wrapper (${generateUrl})...`)
-                
-                const genResponse = await axios.post(generateUrl, {
-                    prompt: finalPrompt,
-                    make_instrumental: true,
-                    wait_audio: false
-                })
+
+                let genResponse
+                try {
+                    genResponse = await axios.post(generateUrl, {
+                        prompt: finalPrompt,
+                        make_instrumental: true,
+                        wait_audio: false
+                    }, { timeout: 10000 })
+                } catch (err) {
+                    throw new Error(`Suno API Connection Refused (${err.message}). Pastikan service Suno API wrapper aktif di ${apiBaseUrl}`)
+                }
 
                 const clips = genResponse.data
                 if (!Array.isArray(clips) || clips.length === 0) {
@@ -128,12 +133,17 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
                     await new Promise(r => setTimeout(r, 8000))
                     pollAttempts++
 
-                    const pollResponse = await axios.get(`${apiBaseUrl}/api/get?ids=${clipId}`)
+                    let pollResponse
+                    try {
+                        pollResponse = await axios.get(`${apiBaseUrl}/api/get?ids=${clipId}`, { timeout: 10000 })
+                    } catch (err) {
+                        throw new Error(`Gagal menghubungi Suno API saat polling (${err.message})`)
+                    }
                     const pollClips = pollResponse.data
                     if (Array.isArray(pollClips) && pollClips.length > 0) {
                         const status = pollClips[0].status
                         updateJob('suno_gen', 30 + Math.min(pollAttempts, 20), `Polling status Suno (Percobaan ${pollAttempts}): ${status}`)
-                        
+
                         if (status === 'complete') {
                             audioUrl = pollClips[0].audio_url
                             complete = true
