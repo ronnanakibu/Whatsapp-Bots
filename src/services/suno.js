@@ -156,7 +156,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     const { client } = await import('@gradio/client')
                     try {
                         const hfToken = (process.env.HF_TOKEN || '').replace(/^["']|["']$/g, '')
-                        logger.info(`[StableAudio] Initializing Gradio client. HF_TOKEN loaded: ${hfToken ? 'YES (len: ' + hfToken.length + ')' : 'NO'}`)
+                        updateJob('suno_gen', 21, `🔑 [StableAudio] HF_TOKEN loaded: ${hfToken ? 'YES (len: ' + hfToken.length + ')' : 'NO'}`)
                         const app = await client('stabilityai/stable-audio-3', hfToken ? { hf_token: hfToken } : {})
                         updateJob('suno_gen', 25, '📤 [StableAudio] Space terhubung. Mengirim parameter inferensi...')
                         
