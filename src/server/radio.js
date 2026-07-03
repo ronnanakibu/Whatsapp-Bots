@@ -732,11 +732,11 @@ export function startRadioServer() {
 
         // Client triggers
         socket.on('suno:generate', async (data) => {
-            const { prompt, title, enhance } = data
+            const { prompt, title, enhance, model } = data
             if (!prompt) return socket.emit('error', 'Prompt tidak boleh kosong')
             logger.info(`[Socket/Suno] Triggering suno generation from socket: ${prompt}`)
             try {
-                const jobId = await startSunoPipeline({ prompt, title, enhance, source: 'web' })
+                const jobId = await startSunoPipeline({ prompt, title, enhance, source: 'web', model })
                 socket.emit('suno:started', { jobId })
             } catch (err) {
                 socket.emit('error', `Gagal memulai generasi: ${err.message}`)
