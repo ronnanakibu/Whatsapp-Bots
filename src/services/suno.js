@@ -222,14 +222,22 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     }
 
                     if (firstClip) {
-                        const status = firstClip.status
+                        const status = String(firstClip.status || '').toLowerCase()
                         const pct = firstClip.metadata?.gpt_description_prompt ? 'prompt_ready' : ''
-                        updateJob('suno_gen', 30 + Math.min(pollAttempts, 18), `🔄 [Suno Poll #${pollAttempts}] Status: ${status} ${pct}`)
+                        updateJob('suno_gen', 30 + Math.min(pollAttempts, 18), `🔄 [Suno Poll #${pollAttempts}] Status: ${firstClip.status} ${pct}`)
 
-                        if (status === 'complete' || status === 'success' || firstClip.audio_url) {
-                            audioUrl = firstClip.audio_url
-                            updateJob('suno_gen', 50, `🎉 [Suno] Audio selesai! URL: ${audioUrl}`)
-                            complete = true
+                        const potentialAudioUrl = firstClip.audio_url || firstClip.audioUrl || firstClip.url || firstClip.video_url || firstClip.videoUrl || ''
+
+                        if (status === 'complete' || status === 'success' || (potentialAudioUrl && status !== 'generating')) {
+                            audioUrl = potentialAudioUrl
+                            
+                            // Jika status SUCCESS tapi belum ada URL, jangan langsung diselesaikan
+                            if (!audioUrl && (status === 'complete' || status === 'success')) {
+                                updateJob('suno_gen', 30 + Math.min(pollAttempts, 18), `⚠️ [Suno Poll #${pollAttempts}] Status SUCCESS tapi URL audio belum tersedia...`)
+                            } else {
+                                updateJob('suno_gen', 50, `🎉 [Suno] Audio selesai! URL: ${audioUrl}`)
+                                complete = true
+                            }
                         } else if (status === 'failed') {
                             const errDetail = firstClip.metadata?.error_message || 'Unknown error'
                             updateJob('suno_gen', 30, `❌ [Suno] Generasi gagal di server Suno: ${errDetail}`)
