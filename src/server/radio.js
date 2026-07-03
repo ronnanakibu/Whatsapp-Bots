@@ -1115,6 +1115,24 @@ export function startRadioServer() {
         res.json({ success: true, data: getActiveJobs() })
     })
 
+    // SYSTEM RESTART Webhook (Bypasses Cloudflare Turnstile Panel protection)
+    apiV2.post('/system/restart', (req, res) => {
+        const authHeader = req.headers['authorization']
+        const token = authHeader && authHeader.split(' ')[1]
+
+        if (!token || token !== process.env.PTERO_API_KEY) {
+            logger.error('[System/Restart] Unauthorized remote restart attempt blocked.')
+            return res.status(401).json({ success: false, error: 'Unauthorized' })
+        }
+
+        res.json({ success: true, message: 'Restarting bot...' })
+
+        logger.warn('[System/Restart] Remote restart triggered via deployment webhook.')
+        setTimeout(() => {
+            process.exit(0)
+        }, 1000)
+    })
+
     // MUSIC ENDPOINTS
     apiV2.get('/music/search', async (req, res) => {
         const { q } = req.query

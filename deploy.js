@@ -248,8 +248,38 @@ async function main() {
     // 🔄 RESTART PTERODACTYL SERVER
     // ─────────────────────────────────────────────
     const pteroKey = process.env.PTERO_API_KEY;
-    const pteroUrl = process.env.PTERO_URL || 'https://panel.zelpstore.id'; // Ganti dengan URL asli panel
+    const pteroUrl = process.env.PTERO_URL || 'https://panel.zelpstore.com';
     const pteroId = process.env.PTERO_SERVER_ID || 'dfbf800f';
+
+    async function runDirectWebhookRestart() {
+        try {
+            const radioPort = process.env.RADIO_PORT || '25637';
+            const directHost = config.host;
+            const webhookUrl = `http://${directHost}:${radioPort}/api/v2/system/restart`;
+
+            console.log(`⏳ Mengirim request restart langsung ke: ${webhookUrl}`);
+            const res = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${pteroKey}`
+                }
+            });
+
+            if (res.ok) {
+                console.log('✅ [Direct Webhook] Server bot berhasil di-restart secara langsung!');
+                return true;
+            } else {
+                const errText = await res.text();
+                console.error(`❌ [Direct Webhook] Gagal: HTTP ${res.status} - ${errText}`);
+                return false;
+            }
+        } catch (webhookErr) {
+            console.error('❌ [Direct Webhook] Gagal menghubungi port bot langsung:', webhookErr.message);
+            return false;
+        }
+    }
 
     if (pteroKey && pteroUrl && pteroId) {
         console.log('\n🔄 [Pterodactyl] Mencoba me-restart server secara otomatis...');
@@ -269,10 +299,18 @@ async function main() {
                 console.log('✅ [Pterodactyl] Server bot berhasil di-restart!');
             } else {
                 const text = await res.text();
-                console.error(`❌ [Pterodactyl] Gagal me-restart server: HTTP ${res.status} - ${text}`);
+                console.error(`❌ [Pterodactyl] Gagal me-restart server: HTTP ${res.status}`);
+                if (res.status === 403 || text.includes('challenge') || text.includes('Turnstile')) {
+                    console.log('⚠️ [Pterodactyl] Cloudflare Turnstile terdeteksi (403). Mencoba alternatif direct webhook...');
+                    await runDirectWebhookRestart();
+                } else {
+                    console.error(`Detail error: ${text.slice(0, 200)}`);
+                }
             }
         } catch (err) {
             console.error('❌ [Pterodactyl] Error saat memanggil API Pterodactyl:', err.message);
+            console.log('⚠️ [Pterodactyl] Mencoba alternatif direct webhook...');
+            await runDirectWebhookRestart();
         }
     } else {
         console.log('\n⏩ [Pterodactyl] Auto-restart dilewati (Set PTERO_API_KEY di .env lokal untuk mengaktifkannya).');
