@@ -157,9 +157,9 @@ export default function SunoAutomationPage() {
     }
 
     return (
-        <div className="min-h-screen w-full bg-[#03030c] text-white relative overflow-x-hidden pb-12 font-sans select-none">
+        <div className="h-screen w-full bg-[#03030c] text-white relative overflow-x-hidden overflow-y-auto pb-12 font-sans select-none">
             {/* Ambient Background Glowing Orbs */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 fixed">
                 <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-purple-950/20 blur-[150px]" />
                 <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-rose-950/20 blur-[150px]" />
                 <div className="absolute top-[30%] right-[-5%] w-[40%] h-[40%] rounded-full bg-blue-950/10 blur-[120px]" />
