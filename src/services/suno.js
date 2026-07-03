@@ -123,7 +123,7 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
 
                 let genResponse
                 try {
-                    const requestPayload = { prompt: finalPrompt, customMode: false, instrumental: true }
+                    const requestPayload = { prompt: finalPrompt, customMode: false, instrumental: true, model: 'V3_5' }
                     updateJob('suno_gen', 23, `📦 [Suno] Payload: ${JSON.stringify(requestPayload).slice(0, 150)}`)
                     genResponse = await axios.post(generateUrl, requestPayload, {
                         timeout: 30000,
