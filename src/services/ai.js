@@ -304,24 +304,60 @@ async function analyzeImage(imageBuffer, mimeType = 'image/jpeg', prompt = 'Desk
 }
 
 async function enhancePrompt(rawPrompt) {
+    const instructions = `
+        You are an expert AI prompt engineer. 
+        The user wants to generate media (image/video) based on this input: "${rawPrompt}"
+        Write a highly detailed, descriptive, and visually rich prompt in English.
+        Focus on subject details, lighting, camera angles, art style, and atmosphere.
+        IMPORTANT: Return ONLY the prompt text, no intro, no explanation, no quotes.
+    `
     try {
         logger.info(`[AI] Enhancing prompt via Gemini...`)
         const enhancerModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-        const instructions = `
-            You are an expert AI prompt engineer. 
-            The user wants to generate media (image/video) based on this input: "${rawPrompt}"
-            Write a highly detailed, descriptive, and visually rich prompt in English.
-            Focus on subject details, lighting, camera angles, art style, and atmosphere.
-            IMPORTANT: Return ONLY the prompt text, no intro, no explanation, no quotes.
-        `
         const enhanceRes = await enhancerModel.generateContent(instructions)
         const enhanced = enhanceRes.response.text()?.trim()
         if (enhanced && enhanced.length > 10) {
-            logger.info(`[AI] Enhanced Prompt: ${enhanced.slice(0, 100)}...`)
+            logger.info(`[AI] Enhanced Prompt via Gemini: ${enhanced.slice(0, 100)}...`)
             return enhanced
         }
     } catch (e) {
-        logger.warn(`[AI] Gagal enhance prompt: ${e.message}`)
+        logger.warn(`[AI] Gemini failed to enhance prompt: ${e.message}. Trying Groq/NVIDIA fallback...`)
+        
+        // Try Groq fallback
+        try {
+            const groqModel = getAvailableModel(GROQ_MODELS)
+            const res = await groq.chat.completions.create({
+                model: groqModel,
+                messages: [{ role: 'user', content: instructions }],
+                temperature: 0.7,
+            })
+            const reply = res.choices[0]?.message?.content?.trim()
+            if (reply && reply.length > 10) {
+                logger.info(`[AI] Enhanced Prompt via Groq: ${reply.slice(0, 100)}...`)
+                return reply
+            }
+        } catch (groqErr) {
+            logger.warn(`[AI] Groq fallback failed: ${groqErr.message}`)
+        }
+
+        // Try NVIDIA fallback
+        if (nvidiaClient) {
+            try {
+                const nvidiaModel = getAvailableModel(NVIDIA_MODELS)
+                const res = await nvidiaClient.chat.completions.create({
+                    model: nvidiaModel,
+                    messages: [{ role: 'user', content: instructions }],
+                    temperature: 0.7,
+                })
+                const reply = res.choices[0]?.message?.content?.trim()
+                if (reply && reply.length > 10) {
+                    logger.info(`[AI] Enhanced Prompt via NVIDIA: ${reply.slice(0, 100)}...`)
+                    return reply
+                }
+            } catch (nvErr) {
+                logger.warn(`[AI] NVIDIA fallback failed: ${nvErr.message}`)
+            }
+        }
     }
     return rawPrompt // Fallback ke prompt asli
 }
@@ -663,7 +699,51 @@ async function generateYoutubeMetadata(vibePrompt) {
         const text = result.response.text()?.trim()
         return JSON.parse(text)
     } catch (err) {
-        logger.error(`[AI] Failed to generate YouTube metadata: ${err.message}`)
+        logger.error(`[AI] Gemini failed to generate YouTube metadata: ${err.message}. Trying Groq/NVIDIA fallback...`)
+        
+        // Try Groq fallback first
+        try {
+            const groqModel = getAvailableModel(GROQ_MODELS)
+            const res = await groq.chat.completions.create({
+                model: groqModel,
+                messages: [
+                    { role: 'system', content: 'You are a creative assistant that outputs raw JSON.' },
+                    { role: 'user', content: promptText }
+                ],
+                response_format: { type: "json_object" },
+                temperature: 0.7,
+            })
+            const reply = res.choices[0]?.message?.content?.trim()
+            if (reply) return JSON.parse(reply)
+        } catch (groqErr) {
+            logger.error(`[AI] Groq fallback failed for metadata: ${groqErr.message}`)
+        }
+
+        // Try NVIDIA fallback next
+        if (nvidiaClient) {
+            try {
+                const nvidiaModel = getAvailableModel(NVIDIA_MODELS)
+                const res = await nvidiaClient.chat.completions.create({
+                    model: nvidiaModel,
+                    messages: [
+                        { role: 'system', content: 'You are a creative assistant that outputs raw JSON. Return ONLY the JSON object, no explainers, no codeblocks.' },
+                        { role: 'user', content: promptText }
+                    ],
+                    temperature: 0.7,
+                })
+                const reply = res.choices[0]?.message?.content?.trim()
+                if (reply) {
+                    let clean = reply
+                    if (clean.startsWith('```')) {
+                        clean = clean.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim()
+                    }
+                    return JSON.parse(clean)
+                }
+            } catch (nvErr) {
+                logger.error(`[AI] NVIDIA fallback failed for metadata: ${nvErr.message}`)
+            }
+        }
+        
         throw err
     }
 }
