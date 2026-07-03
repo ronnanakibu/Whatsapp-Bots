@@ -226,7 +226,9 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         const pct = firstClip.metadata?.gpt_description_prompt ? 'prompt_ready' : ''
                         updateJob('suno_gen', 30 + Math.min(pollAttempts, 18), `🔄 [Suno Poll #${pollAttempts}] Status: ${firstClip.status} ${pct}`)
 
-                        const potentialAudioUrl = firstClip.audio_url || firstClip.audioUrl || firstClip.url || firstClip.video_url || firstClip.videoUrl || ''
+                        // Cek URL dari format response lama (array) atau format baru sunoapi.org (sunoData)
+                        const sunoDataClip = firstClip.response?.sunoData?.[0] || {}
+                        const potentialAudioUrl = firstClip.audio_url || firstClip.audioUrl || firstClip.url || firstClip.video_url || firstClip.videoUrl || sunoDataClip.audioUrl || sunoDataClip.audio_url || ''
 
                         if (status === 'complete' || status === 'success' || (potentialAudioUrl && status !== 'generating')) {
                             audioUrl = potentialAudioUrl
