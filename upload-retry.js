@@ -30,7 +30,7 @@ async function run() {
 
     console.log('3. Merender Video dengan FFmpeg (mohon tunggu)...')
     await new Promise((resolve, reject) => {
-        const cmd = `ffmpeg -y -loop 1 -i "${imgPath}" -i "${audioPath}" -c:v libx264 -tune stillimage -c:a aac -b:a 192k -pix_fmt yuv420p -shortest "${videoPath}"`
+        const cmd = `ffmpeg -y -loop 1 -i "${imgPath}" -i "${audioPath}" -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2" -c:v libx264 -tune stillimage -c:a aac -b:a 192k -pix_fmt yuv420p -shortest "${videoPath}"`
         const ffmpegProcess = exec(cmd, (error) => {
             if (error) reject(error)
             else resolve()

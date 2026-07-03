@@ -26,7 +26,7 @@ if (!process.env.PATH.split(path.delimiter).includes(localBinPath)) {
 
 try {
     if (fs.existsSync('./upload-retry.js')) {
-        console.log('=== MENJALANKAN UPLOAD RETRY OTOMATIS ===')
+        console.log('=== MENJALANKAN UPLOAD RETRY OTOMATIS (FIX 16:9) ===')
         execSync('node upload-retry.js', { stdio: 'inherit' })
         fs.unlinkSync('./upload-retry.js')
         console.log('=== UPLOAD RETRY SELESAI ===')
