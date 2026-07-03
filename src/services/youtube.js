@@ -20,9 +20,13 @@ export async function uploadVideo({ videoPath, title, description, tags, privacy
         throw new Error(`Video file not found at: ${videoPath}`)
     }
 
-    const clientId = process.env.YOUTUBE_CLIENT_ID
-    const clientSecret = process.env.YOUTUBE_CLIENT_SECRET
-    const refreshToken = process.env.YOUTUBE_REFRESH_TOKEN
+    let clientId = process.env.YOUTUBE_CLIENT_ID
+    let clientSecret = process.env.YOUTUBE_CLIENT_SECRET
+    let refreshToken = process.env.YOUTUBE_REFRESH_TOKEN
+
+    if (clientId) clientId = clientId.replace(/^["']|["']$/g, '')
+    if (clientSecret) clientSecret = clientSecret.replace(/^["']|["']$/g, '')
+    if (refreshToken) refreshToken = refreshToken.replace(/^["']|["']$/g, '')
 
     if (!clientId || !clientSecret || !refreshToken) {
         throw new Error('Missing YouTube OAuth credentials. Configure CLIENT_ID, CLIENT_SECRET, and REFRESH_TOKEN in .env')
