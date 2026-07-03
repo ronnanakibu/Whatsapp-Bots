@@ -95,20 +95,34 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
             // 1. AI ENHANCE PROMPT
             // ─────────────────────────────────────────────
             if (enhance) {
-                updateJob('ai_enhance', 8, '🤖 [AI Enhance] Memulai penyempurnaan prompt dengan Gemini...')
+                updateJob('ai_enhance', 8, '🤖 [AI Enhance] Memulai penyempurnaan prompt dengan Groq...')
                 try {
                     const aiInstructions = `You are an expert music producer and Suno AI prompt engineer.
 Enhance this song idea into a highly descriptive music prompt: "${prompt}"
 Describe the genre, tempo, instruments, mood, and vocal style (if any).
 IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.`
                     
-                    const genAI = require('./ai').genAI || new (require('@google/generative-ai').GoogleGenerativeAI)(process.env.GEMINI_API_KEY)
-                    const enhancerModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-                    const enhanceRes = await enhancerModel.generateContent(aiInstructions)
+                    const { groq, GROQ_MODELS, getAvailableModel } = require('./ai')
+                    let enhanced = ""
                     
-                    let enhanced = enhanceRes.response.text()?.trim()
+                    try {
+                        const groqModel = getAvailableModel(GROQ_MODELS)
+                        const res = await groq.chat.completions.create({
+                            model: groqModel,
+                            messages: [{ role: 'user', content: aiInstructions }],
+                            temperature: 0.7,
+                        })
+                        enhanced = res.choices[0]?.message?.content?.trim()
+                    } catch (groqErr) {
+                        updateJob('ai_enhance', 12, `⚠️ [AI Enhance] Groq sibuk, fallback ke Gemini...`)
+                        const genAI = require('./ai').genAI || new (require('@google/generative-ai').GoogleGenerativeAI)(process.env.GEMINI_API_KEY)
+                        const enhancerModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+                        const enhanceRes = await enhancerModel.generateContent(aiInstructions)
+                        enhanced = enhanceRes.response.text()?.trim()
+                    }
+                    
                     if (enhanced.length > 490) enhanced = enhanced.slice(0, 490) // safety cutoff
-                    finalPrompt = enhanced
+                    finalPrompt = enhanced || prompt
 
                     updateJob('ai_enhance', 15, `✅ [AI Enhance] Prompt berhasil disempurnakan (${finalPrompt.length} chars)`)
                     updateJob('ai_enhance', 16, `📄 Enhanced Prompt: "${finalPrompt.slice(0, 200)}${finalPrompt.length > 200 ? '...' : ''}"`)

@@ -367,7 +367,7 @@ async function enhancePrompt(rawPrompt) {
 // ─────────────────────────────────────────────
 
 async function generateImage(rawPrompt) {
-    // 1. ENHANCE PROMPT WITH GEMINI (Biar hasilnya sekelas Midjourney/DALL-E)
+    // 1. ENHANCE PROMPT WITH GROQ
     const prompt = await enhancePrompt(rawPrompt)
 
     // Mode 1: Hugging Face (jika ada HF_TOKEN di .env)
@@ -383,7 +383,6 @@ async function generateImage(rawPrompt) {
                     },
                     method: "POST",
                     body: JSON.stringify({ inputs: prompt }),
-
                 }
             )
             if (res.ok) {
@@ -395,13 +394,41 @@ async function generateImage(rawPrompt) {
                 }
             }
             const errText = await res.text()
-            logger.warn(`[AI] Hugging Face failed with status ${res.status}: ${errText}, falling back to Pollinations`)
+            logger.warn(`[AI] Hugging Face failed with status ${res.status}: ${errText}, falling back to OpenAI...`)
         } catch (hfErr) {
-            logger.warn(`[AI] Hugging Face error: ${hfErr.message}, falling back to Pollinations`)
+            logger.warn(`[AI] Hugging Face error: ${hfErr.message}, falling back to OpenAI...`)
         }
     }
 
-    // Mode 2: Pollinations.ai (Free, no key)
+    // Mode 2: OpenAI DALL-E 3 (jika ada OPENAI_API_KEY)
+    if (process.env.OPENAI_API_KEY) {
+        try {
+            logger.info(`[AI] Generating image via OpenAI (DALL-E 3)...`)
+            const OpenAI = require('openai')
+            const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+            
+            const response = await openaiClient.images.generate({
+                model: "dall-e-3",
+                prompt: prompt,
+                n: 1,
+                size: "1024x1024",
+                response_format: "b64_json"
+            })
+            
+            const b64Json = response.data[0].b64_json
+            if (b64Json) {
+                return {
+                    buffer: Buffer.from(b64Json, 'base64'),
+                    mimeType: 'image/png',
+                    provider: 'openai'
+                }
+            }
+        } catch (openaiErr) {
+            logger.warn(`[AI] OpenAI DALL-E 3 failed: ${openaiErr.message}, falling back to Pollinations...`)
+        }
+    }
+
+    // Mode 3: Pollinations.ai (Free, no key)
     try {
         logger.info(`[AI] Generating image via Pollinations.ai for: ${prompt}`)
         const res = await fetch(
@@ -676,12 +703,6 @@ async function geminiFactCheck(query) {
 }
 
 async function generateYoutubeMetadata(vibePrompt) {
-    const modelName = getAvailableModel(GEMINI_MODELS)
-    const model = genAI.getGenerativeModel({
-        model: modelName,
-        generationConfig: { responseMimeType: "application/json" }
-    })
-
     const promptText = `
       You are a creative YouTube content creator.
       Based on this music genre/vibe description: "${vibePrompt}"
@@ -694,29 +715,35 @@ async function generateYoutubeMetadata(vibePrompt) {
       Return the result as a raw JSON object with keys: "title", "description", "tags" (array of strings), "imagePrompt".
     `
 
+    // Try Groq first (Primary for text)
     try {
-        const result = await model.generateContent(promptText)
-        const text = result.response.text()?.trim()
-        return JSON.parse(text)
-    } catch (err) {
-        logger.error(`[AI] Gemini failed to generate YouTube metadata: ${err.message}. Trying Groq/NVIDIA fallback...`)
+        const groqModel = getAvailableModel(GROQ_MODELS)
+        const res = await groq.chat.completions.create({
+            model: groqModel,
+            messages: [
+                { role: 'system', content: 'You are a creative assistant that outputs raw JSON.' },
+                { role: 'user', content: promptText }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.7,
+        })
+        const reply = res.choices[0]?.message?.content?.trim()
+        if (reply) return JSON.parse(reply)
+    } catch (groqErr) {
+        logger.warn(`[AI] Groq failed to generate YouTube metadata: ${groqErr.message}. Trying Gemini fallback...`)
         
-        // Try Groq fallback first
+        // Try Gemini fallback
         try {
-            const groqModel = getAvailableModel(GROQ_MODELS)
-            const res = await groq.chat.completions.create({
-                model: groqModel,
-                messages: [
-                    { role: 'system', content: 'You are a creative assistant that outputs raw JSON.' },
-                    { role: 'user', content: promptText }
-                ],
-                response_format: { type: "json_object" },
-                temperature: 0.7,
+            const modelName = getAvailableModel(GEMINI_MODELS)
+            const model = genAI.getGenerativeModel({
+                model: modelName,
+                generationConfig: { responseMimeType: "application/json" }
             })
-            const reply = res.choices[0]?.message?.content?.trim()
-            if (reply) return JSON.parse(reply)
-        } catch (groqErr) {
-            logger.error(`[AI] Groq fallback failed for metadata: ${groqErr.message}`)
+            const result = await model.generateContent(promptText)
+            const text = result.response.text()?.trim()
+            return JSON.parse(text)
+        } catch (err) {
+            logger.error(`[AI] Gemini fallback failed for YouTube metadata: ${err.message}`)
         }
 
         // Try NVIDIA fallback next
