@@ -157,8 +157,8 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         const app = await client('stabilityai/stable-audio-3')
                         updateJob('suno_gen', 25, '📤 [StableAudio] Space terhubung. Mengirim parameter inferensi...')
                         
-                        const result = await app.predict('/predict', [
-                            finalPrompt, 47, 100, 7, 0.3, 500, "dpmpp-3m-sde", "", 1, 6, true, null, 0.9, null, 0, 0, 0
+                        const result = await app.predict('/infer', [
+                            "medium", finalPrompt, 47, 20, 3, "pingpong", 0
                         ])
                         updateJob('suno_gen', 45, '✅ [StableAudio] Berhasil melakukan generasi audio!')
                         const audioFileObj = result.data[0]
