@@ -1,14 +1,15 @@
 // src/components/pages/Automations.tsx
 'use client'
 import React, { useState } from 'react'
-import { Play, Zap, ArrowRight, Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Play, Zap, ArrowRight, Plus, Trash2, ToggleLeft, ToggleRight, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function Automations() {
   const [workflows, setWorkflows] = useState([
     { id: '1', name: 'Auto-Welcome Message', trigger: 'User Joined', action: 'Send Welcome Banner', active: true },
     { id: '2', name: 'Notify Admin on Error', trigger: 'Log Error Generated', action: 'Notify Admin via WhatsApp', active: true },
-    { id: '3', name: 'Toxic Auto-Warn Counter', trigger: 'Message Contains Toxicity', action: 'Increment Warnings', active: true }
+    { id: '3', name: 'Toxic Auto-Warn Counter', trigger: 'Message Contains Toxicity', action: 'Increment Warnings', active: true },
+    { id: '4', name: 'Suno Music Video Generator', trigger: 'WhatsApp Command / Dashboard Input', action: 'Loop Video & Upload to YouTube', active: true, route: '/sunoautomation' }
   ])
 
   const handleToggle = (id: string, current: boolean) => {
@@ -75,6 +76,15 @@ export default function Automations() {
             </div>
 
             <div className="flex justify-end gap-3 mt-6 border-t border-border/40 pt-4">
+              {'route' in flow && flow.route && (
+                <a
+                  href={flow.route}
+                  className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-[10px] font-bold rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer ml-auto"
+                >
+                  <ExternalLink size={10} />
+                  <span>Configure Pipeline</span>
+                </a>
+              )}
               <button
                 onClick={() => handleDelete(flow.id)}
                 className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/30 text-rose-500 rounded-lg transition-colors inline-flex"

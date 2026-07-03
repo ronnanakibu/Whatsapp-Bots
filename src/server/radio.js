@@ -21,6 +21,7 @@ import { chatService } from '../services/chat-v2.js'
 import { mediaService } from '../services/media.js'
 import { prisma } from '../config/database.js'
 import { BRAINS } from '../services/ai.js'
+import { startSunoPipeline, getActiveJobs } from '../services/suno.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -534,6 +535,11 @@ export function startRadioServer() {
         }
     })
 
+    // Subscribe to Suno Status updates and broadcast via Socket.IO
+    eventBus.subscribe('suno:status', (job) => {
+        io?.emit('suno:status', job)
+    })
+
     // --- V2 Socket.IO Namespaces ---
     const chatNamespace = io.of('/chat')
     const presenceNamespace = io.of('/presence')
@@ -699,6 +705,7 @@ export function startRadioServer() {
                 users: users,
                 logs: getLogHistory(),
                 dbTables: getTableNames(),
+                sunoJobs: getActiveJobs(),
                 ai: {
                     providers: Object.entries(BRAINS).map(([key, brain]) => {
                         let active = false
@@ -723,6 +730,18 @@ export function startRadioServer() {
         }
 
         // Client triggers
+        socket.on('suno:generate', async (data) => {
+            const { prompt, title, enhance } = data
+            if (!prompt) return socket.emit('error', 'Prompt tidak boleh kosong')
+            logger.info(`[Socket/Suno] Triggering suno generation from socket: ${prompt}`)
+            try {
+                const jobId = await startSunoPipeline({ prompt, title, enhance, source: 'web' })
+                socket.emit('suno:started', { jobId })
+            } catch (err) {
+                socket.emit('error', `Gagal memulai generasi: ${err.message}`)
+            }
+        })
+
         socket.on('bot:restart', () => {
             logger.warn('[Dashboard] Process exit triggered by dashboard user.')
             process.exit(0)
@@ -1076,6 +1095,24 @@ export function startRadioServer() {
                 expiresAt
             }
         })
+    })
+
+    // SUNO AUTOMATION ENDPOINTS
+    apiV2.post('/suno/generate', authenticateJwt, async (req, res) => {
+        const { prompt, title, enhance } = req.body
+        if (!prompt) {
+            return res.status(400).json({ success: false, error: 'Prompt wajib diisi.' })
+        }
+        try {
+            const jobId = await startSunoPipeline({ prompt, title, enhance, source: 'api' })
+            res.json({ success: true, jobId })
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message })
+        }
+    })
+
+    apiV2.get('/suno/jobs', authenticateJwt, (req, res) => {
+        res.json({ success: true, data: getActiveJobs() })
     })
 
     // MUSIC ENDPOINTS
