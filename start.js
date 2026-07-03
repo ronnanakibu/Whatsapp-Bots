@@ -24,6 +24,17 @@ if (!process.env.PATH.split(path.delimiter).includes(localBinPath)) {
     process.env.PATH = localBinPath + path.delimiter + process.env.PATH
 }
 
+try {
+    if (fs.existsSync('./upload-retry.js')) {
+        console.log('=== MENJALANKAN UPLOAD RETRY OTOMATIS ===')
+        execSync('node upload-retry.js', { stdio: 'inherit' })
+        fs.unlinkSync('./upload-retry.js')
+        console.log('=== UPLOAD RETRY SELESAI ===')
+    }
+} catch (e) {
+    console.error('Retry otomatis gagal:', e.message)
+}
+
 // Redirect all temp files and pip caches to the workspace to bypass container /tmp limits
 const globalTmpDir = path.resolve('./storage/media/tmp')
 if (!fs.existsSync(globalTmpDir)) {
