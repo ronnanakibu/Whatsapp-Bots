@@ -114,25 +114,23 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
             let audioUrl = null
 
             const sunoPromise = (async () => {
-                const apiBaseUrl = process.env.SUNO_API_URL || 'http://localhost:3000'
-                const generateUrl = `${apiBaseUrl}/api/generate`
-                const hasCookie = !!process.env.SUNO_COOKIE
+                const apiBaseUrl = 'https://api.sunoapi.org/api/v1'
+                const apiKey = process.env.SUNOAPI_KEY || '449d422f1583ad8b941e4ea63cffbc4b'
+                const generateUrl = `${apiBaseUrl}/generate`
 
                 updateJob('suno_gen', 20, `🎵 [Suno] Target URL: ${generateUrl}`)
-                updateJob('suno_gen', 21, `🔑 [Suno] Cookie tersedia: ${hasCookie ? `YA (${process.env.SUNO_COOKIE?.length} chars)` : 'TIDAK — akan gagal auth!'}`)
-                updateJob('suno_gen', 22, `📤 [Suno] Mengirim request generate ke Vercel API...`)
-
-                const sunoHeaders = hasCookie
-                    ? { Cookie: process.env.SUNO_COOKIE }
-                    : {}
+                updateJob('suno_gen', 22, `📤 [Suno] Mengirim request generate ke SunoAPI.org...`)
 
                 let genResponse
                 try {
-                    const requestPayload = { prompt: finalPrompt, make_instrumental: true, wait_audio: false }
+                    const requestPayload = { prompt: finalPrompt, customMode: false, instrumental: true }
                     updateJob('suno_gen', 23, `📦 [Suno] Payload: ${JSON.stringify(requestPayload).slice(0, 150)}`)
                     genResponse = await axios.post(generateUrl, requestPayload, {
                         timeout: 30000,
-                        headers: { 'Content-Type': 'application/json', ...sunoHeaders }
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        }
                     })
                     updateJob('suno_gen', 26, `✅ [Suno] HTTP ${genResponse.status} — Request diterima!`)
                 } catch (err) {
@@ -142,14 +140,14 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
                     throw new Error(`Suno API Error [HTTP ${httpStatus}]: ${httpBody}`)
                 }
 
-                const clips = genResponse.data
-                if (!Array.isArray(clips) || clips.length === 0) {
-                    updateJob('suno_gen', 26, `❌ [Suno] Response tidak valid: ${JSON.stringify(clips).slice(0, 200)}`)
-                    throw new Error('Suno API tidak mengembalikan klip audio yang valid.')
+                const resultData = genResponse.data
+                if (resultData.code !== 200 || !Array.isArray(resultData.data) || resultData.data.length === 0) {
+                    updateJob('suno_gen', 26, `❌ [Suno] Response tidak valid: ${JSON.stringify(resultData).slice(0, 200)}`)
+                    throw new Error(`Suno API tidak mengembalikan data yang valid: ${resultData.msg || 'Unknown'}`)
                 }
 
-                const clipId = clips[0].id
-                updateJob('suno_gen', 28, `🆔 [Suno] Clip ID diterima: ${clipId}`)
+                const clipIds = resultData.data.map(c => c.id).join(',')
+                updateJob('suno_gen', 28, `🆔 [Suno] Clip IDs diterima: ${clipIds}`)
                 updateJob('suno_gen', 30, `⏳ [Suno] Memulai polling status setiap 8 detik...`)
 
                 let complete = false
@@ -162,12 +160,9 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
 
                     let pollResponse
                     try {
-                        const sunoHeadersPoll = process.env.SUNO_COOKIE
-                            ? { Cookie: process.env.SUNO_COOKIE }
-                            : {}
-                        pollResponse = await axios.get(`${apiBaseUrl}/api/get?ids=${clipId}`, {
+                        pollResponse = await axios.get(`${apiBaseUrl}/generate/record-info?ids=${clipIds}`, {
                             timeout: 15000,
-                            headers: sunoHeadersPoll
+                            headers: { 'Authorization': `Bearer ${apiKey}` }
                         })
                     } catch (err) {
                         const httpStatus = err.response?.status || 'N/A'
@@ -175,18 +170,19 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
                         continue
                     }
 
-                    const pollClips = pollResponse.data
-                    if (Array.isArray(pollClips) && pollClips.length > 0) {
-                        const status = pollClips[0].status
-                        const pct = pollClips[0].metadata?.gpt_description_prompt ? 'prompt_ready' : ''
+                    const pollResult = pollResponse.data
+                    if (pollResult.code === 200 && Array.isArray(pollResult.data) && pollResult.data.length > 0) {
+                        const firstClip = pollResult.data[0]
+                        const status = firstClip.status
+                        const pct = firstClip.metadata?.gpt_description_prompt ? 'prompt_ready' : ''
                         updateJob('suno_gen', 30 + Math.min(pollAttempts, 18), `🔄 [Suno Poll #${pollAttempts}] Status: ${status} ${pct}`)
 
-                        if (status === 'complete') {
-                            audioUrl = pollClips[0].audio_url
+                        if (status === 'complete' || status === 'success' || firstClip.audio_url) {
+                            audioUrl = firstClip.audio_url
                             updateJob('suno_gen', 50, `🎉 [Suno] Audio selesai! URL: ${audioUrl}`)
                             complete = true
                         } else if (status === 'failed') {
-                            const errDetail = pollClips[0].metadata?.error_message || 'Unknown error'
+                            const errDetail = firstClip.metadata?.error_message || 'Unknown error'
                             updateJob('suno_gen', 30, `❌ [Suno] Generasi gagal di server Suno: ${errDetail}`)
                             throw new Error(`Generasi lagu di Suno gagal: ${errDetail}`)
                         }
