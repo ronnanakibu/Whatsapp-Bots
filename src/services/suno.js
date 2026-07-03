@@ -8,7 +8,8 @@ import { aiService } from './ai.js'
 import { uploadVideo } from './youtube.js'
 import { eventBus } from '../events/bus.js'
 import { logger, getSocket } from '../utils/logger.js'
-import 'dotenv/config'
+import dotenv from 'dotenv'
+dotenv.config({ override: true })
 
 // Active jobs database in-memory
 const activeJobs = new Map()
@@ -155,6 +156,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     const { client } = await import('@gradio/client')
                     try {
                         const hfToken = (process.env.HF_TOKEN || '').replace(/^["']|["']$/g, '')
+                        logger.info(`[StableAudio] Initializing Gradio client. HF_TOKEN loaded: ${hfToken ? 'YES (len: ' + hfToken.length + ')' : 'NO'}`)
                         const app = await client('stabilityai/stable-audio-3', hfToken ? { hf_token: hfToken } : {})
                         updateJob('suno_gen', 25, '📤 [StableAudio] Space terhubung. Mengirim parameter inferensi...')
                         
