@@ -213,6 +213,13 @@ async function main() {
             filesToUpload.push('.env');
         }
 
+        // Always push Google credentials JSON to Pterodactyl if exists
+        const googleCreds = 'storage/ronnbot-music-51e21a5d716d.json';
+        if (fs.existsSync(googleCreds) && !filesToUpload.includes(googleCreds)) {
+            console.log('🔑 [SFTP] Auto-including Google Credentials JSON in upload queue...');
+            filesToUpload.push(googleCreds);
+        }
+
         if (filesToUpload.length === 0) {
             console.log('👍 [SFTP] Tidak ada file baru/delta yang perlu diunggah. Skip SFTP.');
             // Jangan return di sini, biar bisa lanjut nge-restart Pterodactyl!

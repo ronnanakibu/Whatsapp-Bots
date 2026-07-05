@@ -6,6 +6,7 @@ import { exec, execSync } from 'child_process'
 import crypto from 'crypto'
 import { aiService } from './ai.js'
 import { uploadVideo } from './youtube.js'
+import { uploadToDrive } from './gdrive.js'
 import { eventBus } from '../events/bus.js'
 import { logger, getSocket } from '../utils/logger.js'
 import dotenv from 'dotenv'
@@ -595,25 +596,48 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                 tags: youtubeTags,
                 privacyStatus: youtubePrivacy,
                 onProgress: (p) => {
-                    updateJob('youtube_upload', 90 + Math.floor(p * 0.09), `📡 [YouTube] Upload progress: ${p}%`)
+                    updateJob('youtube_upload', 90 + Math.floor(p * 0.05), `📡 [YouTube] Upload progress: ${p}%`)
                 }
             })
+
+            // ─────────────────────────────────────────────
+            // 6b. UPLOAD TO GOOGLE DRIVE
+            // ─────────────────────────────────────────────
+            let driveUrl = null
+            try {
+                updateJob('youtube_upload', 96, '📤 [Google Drive] Mengupload audio mentah ke Google Drive...')
+                const cleanTitle = videoTitle.replace(/[\\/:*?"<>|]/g, '_').trim() || `song_${jobId}`
+                const driveFileName = `${cleanTitle}.mp3`
+                
+                driveUrl = await uploadToDrive(audioPath, driveFileName, 'audio/mpeg')
+                updateJob('youtube_upload', 99, `✅ [Google Drive] Sukses! Link: ${driveUrl}`)
+            } catch (driveErr) {
+                logger.error(`[Google Drive Upload] Gagal: ${driveErr.message}`)
+                updateJob('youtube_upload', 98, `⚠️ [Google Drive] Gagal upload: ${driveErr.message}`)
+            }
 
             // ─────────────────────────────────────────────
             // 7. SUCCESS & FINAL NOTIFICATION
             // ─────────────────────────────────────────────
             job.status = 'completed'
             job.youtubeUrl = youtubeUrl
+            job.driveUrl = driveUrl
             updateJob('done', 100, `━━━ [PIPELINE COMPLETE] ✅ ━━━`)
             updateJob('done', 100, `🎉 Video berhasil dipublikasikan ke YouTube!`)
-            updateJob('done', 100, `🔗 URL: ${youtubeUrl}`)
+            updateJob('done', 100, `🔗 YouTube: ${youtubeUrl}`)
+            if (driveUrl) {
+                updateJob('done', 100, `🔗 Google Drive: ${driveUrl}`)
+            }
 
             if (chatId) {
                 const sock = getSocket()
                 if (sock) {
-                    await sock.sendMessage(chatId, {
-                        text: `🎵 *Lagu AI Kamu Selesai Dibuat!* 🎵\n\n*Judul:* ${videoTitle}\n*Link YouTube:* ${youtubeUrl}\n\n_Video berhasil digenerate dan diupload otomatis!_`
-                    })
+                    let textMsg = `🎵 *Lagu AI Kamu Selesai Dibuat!* 🎵\n\n*Judul:* ${videoTitle}\n*Link YouTube:* ${youtubeUrl}`
+                    if (driveUrl) {
+                        textMsg += `\n*Link Google Drive:* ${driveUrl}`
+                    }
+                    textMsg += `\n\n_Video berhasil digenerate, diupload ke YouTube, dan disimpan ke Google Drive otomatis!_`
+                    await sock.sendMessage(chatId, { text: textMsg })
                 }
             }
 

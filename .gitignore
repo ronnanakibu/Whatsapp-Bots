@@ -5,7 +5,7 @@ node_modules/
 .env
 .env.local
 .env.*.local
-storage/youtube-cookies.json
+storage/*.json
 
 # Storage directories (contains SQLite DBs, logs, and WhatsApp sessions)
 storage/sessions/
