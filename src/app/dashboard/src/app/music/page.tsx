@@ -25,13 +25,14 @@ interface SunoJob {
     timestamp: number
 }
 
-const STAGES_CONFIG = [
-    { id: 'ai_enhance', label: 'AI Prompt Enhancer', icon: Sparkles, color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
-    { id: 'suno_gen', label: 'Audio Generation', icon: Music, color: 'text-pink-400 bg-pink-500/10 border-pink-500/20' },
-    { id: 'gemini_meta', label: 'Gemini Metadata', icon: FileText, color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
-    { id: 'img_gen', label: 'Thumbnail Art Design', icon: Image, color: 'text-teal-400 bg-teal-500/10 border-teal-500/20' },
-    { id: 'ffmpeg', label: 'FFmpeg Video Render', icon: Video, color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
-    { id: 'youtube_upload', label: 'YouTube Cloud Upload', icon: Youtube, color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' }
+const NODES_CONFIG = [
+    { id: 'ai_enhance', label: 'AI Prompt Enhancer', desc: 'Enhance prompt text for higher music aesthetics', model: 'Groq Llama 3.3', icon: Sparkles, color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+    { id: 'suno_gen', label: 'Audio Generation', desc: 'Generate vocal & music audio tracks', model: 'Suno v3 / Stable Audio', icon: Music, color: 'text-pink-400 bg-pink-500/10 border-pink-500/20' },
+    { id: 'gemini_meta', label: 'Gemini Metadata', desc: 'Generate YouTube titles, tags & prompts', model: 'Gemini Flash 2.0', icon: FileText, color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
+    { id: 'img_gen', label: 'Thumbnail Art Design', desc: 'Generate cover art using custom AI models', model: 'FLUX / Krea-2 / Z-Turbo', icon: Image, color: 'text-teal-400 bg-teal-500/10 border-teal-500/20' },
+    { id: 'video_gen', label: 'Video Motion Generator', desc: 'Animate cover art with 3D camera pan', model: 'DreamWan v2', icon: Video, color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
+    { id: 'ffmpeg', label: 'FFmpeg Video Render', desc: 'Merge audio, video background & overlay', model: 'FFmpeg v7.0', icon: Terminal, color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
+    { id: 'youtube_upload', label: 'YouTube Cloud Upload', desc: 'Publish official music video to channel', model: 'YouTube Data API', icon: Youtube, color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' }
 ]
 
 export default function MusicAutomationPage() {
@@ -203,7 +204,8 @@ export default function MusicAutomationPage() {
     }
 
     const getStageIndex = (stageId: string) => {
-        return STAGES_CONFIG.findIndex(s => s.id === stageId)
+        const order = ['ai_enhance', 'suno_gen', 'gemini_meta', 'img_gen', 'video_gen', 'ffmpeg', 'youtube_upload']
+        return order.indexOf(stageId)
     }
 
     if (isLoadingAuth) {
@@ -404,52 +406,235 @@ export default function MusicAutomationPage() {
 
                             {activeJob ? (
                                 <div className="space-y-8 py-2 relative">
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 relative z-10">
-                                        {STAGES_CONFIG.map((stage, idx) => {
-                                            const Icon = stage.icon
-                                            const activeIdx = getStageIndex(activeJob.stage)
-                                            const isCompleted = activeJob.status === 'completed' || activeIdx > idx
-                                            const isCurrent = activeJob.status === 'running' && activeJob.stage === stage.id
-                                            const isPending = !isCompleted && !isCurrent
+                                    <div className="relative z-10">
+                                        {(() => {
+                                            const getNodeStatus = (nodeId: string) => {
+                                                if (!activeJob) return 'pending'
+                                                if (activeJob.status === 'completed') return 'completed'
+                                                
+                                                const activeStage = activeJob.stage
+                                                const activeProgress = activeJob.progress
+                                                
+                                                const getOrder = (id: string) => {
+                                                    const order = ['ai_enhance', 'suno_gen', 'gemini_meta', 'img_gen', 'video_gen', 'ffmpeg', 'youtube_upload']
+                                                    return order.indexOf(id)
+                                                }
+                                                
+                                                const activeIdx = getOrder(activeStage)
+                                                const currentIdx = getOrder(nodeId)
+                                                
+                                                if (activeJob.status === 'failed' && activeStage === nodeId) {
+                                                    return 'failed'
+                                                }
 
-                                            return (
-                                                <div
-                                                    key={stage.id}
-                                                    className={`p-3 md:p-4 rounded-xl border flex flex-col gap-3 transition-all duration-300 ${
-                                                        isCompleted ? 'bg-[#22C55E]/5 border-[#22C55E]/20' :
-                                                        isCurrent ? 'bg-[#4338CA]/10 border-[#4338CA]/40 shadow-[0_0_15px_rgba(67,56,202,0.15)] scale-[1.02]' :
-                                                        'bg-black/20 border-white/5 opacity-50'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center justify-between">
-                                                        <div className={`p-2 rounded-lg border ${stage.color}`}>
+                                                if (nodeId === 'video_gen') {
+                                                    const hasStartedVideo = activeProgress >= 61 || activeJob.logs?.some(l => l.includes('[VideoGen]'))
+                                                    if (activeStage === 'img_gen') {
+                                                        return hasStartedVideo ? 'running' : 'pending'
+                                                    }
+                                                    return activeIdx > getOrder('img_gen') ? 'completed' : 'pending'
+                                                }
+                                                
+                                                if (nodeId === 'img_gen') {
+                                                    const hasStartedVideo = activeProgress >= 61 || activeJob.logs?.some(l => l.includes('[VideoGen]'))
+                                                    if (activeStage === 'img_gen') {
+                                                        return hasStartedVideo ? 'completed' : 'running'
+                                                    }
+                                                    return activeIdx > currentIdx ? 'completed' : 'pending'
+                                                }
+                                                
+                                                if (activeIdx > currentIdx) return 'completed'
+                                                if (activeStage === nodeId) return 'running'
+                                                return 'pending'
+                                            }
+
+                                            const renderNodeCard = (node: typeof NODES_CONFIG[0]) => {
+                                                const status = getNodeStatus(node.id)
+                                                const Icon = node.icon
+                                                
+                                                return (
+                                                    <motion.div
+                                                        key={node.id}
+                                                        layout
+                                                        className={`p-3 md:p-4 rounded-xl border backdrop-blur-xl transition-all duration-300 relative overflow-hidden flex items-start gap-3 w-full text-left ${
+                                                            status === 'completed' ? 'bg-emerald-500/[0.02] border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.03)]' :
+                                                            status === 'running' ? 'bg-[#4338CA]/10 border-[#4338CA]/50 shadow-[0_0_20px_rgba(67,56,202,0.15)] scale-[1.01] z-10' :
+                                                            status === 'failed' ? 'bg-rose-500/[0.03] border-rose-500/30' :
+                                                            'bg-white/[0.01] border-white/5 opacity-40'
+                                                        }`}
+                                                    >
+                                                        {/* Status indicator bar */}
+                                                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                                                            status === 'completed' ? 'bg-emerald-500' :
+                                                            status === 'running' ? 'bg-[#4338CA]' :
+                                                            status === 'failed' ? 'bg-rose-500' :
+                                                            'bg-white/10'
+                                                        }`} />
+                                                        
+                                                        <div className={`p-2 rounded-lg border shrink-0 ${node.color}`}>
                                                             <Icon size={16} />
                                                         </div>
-                                                        <div>
-                                                            {isCompleted && <CheckCircle2 size={14} className="text-[#22C55E]" />}
-                                                            {isCurrent && <Loader2 size={14} className="text-[#4338CA] animate-spin" />}
-                                                            {isPending && <div className="w-2 h-2 rounded-full border border-white/20" />}
+                                                        
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center justify-between gap-1">
+                                                                <span className="text-[10px] md:text-[11px] font-bold font-mono text-white/95 truncate">{node.label}</span>
+                                                                <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded-full border uppercase shrink-0 ${
+                                                                    status === 'completed' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                                                    status === 'running' ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400 animate-pulse' :
+                                                                    status === 'failed' ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' :
+                                                                    'bg-white/5 border-white/10 text-neutral-500'
+                                                                }`}>
+                                                                    {status}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[9px] md:text-[10px] text-neutral-400 mt-0.5 leading-relaxed line-clamp-1">{node.desc}</p>
+                                                            <div className="mt-1 flex items-center gap-1.5">
+                                                                <span className="text-[8px] font-mono bg-white/5 border border-white/10 px-1 py-0.5 rounded text-neutral-400 select-none">
+                                                                    {node.model}
+                                                                </span>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-[10px] md:text-[11px] font-bold font-mono text-white/90">{stage.label}</p>
-                                                    </div>
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
+                                                    </motion.div>
+                                                )
+                                            }
 
-                                    <div className="space-y-1.5">
-                                        <div className="flex items-center justify-between text-[10px] font-mono text-neutral-400">
-                                            <span>PROGRESS</span>
-                                            <span className="text-[#22C55E]">{activeJob.progress}%</span>
-                                        </div>
-                                        <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-                                            <motion.div
-                                                className="h-full bg-gradient-to-r from-[#4338CA] to-[#22C55E]"
-                                                animate={{ width: `${activeJob.progress}%` }}
-                                                transition={{ duration: 0.5 }}
-                                            />
+                                            return (
+                                                <>
+                                                    {/* Mobile View: Vertical Timeline */}
+                                                    <div className="md:hidden flex flex-col gap-4 relative">
+                                                        <div className="absolute left-6 top-6 bottom-6 w-[2px] bg-white/5 z-0" />
+                                                        {NODES_CONFIG.map((node) => {
+                                                            const status = getNodeStatus(node.id)
+                                                            return (
+                                                                <div key={node.id} className="relative z-10 pl-12">
+                                                                    <div className={`absolute left-6 top-6 w-3 h-3 rounded-full border-2 transform -translate-x-1/2 -translate-y-1/2 flex items-center justify-center ${
+                                                                        status === 'completed' ? 'bg-emerald-500 border-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]' :
+                                                                        status === 'running' ? 'bg-indigo-500 border-indigo-400 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.5)]' :
+                                                                        status === 'failed' ? 'bg-rose-500 border-rose-400' :
+                                                                        'bg-[#0F0F23] border-white/20'
+                                                                    }`} />
+                                                                    {renderNodeCard(node)}
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+
+                                                    {/* Desktop View: Automation 2D Node Flowchart */}
+                                                    <div className="hidden md:flex flex-col items-center w-full relative z-10 py-4 max-w-4xl mx-auto">
+                                                        
+                                                        {/* ROW 1: AI Prompt Enhance */}
+                                                        <div className="w-full max-w-sm">
+                                                            {renderNodeCard(NODES_CONFIG[0])}
+                                                        </div>
+
+                                                        {/* CONNECTOR: Row 1 to Row 2 */}
+                                                        <div className="w-full h-10 flex justify-center items-center">
+                                                            <svg viewBox="0 0 100 40" className="w-full h-full text-white/10" preserveAspectRatio="none">
+                                                                <path d="M 50,0 L 50,20 M 50,20 L 25,20 L 25,40 M 50,20 L 75,20 L 75,40" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                                                                {getNodeStatus('ai_enhance') === 'completed' && (
+                                                                    <path d="M 50,0 L 50,20 L 25,20 L 25,40" stroke="#10B981" strokeWidth="2" fill="none" strokeDasharray="4,4">
+                                                                        <animate attributeName="strokeDashoffset" values="20;0" dur="1.5s" repeatCount="indefinite" />
+                                                                    </path>
+                                                                )}
+                                                                {getNodeStatus('ai_enhance') === 'completed' && (
+                                                                    <path d="M 50,0 L 50,20 L 75,20 L 75,40" stroke="#10B981" strokeWidth="2" fill="none" strokeDasharray="4,4">
+                                                                        <animate attributeName="strokeDashoffset" values="20;0" dur="1.5s" repeatCount="indefinite" />
+                                                                    </path>
+                                                                )}
+                                                            </svg>
+                                                        </div>
+
+                                                        {/* ROW 2: Parallel Tracks (Audio & Metadata) */}
+                                                        <div className="grid grid-cols-2 gap-x-16 gap-y-0 w-full">
+                                                            {renderNodeCard(NODES_CONFIG[1])}
+                                                            {renderNodeCard(NODES_CONFIG[2])}
+                                                        </div>
+
+                                                        {/* CONNECTOR: Row 2 to Row 3 */}
+                                                        <div className="w-full h-10 flex justify-center items-center">
+                                                            <svg viewBox="0 0 100 40" className="w-full h-full text-white/10" preserveAspectRatio="none">
+                                                                {/* Suno Gen straight down to Thumbnail Art */}
+                                                                <path d="M 25,0 L 25,40" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                                                                {/* Gemini Meta down & branch: left to Thumbnail, right to Video Gen */}
+                                                                <path d="M 75,0 L 75,20 L 25,20 L 25,40 M 75,20 L 75,40" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                                                                
+                                                                {getNodeStatus('suno_gen') === 'completed' && (
+                                                                    <path d="M 25,0 L 25,40" stroke="#10B981" strokeWidth="2" fill="none" strokeDasharray="4,4">
+                                                                        <animate attributeName="strokeDashoffset" values="20;0" dur="1.5s" repeatCount="indefinite" />
+                                                                    </path>
+                                                                )}
+                                                                {getNodeStatus('gemini_meta') === 'completed' && (
+                                                                    <path d="M 75,0 L 75,20 L 25,20 L 25,40" stroke="#10B981" strokeWidth="2" fill="none" strokeDasharray="4,4">
+                                                                        <animate attributeName="strokeDashoffset" values="20;0" dur="1.5s" repeatCount="indefinite" />
+                                                                    </path>
+                                                                )}
+                                                                {getNodeStatus('gemini_meta') === 'completed' && (
+                                                                    <path d="M 75,20 L 75,40" stroke="#10B981" strokeWidth="2" fill="none" strokeDasharray="4,4">
+                                                                        <animate attributeName="strokeDashoffset" values="20;0" dur="1.5s" repeatCount="indefinite" />
+                                                                    </path>
+                                                                )}
+                                                            </svg>
+                                                        </div>
+
+                                                        {/* ROW 3: Visual Assets (Thumbnail & Video Gen) */}
+                                                        <div className="grid grid-cols-2 gap-x-16 gap-y-0 w-full">
+                                                            {renderNodeCard(NODES_CONFIG[3])}
+                                                            {renderNodeCard(NODES_CONFIG[4])}
+                                                        </div>
+
+                                                        {/* CONNECTOR: Row 3 to Row 4 */}
+                                                        <div className="w-full h-10 flex justify-center items-center">
+                                                            <svg viewBox="0 0 100 40" className="w-full h-full text-white/10" preserveAspectRatio="none">
+                                                                {/* Flow from Thumbnail and Video Gen merging into FFmpeg Render */}
+                                                                <path d="M 25,0 L 25,40 M 75,0 L 75,20 L 50,20 L 25,20" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                                                                {getNodeStatus('img_gen') === 'completed' && (
+                                                                    <path d="M 25,0 L 25,40" stroke="#10B981" strokeWidth="2" fill="none" strokeDasharray="4,4">
+                                                                        <animate attributeName="strokeDashoffset" values="20;0" dur="1.5s" repeatCount="indefinite" />
+                                                                    </path>
+                                                                )}
+                                                                {getNodeStatus('video_gen') === 'completed' && (
+                                                                    <path d="M 75,0 L 75,20 L 25,20" stroke="#10B981" strokeWidth="2" fill="none" strokeDasharray="4,4">
+                                                                        <animate attributeName="strokeDashoffset" values="20;0" dur="1.5s" repeatCount="indefinite" />
+                                                                    </path>
+                                                                )}
+                                                            </svg>
+                                                        </div>
+
+                                                        {/* ROW 4: Compiling & Deployment Node Grid */}
+                                                        <div className="grid grid-cols-2 gap-x-16 gap-y-0 w-full relative">
+                                                            {renderNodeCard(NODES_CONFIG[5])}
+                                                            {renderNodeCard(NODES_CONFIG[6])}
+                                                            
+                                                            {/* Horizontal connector line from FFmpeg to YouTube upload */}
+                                                            <div className="absolute left-[calc(50%-32px)] top-[calc(50%-10px)] w-16 h-5 pointer-events-none">
+                                                                <svg viewBox="0 0 40 10" className="w-full h-full text-white/10" preserveAspectRatio="none">
+                                                                    <path d="M 0,5 L 40,5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                                                                    {getNodeStatus('ffmpeg') === 'completed' && (
+                                                                        <path d="M 0,5 L 40,5" stroke="#10B981" strokeWidth="2" fill="none" strokeDasharray="4,4">
+                                                                            <animate attributeName="strokeDashoffset" values="20;0" dur="1.5s" repeatCount="indefinite" />
+                                                                        </path>
+                                                                    )}
+                                                                </svg>
+                                                            </div>
+                                                        </div>
+
+                                                    </div>
+                                                </>
+                                            )
+                                        })()}
+
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between text-[10px] font-mono text-neutral-400">
+                                                <span>PROGRESS</span>
+                                                <span className="text-[#22C55E]">{activeJob.progress}%</span>
+                                            </div>
+                                            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                                                <motion.div
+                                                    className="h-full bg-gradient-to-r from-[#4338CA] to-[#22C55E]"
+                                                    animate={{ width: `${activeJob.progress}%` }}
+                                                    transition={{ duration: 0.5 }}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
 
