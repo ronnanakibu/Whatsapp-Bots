@@ -9,10 +9,54 @@ import { uploadVideo } from './youtube.js'
 import { eventBus } from '../events/bus.js'
 import { logger, getSocket } from '../utils/logger.js'
 import dotenv from 'dotenv'
+import sharp from 'sharp'
 dotenv.config({ override: true })
 
 // Active jobs database in-memory
 const activeJobs = new Map()
+
+function escapeXml(unsafe) {
+    return unsafe.replace(/[<>&'"]/g, (c) => {
+        switch (c) {
+            case '<': return '&lt;';
+            case '>': return '&gt;';
+            case '&': return '&amp;';
+            case '\'': return '&apos;';
+            case '"': return '&quot;';
+            default: return c;
+        }
+    });
+}
+
+async function addBannerToImage(imageBuffer, title) {
+    try {
+        const escapedTitle = escapeXml(title.toUpperCase())
+        const svg = `
+        <svg width="1920" height="1080">
+            <defs>
+                <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:rgba(0,0,0,0);stop-opacity:0" />
+                    <stop offset="100%" style="stop-color:rgba(0,0,0,0.85);stop-opacity:1" />
+                </linearGradient>
+            </defs>
+            <rect x="0" y="750" width="1920" height="330" fill="url(#grad)" />
+            <text x="960" y="920" font-family="sans-serif" font-size="64" font-weight="bold" fill="#ffffff" text-anchor="middle" letter-spacing="1">
+                ${escapedTitle}
+            </text>
+            <text x="960" y="980" font-family="sans-serif" font-size="24" font-weight="bold" fill="#3B82F6" text-anchor="middle" letter-spacing="4">
+                OFFICIAL INSTRUMENTAL AUDIO
+            </text>
+        </svg>
+        `
+        const svgBuffer = Buffer.from(svg)
+        return await sharp(imageBuffer)
+            .composite([{ input: svgBuffer, top: 0, left: 0 }])
+            .toBuffer()
+    } catch (err) {
+        logger.error(`[Sharp/Overlay] Gagal menambahkan banner ke gambar: ${err.message}`)
+        return imageBuffer
+    }
+}
 
 /**
  * Returns all active or recently completed/failed jobs.
@@ -328,7 +372,14 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             updateJob('img_gen', 56, `📄 [ImgGen] Prompt: "${imgGenPrompt.slice(0, 120)}..."`)
             try {
                 const imgResult = await aiService.generateImage(imgGenPrompt, 1920, 1080)
-                fs.writeFileSync(thumbnailPath, imgResult.buffer)
+                let finalBuffer = imgResult.buffer
+                try {
+                    updateJob('img_gen', 58, `🎨 [ImgGen] Menambahkan banner teks judul ke thumbnail...`)
+                    finalBuffer = await addBannerToImage(finalBuffer, videoTitle)
+                } catch (sharpErr) {
+                    logger.warn(`[ImgGen] Gagal menambahkan banner ke gambar: ${sharpErr.message}`)
+                }
+                fs.writeFileSync(thumbnailPath, finalBuffer)
                 const fileSizeKB = Math.round(fs.statSync(thumbnailPath).size / 1024)
                 updateJob('img_gen', 62, `✅ [ImgGen] Thumbnail disimpan (${fileSizeKB} KB) → ${thumbnailPath}`)
             } catch (imgErr) {

@@ -5,6 +5,8 @@
 import Groq from 'groq-sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import OpenAI from 'openai'
+import { Client } from '@gradio/client'
+import sharp from 'sharp'
 import { memoryService } from './memory.js'
 import { logger } from '../utils/logger.js'
 
@@ -20,13 +22,13 @@ const nvidiaClient = process.env.NVIDIA_API_KEY ? new OpenAI({
 }) : null
 
 export const BRAINS = {
+    qwen: { name: 'Qwen 2.5 72B Instruct', model: 'qwen/qwen-2.5-72b-instruct', provider: 'nvidia' },
     nvidia: { name: 'NVIDIA Nemotron 70B', model: 'nvidia/llama-3.1-nemotron-70b-instruct', provider: 'nvidia' },
     groq: { name: 'Groq Llama 3.3', model: 'llama-3.3-70b-versatile', provider: 'groq' },
     gemini: { name: 'Google Gemini Flash', model: 'gemini-2.0-flash', provider: 'gemini' },
     gpt_oss: { name: 'OpenAI GPT-OSS 120B', model: 'openai/gpt-oss-120b', provider: 'nvidia' },
     nemotron_super: { name: 'NVIDIA Nemotron-3 Super 120B', model: 'nvidia/nemotron-3-super-120b-a12b', provider: 'nvidia' },
     llama3_3: { name: 'Meta Llama 3.3 70B', model: 'meta/llama-3.3-70b-instruct', provider: 'nvidia' },
-    qwen3: { name: 'Qwen3 Next 80B', model: 'qwen/qwen3-next-80b-a3b-instruct', provider: 'nvidia' },
     gemma4: { name: 'Google Gemma 4 31B', model: 'google/gemma-4-31b-it', provider: 'nvidia' },
     kimi: { name: 'Moonshot AI Kimi K2.6', model: 'moonshotai/kimi-k2.6', provider: 'nvidia' },
     deepseek_flash: { name: 'DeepSeek V4 Flash', model: 'deepseek-ai/deepseek-v4-flash', provider: 'nvidia' },
@@ -366,11 +368,88 @@ async function enhancePrompt(rawPrompt) {
 // IMAGE GENERATION — via Gemini Imagen / fallback prompt
 // ─────────────────────────────────────────────
 
+async function generateGradioSpaceImage(spaceUrl, apiName, prompt, width, height) {
+    const hfToken = process.env.HF_TOKEN ? process.env.HF_TOKEN.replace(/^["']|["']$/g, '') : null;
+    const clientOptions = hfToken ? { hf_token: hfToken } : {};
+    
+    logger.info(`[AI/Gradio] Connecting to space: ${spaceUrl}...`)
+    const app = await Client.connect(spaceUrl, clientOptions)
+    
+    const dep = app.config.dependencies.find(d => d.api_name === apiName)
+    if (!dep) throw new Error(`API name "${apiName}" not found in space "${spaceUrl}"`)
+    
+    // Request 1280x720 from HF space to avoid ZeroGPU ValueError/OOM
+    const reqWidth = (width === 1920 && height === 1080) ? 1280 : width
+    const reqHeight = (width === 1920 && height === 1080) ? 720 : height
+
+    const args = dep.inputs.map(id => {
+        const comp = app.config.components.find(c => c.id === id)
+        if (!comp) return null
+        
+        const label = comp.props?.label || ''
+        
+        if (comp.type === 'textbox') {
+            if (label.toLowerCase().includes('prompt') && !label.toLowerCase().includes('negative')) {
+                return prompt
+            }
+        }
+        if (comp.type === 'slider') {
+            if (label.toLowerCase() === 'width') return reqWidth
+            if (label.toLowerCase() === 'height') return reqHeight
+        }
+        
+        return comp.props?.value !== undefined ? comp.props?.value : null
+    })
+    
+    logger.info(`[AI/Gradio] Running predict on ${spaceUrl} /${apiName}...`)
+    const result = await app.predict(`/${apiName}`, args)
+    
+    if (!result.data || !result.data[0] || !result.data[0].url) {
+        throw new Error(`Gradio Space ${spaceUrl} did not return a valid file URL`)
+    }
+    
+    const imgUrl = result.data[0].url
+    logger.info(`[AI/Gradio] Downloading generated image from: ${imgUrl}`)
+    const imgRes = await fetch(imgUrl)
+    if (!imgRes.ok) throw new Error(`Failed to download image from ${imgUrl}`)
+    
+    const arrayBuffer = await imgRes.arrayBuffer()
+    let buffer = Buffer.from(arrayBuffer)
+    
+    if (width === 1920 && height === 1080) {
+        logger.info(`[AI/Gradio] Resizing generated image from 1280x720 to 1920x1080 via Sharp...`)
+        buffer = await sharp(buffer).resize(1920, 1080).toBuffer()
+    }
+    
+    return buffer
+}
+
 async function generateImage(rawPrompt, width = 1024, height = 1024) {
     // 1. ENHANCE PROMPT WITH GROQ
     const prompt = await enhancePrompt(rawPrompt)
 
-    // Mode 1: Hugging Face (jika ada HF_TOKEN di .env)
+    // 2. GRADIO SPACE IMAGES (NEW)
+    const spaces = [
+        { url: "https://mrfakename-z-image-turbo.hf.space", api: "generate_image", name: "Z-Image-Turbo" },
+        { url: "https://krea-krea-2.hf.space", api: "generate", name: "Krea-2" },
+        { url: "https://m3st3rj4k3l-flux-2-klein-multi-lora.hf.space", api: "infer", name: "Klein-Multi-LoRA" }
+    ]
+
+    for (const space of spaces) {
+        try {
+            logger.info(`[AI] Attempting image generation via HF Space: ${space.name}...`)
+            const buffer = await generateGradioSpaceImage(space.url, space.api, prompt, width, height)
+            return {
+                buffer,
+                mimeType: 'image/png',
+                provider: `hf-space:${space.name}`
+            }
+        } catch (err) {
+            logger.warn(`[AI] HF Space ${space.name} failed: ${err.message}. Trying next engine...`)
+        }
+    }
+
+    // Fallback Mode 1: Hugging Face Inference API (jika ada HF_TOKEN di .env)
     if (process.env.HF_TOKEN) {
         try {
             logger.info(`[AI] Generating image via Hugging Face (FLUX.1-schnell) at ${width}x${height}...`)
@@ -406,12 +485,12 @@ async function generateImage(rawPrompt, width = 1024, height = 1024) {
         }
     }
 
-    // Mode 2: OpenAI DALL-E 3 (jika ada OPENAI_API_KEY)
+    // Fallback Mode 2: OpenAI DALL-E 3 (jika ada OPENAI_API_KEY)
     if (process.env.OPENAI_API_KEY) {
         try {
             logger.info(`[AI] Generating image via OpenAI (DALL-E 3)...`)
-            const OpenAI = require('openai')
-            const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+            const OpenAI = await import('openai') // wait, or just use the global import
+            const openaiClient = new OpenAI.default({ apiKey: process.env.OPENAI_API_KEY })
             
             let size = "1024x1024"
             if (width > height) {
@@ -441,7 +520,7 @@ async function generateImage(rawPrompt, width = 1024, height = 1024) {
         }
     }
 
-    // Mode 3: Pollinations.ai (Free, no key)
+    // Fallback Mode 3: Pollinations.ai (Free, no key)
     try {
         logger.info(`[AI] Generating image via Pollinations.ai for: ${prompt} (${width}x${height})`)
         const res = await fetch(
@@ -612,7 +691,7 @@ async function nvidiaChatWithModel(chatId, userMessage, model, providerName, ret
 
 async function chat(chatId, userMessage, forcedProvider = null) {
     // Tentukan provider utama (dari parameter, database memori, atau default 'groq')
-    let provider = forcedProvider || memoryService.getAiProvider(chatId) || 'groq'
+    let provider = forcedProvider || memoryService.getAiProvider(chatId) || 'qwen'
     let result = null
 
     if (BRAINS[provider]) {
