@@ -14,9 +14,6 @@ const DANGEROUS_PATTERNS = [
  * Return { valid: bool, reason: string }
  */
 export function validateArgs(args = []) {
-    if (args.length > MAX_ARGS_COUNT) {
-        return { valid: false, reason: `Terlalu banyak argumen (max ${MAX_ARGS_COUNT})` }
-    }
 
     for (const arg of args) {
         if (arg.length > MAX_ARG_LENGTH) {
