@@ -58,6 +58,43 @@ async function addBannerToImage(imageBuffer, title) {
     }
 }
 
+async function createBannerOverlay(width, height, title) {
+    try {
+        const escapedTitle = escapeXml(title.toUpperCase())
+        const svg = `
+        <svg width="${width}" height="${height}">
+            <defs>
+                <linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:rgba(0,0,0,0);stop-opacity:0" />
+                    <stop offset="100%" style="stop-color:rgba(0,0,0,0.85);stop-opacity:1" />
+                </linearGradient>
+            </defs>
+            <rect x="0" y="${height - 220}" width="${width}" height="220" fill="url(#grad)" />
+            <text x="${width / 2}" y="${height - 110}" font-family="sans-serif" font-size="42" font-weight="bold" fill="#ffffff" text-anchor="middle" letter-spacing="1">
+                ${escapedTitle}
+            </text>
+            <text x="${width / 2}" y="${height - 70}" font-family="sans-serif" font-size="16" font-weight="bold" fill="#3B82F6" text-anchor="middle" letter-spacing="4">
+                OFFICIAL INSTRUMENTAL AUDIO
+            </text>
+        </svg>
+        `
+        return await sharp({
+            create: {
+                width,
+                height,
+                channels: 4,
+                background: { r: 0, g: 0, b: 0, alpha: 0 }
+            }
+        })
+        .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+        .png()
+        .toBuffer()
+    } catch (err) {
+        logger.error(`[Sharp/Overlay] Gagal membuat banner overlay: ${err.message}`)
+        return null
+    }
+}
+
 /**
  * Returns all active or recently completed/failed jobs.
  */
@@ -132,6 +169,7 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
         let youtubeDesc = 'Generated automatically via Suno & Gemini Automation'
         let youtubeTags = ['instrumental', 'music', 'ai-generated']
         let imgGenPrompt = prompt
+        let videoMotionPrompt = 'make this image come alive with slow cinematic motion, 4k'
 
         try {
             updateJob('idle', 2, `━━━ [PIPELINE START] Job ID: ${jobId} ━━━`)
@@ -347,10 +385,12 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         youtubeDesc = metadata.description || youtubeDesc
                         youtubeTags = metadata.tags || youtubeTags
                         imgGenPrompt = metadata.imagePrompt || finalPrompt
+                        videoMotionPrompt = metadata.videoMotionPrompt || videoMotionPrompt
                         updateJob('gemini_meta', 35, `✅ [Gemini] Metadata selesai!`)
                         updateJob('gemini_meta', 36, `📌 Judul: "${videoTitle}"`)
                         updateJob('gemini_meta', 37, `🏷️ Tags: [${youtubeTags.slice(0, 5).join(', ')}...]`)
                         updateJob('gemini_meta', 38, `🖼️ Image Prompt: "${imgGenPrompt.slice(0, 100)}..."`)
+                        updateJob('gemini_meta', 39, `🎥 Motion Prompt: "${videoMotionPrompt.slice(0, 100)}..."`)
                     } else {
                         updateJob('gemini_meta', 35, `⚠️ [Gemini] Response tidak valid, menggunakan fallback metadata.`)
                     }
@@ -367,12 +407,21 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             // ─────────────────────────────────────────────
             // 3. GENERATE THUMBNAIL IMAGE
             // ─────────────────────────────────────────────
+            // ─────────────────────────────────────────────
+            // 3. GENERATE THUMBNAIL IMAGE
+            // ─────────────────────────────────────────────
             updateJob('img_gen', 54, '━━━ [STEP 3] Image Generation ━━━')
             updateJob('img_gen', 55, `🖼️ [ImgGen] Membuat thumbnail via FLUX/Pollinations...`)
             updateJob('img_gen', 56, `📄 [ImgGen] Prompt: "${imgGenPrompt.slice(0, 120)}..."`)
             try {
                 const imgResult = await aiService.generateImage(imgGenPrompt, 1920, 1080)
                 let finalBuffer = imgResult.buffer
+                
+                // Simpan plain thumbnail tanpa teks banner untuk input video gen
+                const plainThumbnailPath = path.join(tempDir, 'plain_thumbnail.png')
+                fs.writeFileSync(plainThumbnailPath, finalBuffer)
+
+                // Simpan thumbnail dengan teks banner untuk fallback static
                 try {
                     updateJob('img_gen', 58, `🎨 [ImgGen] Menambahkan banner teks judul ke thumbnail...`)
                     finalBuffer = await addBannerToImage(finalBuffer, videoTitle)
@@ -381,10 +430,25 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                 }
                 fs.writeFileSync(thumbnailPath, finalBuffer)
                 const fileSizeKB = Math.round(fs.statSync(thumbnailPath).size / 1024)
-                updateJob('img_gen', 62, `✅ [ImgGen] Thumbnail disimpan (${fileSizeKB} KB) → ${thumbnailPath}`)
+                updateJob('img_gen', 60, `✅ [ImgGen] Thumbnail disimpan (${fileSizeKB} KB) → ${thumbnailPath}`)
             } catch (imgErr) {
                 updateJob('img_gen', 60, `⚠️ [ImgGen] Gagal generate thumbnail: ${imgErr.message}`)
                 throw imgErr
+            }
+
+            // ─────────────────────────────────────────────
+            // 3b. GENERATE VIDEO BACKGROUND (NEW)
+            // ─────────────────────────────────────────────
+            updateJob('img_gen', 61, '🎥 [VideoGen] Memulai generasi motion background dari thumbnail...')
+            const videoBackgroundPath = path.join(tempDir, 'motion_background.mp4')
+            let videoBackgroundExists = false
+            try {
+                const videoBuffer = await aiService.generateVideoFromImage(path.join(tempDir, 'plain_thumbnail.png'), videoMotionPrompt)
+                fs.writeFileSync(videoBackgroundPath, videoBuffer)
+                videoBackgroundExists = true
+                updateJob('img_gen', 62, `✅ [VideoGen] Video background berhasil dibuat!`)
+            } catch (videoErr) {
+                updateJob('img_gen', 62, `⚠️ [VideoGen] Gagal generate video: ${videoErr.message}. Fallback ke static image.`)
             }
 
             // ─────────────────────────────────────────────
@@ -415,12 +479,32 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             const overlayExists = fs.existsSync(overlayPath)
             let ffmpegCmd = ''
 
-            if (overlayExists) {
-                updateJob('ffmpeg', 75, '✅ [FFmpeg] partikel_api.mp4 ditemukan → menggunakan blend filter (16:9)')
-                ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -stream_loop -1 -i "${overlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v0];[1:v]scale=1280:720,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.7[outv]" -map "[outv]" -map 2:a -c:v libx264 -preset veryfast -c:a aac -shortest "${outputPath}"`
+            if (videoBackgroundExists) {
+                const bannerOverlayPath = path.join(tempDir, 'banner_overlay.png')
+                const bannerOverlayBuffer = await createBannerOverlay(1280, 720, videoTitle)
+                if (bannerOverlayBuffer) {
+                    fs.writeFileSync(bannerOverlayPath, bannerOverlayBuffer)
+                }
+                const bannerExists = fs.existsSync(bannerOverlayPath)
+
+                if (overlayExists && bannerExists) {
+                    updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + partikel + banner overlay')
+                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -stream_loop -1 -i "${overlayPath}" -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1280:720,setsar=1[v0];[1:v]scale=1280:720,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.4[v2];[v2][2:v]overlay=0:0[outv]" -map "[outv]" -map 3:a -c:v libx264 -preset veryfast -c:a aac -shortest "${outputPath}"`
+                } else if (bannerExists) {
+                    updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + banner overlay')
+                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1280:720,setsar=1[v0];[v0][1:v]overlay=0:0[outv]" -map "[outv]" -map 2:a -c:v libx264 -preset veryfast -c:a aac -shortest "${outputPath}"`
+                } else {
+                    updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background saja')
+                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -i "${audioPath}" -vf "scale=1280:720,setsar=1" -c:v libx264 -preset veryfast -c:a aac -shortest "${outputPath}"`
+                }
             } else {
-                updateJob('ffmpeg', 75, '⚠️ [FFmpeg] partikel_api.mp4 tidak ada → rendering video statis (16:9)')
-                ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -i "${audioPath}" -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2" -c:v libx264 -preset veryfast -tune stillimage -c:a aac -shortest "${outputPath}"`
+                if (overlayExists) {
+                    updateJob('ffmpeg', 75, '✅ [FFmpeg] partikel_api.mp4 ditemukan → menggunakan blend filter (16:9) static')
+                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -stream_loop -1 -i "${overlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v0];[1:v]scale=1280:720,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.7[outv]" -map "[outv]" -map 2:a -c:v libx264 -preset veryfast -c:a aac -shortest "${outputPath}"`
+                } else {
+                    updateJob('ffmpeg', 75, '⚠️ [FFmpeg] partikel_api.mp4 tidak ada → rendering video statis (16:9) static')
+                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -i "${audioPath}" -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2" -c:v libx264 -preset veryfast -tune stillimage -c:a aac -shortest "${outputPath}"`
+                }
             }
             updateJob('ffmpeg', 76, `🔧 [FFmpeg] CMD: ${ffmpegCmd.slice(0, 200)}...`)
 

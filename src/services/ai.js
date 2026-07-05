@@ -774,6 +774,45 @@ async function chat(chatId, userMessage, forcedProvider = null) {
 // FACT CHECKER — Standalone Gemini Tanpa Memori
 // ─────────────────────────────────────────────
 
+async function generateVideoFromImage(imagePath, motionPrompt) {
+    const hfToken = process.env.HF_TOKEN ? process.env.HF_TOKEN.replace(/^["']|["']$/g, '') : null;
+    const clientOptions = hfToken ? { hf_token: hfToken } : {};
+    
+    const spaceUrl = "https://dream2589632147-dream-wan2-2-faster-pro.hf.space"
+    logger.info(`[AI/VideoGen] Connecting to video generation space: ${spaceUrl}...`)
+    const app = await Client.connect(spaceUrl, clientOptions)
+    
+    const imageBuffer = fs.readFileSync(imagePath)
+    const fileObj = new Blob([imageBuffer], { type: 'image/png' })
+    
+    const finalPrompt = motionPrompt || "make this image come alive with slow cinematic motion, 4k"
+    logger.info(`[AI/VideoGen] Triggering video generation with motion prompt: "${finalPrompt}"`)
+    
+    const result = await app.predict("/generate_video", [
+        fileObj,       // 📸 Upload Image
+        finalPrompt,   // ✍️ Motion Prompt
+        6,             // 🔁 Inference Steps
+        "static, blurry, low quality, watermark, text, deformed, ugly", // 🚫 Negative Prompt
+        3.5,           // ⏱️ Duration (seconds)
+        1.0,           // 🎯 Guidance Scale 1
+        1.0,           // 🎯 Guidance Scale 2
+        Math.floor(Math.random() * 100000), // 🌱 Seed
+        true           // 🎲 Randomize Seed
+    ])
+    
+    if (!result.data || !result.data[0] || !result.data[0].url) {
+        throw new Error("Video generation space did not return a valid video URL")
+    }
+    
+    const videoUrl = result.data[0].url
+    logger.info(`[AI/VideoGen] Downloading video from URL: ${videoUrl}`)
+    const response = await fetch(videoUrl)
+    if (!response.ok) throw new Error(`Failed to download generated video from ${videoUrl}`)
+    
+    const arrayBuffer = await response.arrayBuffer()
+    return Buffer.from(arrayBuffer)
+}
+
 async function geminiFactCheck(query) {
     const modelName = getAvailableModel(GEMINI_MODELS)
     const model = genAI.getGenerativeModel({
@@ -803,8 +842,9 @@ async function generateYoutubeMetadata(vibePrompt) {
       2. A detailed Description (around 500-1000 characters) including track info, vibes, and standard hashtags.
       3. A list of 10-15 relevant Tags.
       4. A highly descriptive Image Prompt (in English) for generating a premium 16:9 thumbnail matching the mood/genre of the song. Do NOT include words like "text", "watermark", "title" in the image prompt.
+      5. A short, descriptive Video Motion Prompt (in English, maximum 150 characters) describing a subtle camera movement or visual motion for this scene (e.g. "slow pan across the neon city lights, soft ambient movement").
 
-      Return the result as a raw JSON object with keys: "title", "description", "tags" (array of strings), "imagePrompt".
+      Return the result as a raw JSON object with keys: "title", "description", "tags" (array of strings), "imagePrompt", "videoMotionPrompt".
     `
 
     // Try Groq first (Primary for text)
@@ -875,6 +915,7 @@ export const aiService = {
     chat,
     analyzeImage,
     generateImage,
+    generateVideoFromImage,
     enhancePrompt,
     generateYoutubeMetadata,
     debugCode,  // sudah handle chatId
