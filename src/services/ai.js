@@ -366,14 +366,14 @@ async function enhancePrompt(rawPrompt) {
 // IMAGE GENERATION — via Gemini Imagen / fallback prompt
 // ─────────────────────────────────────────────
 
-async function generateImage(rawPrompt) {
+async function generateImage(rawPrompt, width = 1024, height = 1024) {
     // 1. ENHANCE PROMPT WITH GROQ
     const prompt = await enhancePrompt(rawPrompt)
 
     // Mode 1: Hugging Face (jika ada HF_TOKEN di .env)
     if (process.env.HF_TOKEN) {
         try {
-            logger.info(`[AI] Generating image via Hugging Face (FLUX.1-schnell)...`)
+            logger.info(`[AI] Generating image via Hugging Face (FLUX.1-schnell) at ${width}x${height}...`)
             const res = await fetch(
                 "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
                 {
@@ -382,7 +382,13 @@ async function generateImage(rawPrompt) {
                         "Content-Type": "application/json"
                     },
                     method: "POST",
-                    body: JSON.stringify({ inputs: prompt }),
+                    body: JSON.stringify({
+                        inputs: prompt,
+                        parameters: {
+                            width,
+                            height
+                        }
+                    }),
                 }
             )
             if (res.ok) {
@@ -407,11 +413,18 @@ async function generateImage(rawPrompt) {
             const OpenAI = require('openai')
             const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
             
+            let size = "1024x1024"
+            if (width > height) {
+                size = "1792x1024"
+            } else if (height > width) {
+                size = "1024x1792"
+            }
+
             const response = await openaiClient.images.generate({
                 model: "dall-e-3",
                 prompt: prompt,
                 n: 1,
-                size: "1024x1024",
+                size: size,
                 response_format: "b64_json"
             })
             
@@ -430,9 +443,9 @@ async function generateImage(rawPrompt) {
 
     // Mode 3: Pollinations.ai (Free, no key)
     try {
-        logger.info(`[AI] Generating image via Pollinations.ai for: ${prompt}`)
+        logger.info(`[AI] Generating image via Pollinations.ai for: ${prompt} (${width}x${height})`)
         const res = await fetch(
-            `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&private=true`
+            `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&private=true&width=${width}&height=${height}`
         )
         if (!res.ok) {
             const errData = await res.json().catch(() => ({}))

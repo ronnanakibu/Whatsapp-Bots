@@ -327,7 +327,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             updateJob('img_gen', 55, `🖼️ [ImgGen] Membuat thumbnail via FLUX/Pollinations...`)
             updateJob('img_gen', 56, `📄 [ImgGen] Prompt: "${imgGenPrompt.slice(0, 120)}..."`)
             try {
-                const imgResult = await aiService.generateImage(imgGenPrompt)
+                const imgResult = await aiService.generateImage(imgGenPrompt, 1920, 1080)
                 fs.writeFileSync(thumbnailPath, imgResult.buffer)
                 const fileSizeKB = Math.round(fs.statSync(thumbnailPath).size / 1024)
                 updateJob('img_gen', 62, `✅ [ImgGen] Thumbnail disimpan (${fileSizeKB} KB) → ${thumbnailPath}`)
