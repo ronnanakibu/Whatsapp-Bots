@@ -731,6 +731,18 @@ export function startRadioServer() {
         }
 
         // Client triggers
+        socket.on('suno:get_active', () => {
+            try {
+                const jobs = getActiveJobs()
+                const activeJob = jobs.find(j => j.status === 'running')
+                if (activeJob) {
+                    socket.emit('suno:status', activeJob)
+                }
+            } catch (err) {
+                logger.error('[Socket/Suno] Error fetching active jobs:', err.message)
+            }
+        })
+
         socket.on('suno:generate', async (data) => {
             const { prompt, title, enhance, model } = data
             if (!prompt) return socket.emit('error', 'Prompt tidak boleh kosong')
