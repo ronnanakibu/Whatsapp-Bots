@@ -161,7 +161,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         updateJob('suno_gen', 25, '📤 [StableAudio] Space terhubung. Mengirim parameter inferensi...')
                         
                         const result = await app.predict('/infer', [
-                            "medium", finalPrompt, 47, 20, 3, "pingpong", 0
+                            "medium", finalPrompt, 380, 20, 3, "pingpong", 0
                         ])
                         updateJob('suno_gen', 45, '✅ [StableAudio] Berhasil melakukan generasi audio!')
                         const audioFileObj = result.data[0]
