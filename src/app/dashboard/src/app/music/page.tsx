@@ -168,10 +168,38 @@ export default function MusicAutomationPage() {
     }
 
     const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text)
-        setCopied(true)
-        toast.success('Link disalin ke clipboard')
-        setTimeout(() => setCopied(false), 2000)
+        if (!text) return
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text)
+                .then(() => {
+                    setCopied(true)
+                    toast.success('Link disalin ke clipboard')
+                    setTimeout(() => setCopied(false), 2000)
+                })
+                .catch(() => {
+                    fallbackCopy(text)
+                })
+        } else {
+            fallbackCopy(text)
+        }
+    }
+
+    const fallbackCopy = (text: string) => {
+        const textArea = document.createElement("textarea")
+        textArea.value = text
+        textArea.style.position = "fixed"
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+        try {
+            document.execCommand('copy')
+            setCopied(true)
+            toast.success('Link disalin ke clipboard')
+            setTimeout(() => setCopied(false), 2000)
+        } catch (err) {
+            toast.error('Gagal menyalin link.')
+        }
+        document.body.removeChild(textArea)
     }
 
     const getStageIndex = (stageId: string) => {

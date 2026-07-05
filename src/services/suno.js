@@ -2,7 +2,7 @@
 import axios from 'axios'
 import fs from 'fs'
 import path from 'path'
-import { exec } from 'child_process'
+import { exec, execSync } from 'child_process'
 import crypto from 'crypto'
 import { aiService } from './ai.js'
 import { uploadVideo } from './youtube.js'
@@ -373,18 +373,56 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             }
             updateJob('ffmpeg', 76, `🔧 [FFmpeg] CMD: ${ffmpegCmd.slice(0, 200)}...`)
 
+            let totalDuration = null
+            try {
+                const probeCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`
+                const durationStr = execSync(probeCmd).toString().trim()
+                const secs = parseFloat(durationStr)
+                if (!isNaN(secs)) {
+                    totalDuration = secs
+                }
+            } catch (err) {
+                logger.warn(`[FFmpeg/Probe] Gagal mendapatkan durasi audio: ${err.message}`)
+            }
+
             await new Promise((resolve, reject) => {
                 const child = exec(ffmpegCmd)
                 let lastTime = ''
+                const startTime = Date.now()
 
                 child.stderr.on('data', (data) => {
                     const lines = data.toString().split('\n')
                     for (const line of lines) {
                         if (line.includes('time=')) {
-                            const match = line.match(/time=(\d{2}:\d{2}:\d{2})/)
-                            if (match && match[1] !== lastTime) {
-                                lastTime = match[1]
-                                updateJob('ffmpeg', 80, `🎬 [FFmpeg] Encoding... Progress: ${match[1]}`)
+                            const match = line.match(/time=(\d{2}):(\d{2}):(\d{2})/)
+                            if (match) {
+                                const timeStr = `${match[1]}:${match[2]}:${match[3]}`
+                                if (timeStr !== lastTime) {
+                                    lastTime = timeStr
+                                    
+                                    const currentSecs = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3])
+                                    
+                                    if (totalDuration && totalDuration > 0) {
+                                        const progressPct = Math.min((currentSecs / totalDuration) * 100, 99)
+                                        const elapsedSecs = (Date.now() - startTime) / 1000
+                                        const speed = currentSecs / elapsedSecs
+                                        
+                                        let etaStr = '--:--'
+                                        if (speed > 0) {
+                                            const remainingSecs = Math.max((totalDuration - currentSecs) / speed, 0)
+                                            const etaM = Math.floor(remainingSecs / 60)
+                                            const etaS = Math.floor(remainingSecs % 60)
+                                            etaStr = `${String(etaM).padStart(2, '0')}:${String(etaS).padStart(2, '0')}`
+                                        }
+                                        
+                                        const roundedPct = Math.round(progressPct)
+                                        const currentProgress = 73 + Math.floor(progressPct * 0.15) // FFmpeg step range: 73 to 88
+                                        
+                                        updateJob('ffmpeg', currentProgress, `🎬 [FFmpeg] Rendering... ${roundedPct}% | Durasi: ${timeStr} / ${Math.floor(totalDuration)}s | ETA: ${etaStr}`)
+                                    } else {
+                                        updateJob('ffmpeg', 80, `🎬 [FFmpeg] Encoding... Progress: ${timeStr}`)
+                                    }
+                                }
                             }
                         } else if (line.includes('fps=') || line.includes('bitrate=')) {
                             // silent
