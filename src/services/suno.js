@@ -286,7 +286,8 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     }
                     
                     const headers = {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'bypass-tunnel-reminder': 'true'
                     }
                     if (process.env.SUNO_COOKIE) {
                         headers['Cookie'] = process.env.SUNO_COOKIE
