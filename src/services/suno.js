@@ -27,6 +27,11 @@ function escapeXml(unsafe) {
             default: return c;
         }
     });
+function getProgressBar(pct) {
+    const width = 12
+    const filledCount = Math.round((pct / 100) * width)
+    const emptyCount = width - filledCount
+    return `[${'■'.repeat(filledCount)}${'□'.repeat(emptyCount)}]`
 }
 
 async function addBannerToImage(imageBuffer, title) {
@@ -673,6 +678,8 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                 const child = exec(ffmpegCmd)
                 let lastTime = ''
                 const startTime = Date.now()
+                let ffmpegSpinnerCount = 0
+                const spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
                 child.stderr.on('data', (data) => {
                     const lines = data.toString().split('\n')
@@ -685,6 +692,8 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                                     lastTime = timeStr
                                     
                                     const currentSecs = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3])
+                                    const spinner = spinners[ffmpegSpinnerCount % spinners.length]
+                                    ffmpegSpinnerCount++
                                     
                                     if (totalDuration && totalDuration > 0) {
                                         const progressPct = Math.min((currentSecs / totalDuration) * 100, 99)
@@ -701,10 +710,11 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                                         
                                         const roundedPct = Math.round(progressPct)
                                         const currentProgress = 73 + Math.floor(progressPct * 0.15) // FFmpeg step range: 73 to 88
+                                        const bar = getProgressBar(roundedPct)
                                         
-                                        updateJob('ffmpeg', currentProgress, `🎬 [FFmpeg] Rendering... ${roundedPct}% | Durasi: ${timeStr} / ${Math.floor(totalDuration)}s | ETA: ${etaStr}`)
+                                        updateJob('ffmpeg', currentProgress, `🎬 [FFmpeg] ${spinner} Rendering... ${bar} ${roundedPct}% | Durasi: ${timeStr} / ${Math.floor(totalDuration)}s | ETA: ${etaStr}`)
                                     } else {
-                                        updateJob('ffmpeg', 80, `🎬 [FFmpeg] Encoding... Progress: ${timeStr}`)
+                                        updateJob('ffmpeg', 80, `🎬 [FFmpeg] ${spinner} Encoding... Progress: ${timeStr}`)
                                     }
                                 }
                             }
@@ -744,7 +754,8 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                 tags: youtubeTags,
                 privacyStatus: youtubePrivacy,
                 onProgress: (p) => {
-                    updateJob('youtube_upload', 90 + Math.floor(p * 0.05), `📡 [YouTube] Upload progress: ${p}%`)
+                    const bar = getProgressBar(p)
+                    updateJob('youtube_upload', 90 + Math.floor(p * 0.05), `📡 [YouTube] Upload progress: ${bar} ${p}%`)
                 }
             })
 
