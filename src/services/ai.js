@@ -896,8 +896,11 @@ async function generateVideoFromImage(imagePath, motionPrompt) {
                 const data = result?.data
                 if (Array.isArray(data)) {
                     for (const item of data) {
-                        if (item?.video?.url) return item.video.url
-                        if (item?.url && item.url.includes('.mp4')) return item.url
+                        if (typeof item === 'object' && item !== null) {
+                            if (item.video?.url) return item.video.url
+                            if (item.url) return item.url
+                            if (item.path) return item.path
+                        }
                         if (typeof item === 'string' && item.includes('.mp4')) return item
                     }
                 }
@@ -931,8 +934,11 @@ async function generateVideoFromImage(imagePath, motionPrompt) {
                 const data = result?.data
                 if (Array.isArray(data)) {
                     for (const item of data) {
-                        if (item?.video?.url) return item.video.url
-                        if (item?.url && item.url.includes('.mp4')) return item.url
+                        if (typeof item === 'object' && item !== null) {
+                            if (item.video?.url) return item.video.url
+                            if (item.url) return item.url
+                            if (item.path) return item.path
+                        }
                         if (typeof item === 'string' && item.includes('.mp4')) return item
                     }
                 }
