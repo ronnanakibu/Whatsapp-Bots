@@ -998,7 +998,7 @@ async function generateYoutubeMetadata(vibePrompt) {
       Based on this music genre/vibe description: "${vibePrompt}"
       Generate:
       1. An engaging, SEO-friendly video Title in Indonesian/English (around 50-70 characters).
-      2. A detailed Description (around 500-1000 characters) including track info, vibes, and standard hashtags.
+      2. A detailed, creative, and engaging Story/Narrative (around 500-1000 characters) in Indonesian or English that expands the song's theme/prompt into a beautiful story, mood, or journey. Do NOT describe the technical parameters of the track in the description, instead write it as an immersive story matching the vibe of the song, including standard hashtags.
       3. A list of 10-15 relevant Tags.
       4. A highly descriptive Image Prompt (in English) for generating a premium 16:9 thumbnail matching the mood/genre of the song. Do NOT include words like "text", "watermark", "title" in the image prompt.
       5. A short, descriptive Video Motion Prompt (in English, maximum 150 characters) describing a subtle camera movement or visual motion for this scene (e.g. "slow pan across the neon city lights, soft ambient movement").

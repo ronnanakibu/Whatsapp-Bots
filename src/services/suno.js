@@ -515,7 +515,9 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                 try {
                     const metadata = await aiService.generateYoutubeMetadata(finalPrompt)
                     if (metadata && metadata.title) {
-                        videoTitle = title || metadata.title
+                        const hasUserProvidedTitle = title && title.trim() !== '' && title !== 'Untitled Music' && title !== 'Manual Track'
+                        videoTitle = hasUserProvidedTitle ? title : metadata.title
+                        job.title = videoTitle // Update dashboard active job title in real time
                         youtubeDesc = metadata.description || youtubeDesc
                         youtubeTags = metadata.tags || youtubeTags
                         imgGenPrompt = metadata.imagePrompt || finalPrompt
@@ -750,7 +752,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             const youtubeUrl = await uploadVideo({
                 videoPath: outputPath,
                 title: videoTitle,
-                description: `${youtubeDesc}\n\n---\nVideo ini dibuat secara otomatis menggunakan Suno API & Gemini.`,
+                description: youtubeDesc,
                 tags: youtubeTags,
                 privacyStatus: youtubePrivacy,
                 onProgress: (p) => {
