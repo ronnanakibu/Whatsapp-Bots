@@ -214,7 +214,7 @@ async function main() {
         }
 
         // Always push Google credentials JSON to Pterodactyl if exists
-        const googleCreds = 'storage/ronnbot-music-51e21a5d716d.json';
+        const googleCreds = 'storage/ronnbot-music-ab8a3df5de8c.json';
         if (fs.existsSync(googleCreds) && !filesToUpload.includes(googleCreds)) {
             console.log('🔑 [SFTP] Auto-including Google Credentials JSON in upload queue...');
             filesToUpload.push(googleCreds);

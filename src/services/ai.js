@@ -7,6 +7,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import OpenAI from 'openai'
 import { Client } from '@gradio/client'
 import sharp from 'sharp'
+import fs from 'fs'
 import { memoryService } from './memory.js'
 import { logger } from '../utils/logger.js'
 

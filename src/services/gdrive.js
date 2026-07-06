@@ -4,7 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { logger } from '../utils/logger.js'
 
-const CREDENTIALS_PATH = path.resolve('./storage/ronnbot-music-51e21a5d716d.json')
+const CREDENTIALS_PATH = path.resolve('./storage/ronnbot-music-ab8a3df5de8c.json')
 
 /**
  * Get authorized Google Drive client using Service Account key.

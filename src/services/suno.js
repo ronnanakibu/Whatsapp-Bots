@@ -167,7 +167,8 @@ export async function startSunoPipeline({
             // Avoid flooding the terminal logs: check if the new log and the last log are transient progress updates
             if (job.logs.length > 0) {
                 const lastLog = job.logs[job.logs.length - 1]
-                const isFfmpegProgress = logMsg.includes('[FFmpeg] Rendering') && lastLog.includes('[FFmpeg] Rendering')
+                const isFfmpegProgress = (logMsg.includes('[FFmpeg] Rendering') || logMsg.includes('[FFmpeg] Encoding')) && 
+                                         (lastLog.includes('[FFmpeg] Rendering') || lastLog.includes('[FFmpeg] Encoding'))
                 const isYoutubeProgress = logMsg.includes('[YouTube] Upload progress') && lastLog.includes('[YouTube] Upload progress')
                 
                 if (isFfmpegProgress || isYoutubeProgress) {
