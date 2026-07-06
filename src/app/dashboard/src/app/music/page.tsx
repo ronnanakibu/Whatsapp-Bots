@@ -53,6 +53,7 @@ export default function MusicAutomationPage() {
 
     const logsContainerRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const bookmarkletRef = useRef<HTMLAnchorElement>(null)
     const { socket, emit } = useSocket()
 
     const handleDrag = (e: React.DragEvent) => {
@@ -89,6 +90,9 @@ export default function MusicAutomationPage() {
             const apiBase = window.location.origin.replace(':3001', ':3000')
             const jsCode = `javascript:(function(){const c=document.cookie;fetch('${apiBase}/api/music/update-cookie', {method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer 6285172013920_2007'},body:JSON.stringify({cookie:c})}).then(r=>r.json()).then(d=>alert(d.success?'Suno Session Synced!':d.message)).catch(e=>alert('Error: '+e.message))})()`
             setBookmarkletUrl(jsCode)
+            if (bookmarkletRef.current) {
+                bookmarkletRef.current.setAttribute('href', jsCode)
+            }
         }
     }, [])
 
@@ -540,9 +544,11 @@ export default function MusicAutomationPage() {
                                 </p>
                                 <div className="pt-1">
                                     <a
-                                        href={bookmarkletUrl || '#'}
+                                        ref={bookmarkletRef}
+                                        href="#"
                                         onClick={(e) => {
-                                            if (!bookmarkletUrl) e.preventDefault()
+                                            e.preventDefault()
+                                            alert('Silakan seret (drag) tombol ini ke Bookmark Bar browser Anda, jangan diklik langsung!')
                                         }}
                                         className="inline-flex items-center gap-1.5 px-3.5 h-8 bg-[#4338CA] hover:bg-[#3730A3] text-white font-mono font-bold text-[10px] rounded-lg transition-colors cursor-grab active:cursor-grabbing shadow-[0_2px_8px_rgba(67,56,202,0.3)]"
                                     >
