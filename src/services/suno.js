@@ -123,13 +123,26 @@ async function downloadFile(url, destPath) {
 /**
  * Starts the Suno Music Video generation pipeline in the background.
  */
-export async function startSunoPipeline({ prompt, title, enhance = false, source = 'web', chatId = null, model = 'suno', manualAudioPath = null }) {
+export async function startSunoPipeline({ 
+    prompt, 
+    title, 
+    enhance = false, 
+    source = 'web', 
+    chatId = null, 
+    model = 'suno', 
+    manualAudioPath = null,
+    isCustom = false,
+    lyrics = null,
+    tags = null,
+    make_instrumental = false,
+    enhanceLyrics = false
+}) {
     const jobId = `job-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
     
     const job = {
         id: jobId,
         prompt,
-        title: title || 'Untitled Instrumental',
+        title: title || 'Untitled Music',
         status: 'running',
         stage: 'idle',
         progress: 0,
@@ -185,17 +198,48 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
         let youtubeTags = ['instrumental', 'music', 'ai-generated']
         let imgGenPrompt = prompt
         let videoMotionPrompt = 'make this image come alive with slow cinematic motion, 4k'
+        let finalLyrics = lyrics
 
         try {
             updateJob('idle', 2, `━━━ [PIPELINE START] Job ID: ${jobId} ━━━`)
-            updateJob('idle', 3, `📝 Prompt awal: "${prompt}"`)
+            updateJob('idle', 3, `📝 Mode: ${isCustom ? 'Custom Vocal/Lyrics' : 'Description Mode'}`)
+            if (isCustom) {
+                updateJob('idle', 3, `📝 Lyrics: "${finalLyrics ? finalLyrics.slice(0, 80) + '...' : '(No Lyrics/Instrumental)'}"`)
+                updateJob('idle', 4, `🏷️ Style/Tags: "${tags || prompt}"`)
+            } else {
+                updateJob('idle', 3, `📝 Prompt awal: "${prompt}"`)
+            }
             updateJob('idle', 4, `🔧 Enhance mode: ${enhance ? 'ON' : 'OFF'} | Source: ${source}`)
 
             // ─────────────────────────────────────────────
-            // 1. AI ENHANCE PROMPT
+            // 1. AI ENHANCE PROMPT / LYRICS
             // ─────────────────────────────────────────────
-            if (enhance && model !== 'manual') {
-                updateJob('ai_enhance', 8, '🤖 [AI Enhance] Memulai penyempurnaan prompt dengan Groq...')
+            if (isCustom && enhanceLyrics && finalLyrics) {
+                updateJob('ai_enhance', 8, '🤖 [AI Lyrics Enhance] Menyempurnakan lirik menggunakan Gemini...')
+                try {
+                    const lyricInstructions = `You are a professional songwriter. Enhance, refine and format these lyrics for a song. 
+Improve the rhythm, flow, rhymes, and structure (add [Verse], [Chorus] headings where appropriate). 
+IMPORTANT: Return ONLY the song lyrics. Do not include any explanations, introduction or notes.
+Original lyrics:
+${finalLyrics}`
+                    
+                    const ai = await import('./ai.js')
+                    const { GoogleGenerativeAI } = await import('@google/generative-ai')
+                    const genAI = ai.genAI || new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+                    const lyricEnhancerModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+                    const enhanceRes = await lyricEnhancerModel.generateContent(lyricInstructions)
+                    const enhancedLyrics = enhanceRes.response.text()?.trim()
+                    if (enhancedLyrics) {
+                        finalLyrics = enhancedLyrics
+                        updateJob('ai_enhance', 12, '✅ [AI Lyrics Enhance] Lirik berhasil disempurnakan!')
+                    }
+                } catch (lyricErr) {
+                    updateJob('ai_enhance', 12, `⚠️ [AI Lyrics Enhance] Gagal (${lyricErr.message}). Menggunakan lirik asli.`)
+                }
+            }
+
+            if (!isCustom && enhance && model !== 'manual') {
+                updateJob('ai_enhance', 14, '🤖 [AI Enhance] Memulai penyempurnaan prompt dengan Groq...')
                 try {
                     const aiInstructions = `You are an expert music producer and Suno AI prompt engineer.
 Enhance this song idea into a highly descriptive music prompt: "${prompt}"
@@ -280,9 +324,12 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     updateJob('suno_gen', 22, `📤 [Suno.com] Mengirim request generate ke Vercel/Suno API bypass...`)
                     
                     const requestPayload = {
-                        prompt: finalPrompt,
-                        make_instrumental: true,
-                        wait_audio: true
+                        prompt: isCustom ? (finalLyrics || '') : finalPrompt,
+                        make_instrumental: isCustom ? make_instrumental : false,
+                        wait_audio: true,
+                        isCustom,
+                        tags: isCustom ? (tags || '') : undefined,
+                        title: title || undefined
                     }
                     
                     const headers = {
@@ -340,7 +387,15 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
 
                 let genResponse
                 try {
-                    const requestPayload = { prompt: finalPrompt, customMode: false, instrumental: true, model: 'V5_5', callBackUrl: 'https://google.com' }
+                    const requestPayload = {
+                        prompt: isCustom ? (finalLyrics || '') : finalPrompt,
+                        customMode: isCustom,
+                        instrumental: isCustom ? make_instrumental : false,
+                        tags: isCustom ? (tags || '') : undefined,
+                        title: title || undefined,
+                        model: 'V5_5',
+                        callBackUrl: 'https://google.com'
+                    }
                     updateJob('suno_gen', 23, `📦 [Suno] Payload: ${JSON.stringify(requestPayload).slice(0, 150)}`)
                     genResponse = await axios.post(generateUrl, requestPayload, {
                         timeout: 30000,

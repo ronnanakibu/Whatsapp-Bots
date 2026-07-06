@@ -50,6 +50,13 @@ export default function MusicAutomationPage() {
     const [audioFile, setAudioFile] = useState<File | null>(null)
     const [isUploading, setIsUploading] = useState(false)
     const [isDragActive, setIsDragActive] = useState(false)
+    
+    // Custom Lyrics Mode States
+    const [isCustom, setIsCustom] = useState(false)
+    const [lyrics, setLyrics] = useState('')
+    const [tags, setTags] = useState('')
+    const [makeInstrumental, setMakeInstrumental] = useState(false)
+    const [enhanceLyrics, setEnhanceLyrics] = useState(true)
 
     const logsContainerRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -291,7 +298,12 @@ export default function MusicAutomationPage() {
                 prompt: prompt.trim(),
                 title: title.trim() || null,
                 enhance,
-                model: modelMode === 'suno' ? sunoProvider : 'stable'
+                model: modelMode === 'suno' ? sunoProvider : 'stable',
+                isCustom,
+                lyrics: lyrics.trim() || null,
+                tags: tags.trim() || null,
+                make_instrumental: makeInstrumental,
+                enhanceLyrics
             })
         }
     }
@@ -534,6 +546,80 @@ export default function MusicAutomationPage() {
                                         required
                                     />
                                 </div>
+
+                                {modelMode !== 'manual' && modelMode === 'suno' && (
+                                    <div className="space-y-4 border-t border-b border-white/5 py-4 my-2">
+                                        <div className="flex items-center justify-between">
+                                            <div className="min-w-0 mr-4">
+                                                <p className="text-xs text-neutral-200 font-medium flex items-center gap-1.5">
+                                                    <Music size={12} className="text-purple-400" />
+                                                    <span>Custom Lyrics Mode</span>
+                                                </p>
+                                                <p className="text-[9px] text-neutral-500 mt-0.5">Aktifkan untuk menulis lirik sendiri dan memilih genre secara kustom.</p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsCustom(!isCustom)}
+                                                className="text-neutral-400 hover:text-white transition-colors"
+                                            >
+                                                {isCustom ? <ToggleRight className="text-purple-500 w-10 h-10" /> : <ToggleLeft className="w-10 h-10" />}
+                                            </button>
+                                        </div>
+
+                                        {isCustom && (
+                                            <div className="space-y-3.5 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                {/* Instrumental Checkbox */}
+                                                <div className="flex items-center gap-2">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        id="makeInstrumental" 
+                                                        checked={makeInstrumental}
+                                                        onChange={(e) => setMakeInstrumental(e.target.checked)}
+                                                        className="rounded bg-black/40 border-white/10 text-purple-500 focus:ring-0 w-3.5 h-3.5"
+                                                    />
+                                                    <label htmlFor="makeInstrumental" className="text-[10px] font-medium text-neutral-300 cursor-pointer">Lagu Instrumental (Tanpa Lirik)</label>
+                                                </div>
+
+                                                {!makeInstrumental && (
+                                                    <div className="space-y-1.5 animate-in fade-in duration-300">
+                                                        <div className="flex justify-between items-center">
+                                                            <label className="text-[10px] font-mono tracking-widest text-neutral-400 uppercase">Lirik Lagu (Kustom)</label>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[9px] font-medium text-neutral-500">Enhance Lyrics</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setEnhanceLyrics(!enhanceLyrics)}
+                                                                    className="text-neutral-400 hover:text-white transition-colors scale-75 origin-right"
+                                                                >
+                                                                    {enhanceLyrics ? <ToggleRight className="text-purple-500 w-10 h-10" /> : <ToggleLeft className="w-10 h-10" />}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <textarea
+                                                            placeholder="[Verse 1]&#10;Write your lyrics here...&#10;&#10;[Chorus]&#10;Write chorus..."
+                                                            value={lyrics}
+                                                            onChange={e => setLyrics(e.target.value)}
+                                                            rows={6}
+                                                            className="w-full p-4 bg-white/[0.03] border border-white/10 rounded-xl text-xs text-white placeholder:text-neutral-600 outline-none focus:border-purple-500 transition-colors resize-none leading-relaxed font-mono"
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-mono tracking-widest text-neutral-400 uppercase">Genre / Style of Music</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Misal: epic heavy metal guitar solo, fast tempo"
+                                                        value={tags}
+                                                        onChange={e => setTags(e.target.value)}
+                                                        className="w-full h-11 px-4 bg-white/[0.03] border border-white/10 rounded-xl text-xs text-white placeholder:text-neutral-500 outline-none focus:border-purple-500 transition-colors"
+                                                        required={isCustom}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {modelMode !== 'manual' && (
                                     <div className="flex items-center justify-between py-3 border-t border-white/5">
