@@ -2137,6 +2137,68 @@ export function startRadioServer() {
         }
     })
 
+    app.get('/api/music/config', async (req, res) => {
+        try {
+            // Verify token
+            const authHeader = req.headers.authorization
+            if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
+                return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
+            }
+            res.json({
+                success: true,
+                tunnelUrl: process.env.SUNO_API_URL || ''
+            })
+        } catch (err) {
+            logger.error(`[Music/Config] Error: ${err.message}`)
+            res.status(500).json({ success: false, message: err.message })
+        }
+    })
+
+    app.post('/api/music/update-tunnel', express.json(), async (req, res) => {
+        try {
+            // Verify token
+            const authHeader = req.headers.authorization
+            if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
+                return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
+            }
+
+            const { tunnelUrl } = req.body
+            if (!tunnelUrl) {
+                return res.status(400).json({ success: false, message: 'Tunnel URL is required.' })
+            }
+
+            // Update in-memory process.env
+            process.env.SUNO_API_URL = tunnelUrl.trim()
+            logger.info(`[Music/TunnelSync] Suno API URL successfully updated in-memory to: ${tunnelUrl}`)
+
+            // Persist to .env file
+            const envPath = path.resolve('./.env')
+            if (fs.existsSync(envPath)) {
+                let envContent = fs.readFileSync(envPath, 'utf8')
+                
+                // Check if SUNO_API_URL exists in .env
+                const regex = /^SUNO_API_URL=.*$/m
+                if (regex.test(envContent)) {
+                    envContent = envContent.replace(regex, `SUNO_API_URL=${tunnelUrl}`)
+                } else {
+                    // Append if not found
+                    envContent += `\nSUNO_API_URL=${tunnelUrl}`
+                }
+                
+                fs.writeFileSync(envPath, envContent, 'utf8')
+                logger.info('[Music/TunnelSync] Suno API URL successfully written to .env file.')
+            }
+
+            res.json({
+                success: true,
+                message: 'Suno API Tunnel URL successfully synchronized.'
+            })
+        } catch (err) {
+            logger.error(`[Music/TunnelSync] Error: ${err.message}`)
+            res.status(500).json({ success: false, message: err.message })
+        }
+    })
+
     // Locate static build out directories
     const dashboardDir = path.resolve('./src/app/dashboard/out')
     const radioDashboardDir = path.resolve('./dashboard/out')

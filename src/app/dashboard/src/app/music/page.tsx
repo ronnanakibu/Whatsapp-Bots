@@ -84,6 +84,8 @@ export default function MusicAutomationPage() {
     const [manualCookie, setManualCookie] = useState('')
     const [isSyncingCookie, setIsSyncingCookie] = useState(false)
     const [bookmarkletUrl, setBookmarkletUrl] = useState('')
+    const [tunnelUrl, setTunnelUrl] = useState('')
+    const [isSyncingTunnel, setIsSyncingTunnel] = useState(false)
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -93,6 +95,22 @@ export default function MusicAutomationPage() {
             if (bookmarkletRef.current) {
                 bookmarkletRef.current.setAttribute('href', jsCode)
             }
+
+            // Fetch current tunnel config
+            const fetchConfig = async () => {
+                try {
+                    const res = await fetch(`${apiBase}/api/music/config`, {
+                        headers: { 'Authorization': 'Bearer 6285172013920_2007' }
+                    })
+                    const data = await res.json()
+                    if (data.success) {
+                        setTunnelUrl(data.tunnelUrl || '')
+                    }
+                } catch (err) {
+                    console.error('Gagal fetch config:', err)
+                }
+            }
+            fetchConfig()
         }
     }, [])
 
@@ -122,6 +140,34 @@ export default function MusicAutomationPage() {
             toast.error('Gagal menghubungi server untuk update cookie.')
         } finally {
             setIsSyncingCookie(false)
+        }
+    }
+
+    const handleSyncTunnel = async () => {
+        if (!tunnelUrl.trim()) {
+            return toast.error('Masukkan URL Tunnel terlebih dahulu!')
+        }
+        setIsSyncingTunnel(true)
+        try {
+            const apiBase = window.location.origin.replace(':3001', ':3000')
+            const res = await fetch(`${apiBase}/api/music/update-tunnel`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer 6285172013920_2007` 
+                },
+                body: JSON.stringify({ tunnelUrl: tunnelUrl.trim() })
+            })
+            const data = await res.json()
+            if (data.success) {
+                toast.success('Suno API Proxy Tunnel URL berhasil diperbarui!')
+            } else {
+                toast.error(`Gagal sync: ${data.message}`)
+            }
+        } catch (err) {
+            toast.error('Gagal menghubungi server untuk update tunnel URL.')
+        } finally {
+            setIsSyncingTunnel(false)
         }
     }
 
@@ -580,6 +626,33 @@ export default function MusicAutomationPage() {
                                         <><Loader2 size={12} className="animate-spin" /><span>Syncing...</span></>
                                     ) : (
                                         <><span>Sync Session Cookie</span></>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Option 3: Local Proxy Tunnel (Serveo/Localtunnel) */}
+                            <div className="p-3.5 bg-white/[0.02] border border-white/5 rounded-xl space-y-2.5">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/10 text-purple-400 font-mono font-bold rounded">METHOD C</span>
+                                    <span className="text-[10px] font-bold text-neutral-300">Suno Local Proxy Tunnel URL</span>
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder="Paste serveo/localtunnel URL here..."
+                                    value={tunnelUrl}
+                                    onChange={(e) => setTunnelUrl(e.target.value)}
+                                    className="w-full h-9 px-3 bg-white/[0.02] border border-white/10 rounded-lg text-[10px] text-white outline-none focus:border-[#4338CA] transition-colors font-mono"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleSyncTunnel}
+                                    disabled={isSyncingTunnel}
+                                    className="w-full h-8 bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-[#0F0F23] font-bold text-[10px] rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                    {isSyncingTunnel ? (
+                                        <><Loader2 size={12} className="animate-spin" /><span>Saving...</span></>
+                                    ) : (
+                                        <><span>Save Tunnel URL</span></>
                                     )}
                                 </button>
                             </div>
