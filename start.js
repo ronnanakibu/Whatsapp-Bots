@@ -15,6 +15,7 @@ import fs from 'fs'
 import path from 'path'
 import https from 'https'
 import dns from 'dns'
+import { pathToFileURL } from 'url'
 
 dns.setDefaultResultOrder('ipv4first')
 
@@ -43,11 +44,20 @@ if (!fs.existsSync(globalTmpDir)) {
 process.env.TMPDIR = globalTmpDir
 process.env.PIP_CACHE_DIR = path.join(globalTmpDir, 'pip-cache')
 
-const log = (emoji, msg) => console.log(`${emoji} [Bootstrap] ${msg}`)
-const ok = (msg) => log('✅', msg)
-const inf = (msg) => log('⚙️ ', msg)
-const wrn = (msg) => log('⚠️ ', msg)
-const err = (msg) => log('❌', msg)
+const updateProgress = (msg) => {
+    process.stdout.write(`\r\x1b[K⚙️  [Bootstrap] ${msg}...`)
+}
+const log = (emoji, msg) => {
+    process.stdout.write(`\r\x1b[K${emoji} [Bootstrap] ${msg}\n`)
+}
+const ok = (msg) => updateProgress(msg)
+const inf = (msg) => updateProgress(msg)
+const wrn = (msg) => {
+    process.stdout.write(`\n⚠️  [Bootstrap Warning] ${msg}\n`)
+}
+const err = (msg) => {
+    process.stdout.write(`\n❌ [Bootstrap Error] ${msg}\n`)
+}
 
 function commandExists(cmd) {
     try { execSync(`which ${cmd}`, { stdio: 'pipe' }); return true }
@@ -454,7 +464,9 @@ async function setupOpenssl() {
 async function setupPrisma() {
     inf('Generating Prisma client database bindings...')
     try {
+        console.log('\n--- Prisma Client Generation ---')
         execSync('npx prisma generate', { stdio: 'inherit' })
+        console.log('--------------------------------')
         ok('Prisma client bindings generated successfully.')
     } catch (e) {
         wrn(`Prisma generate failed: ${e.message}`)
@@ -465,23 +477,95 @@ async function setupPrisma() {
 // STEP 7: SUMMARY
 // ─────────────────────────────────────────────
 
-function printSummary() {
+async function printSummary() {
+    const conflicts = []
+    const problems = []
+    const registered = new Map()
+
+    async function scan(dir) {
+        let entries = []
+        try {
+            entries = fs.readdirSync(dir)
+        } catch (_) {
+            return
+        }
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry)
+            if (fs.statSync(fullPath).isDirectory()) {
+                await scan(fullPath)
+                continue
+            }
+            if (!entry.endsWith('.js')) continue
+
+            try {
+                const absolutePath = path.resolve(fullPath)
+                const fileURL = pathToFileURL(absolutePath).href
+                const mod = await import(fileURL)
+                const cmd = mod.default
+                if (!cmd) {
+                    problems.push(`File ${entry} has no default export`)
+                    continue
+                }
+                if (!cmd.name) {
+                    problems.push(`File ${entry} is missing 'name' property`)
+                    continue
+                }
+
+                if (registered.has(cmd.name)) {
+                    conflicts.push(`Duplicate command '${cmd.name}' in ${entry} and ${registered.get(cmd.name)}`)
+                } else {
+                    registered.set(cmd.name, entry)
+                }
+
+                if (cmd.aliases) {
+                    for (const alias of cmd.aliases) {
+                        if (registered.has(alias)) {
+                            conflicts.push(`Duplicate alias '${alias}' in ${entry} and ${registered.get(alias)}`)
+                        } else {
+                            registered.set(alias, entry)
+                        }
+                    }
+                }
+            } catch (err) {
+                problems.push(`Failed to import ${entry}: ${err.message}`)
+            }
+        }
+    }
+
+    inf('Scanning command registry for duplicates...')
+    await scan('./src/commands')
+
     const fonts = fs.readdirSync(FONT_DIR).filter(f => f.endsWith('.ttf') || f.endsWith('.otf'))
     const hasFfmpeg = commandExists('ffmpeg') || fs.existsSync(FFMPEG_PATH)
     const hasYtdlp = fs.existsSync(YTDLP_SCRIPT_PATH)
 
-    console.log('\n' + '─'.repeat(50))
-    console.log('  🤖 RonnBot v2.0 — Bootstrap Summary')
-    console.log('─'.repeat(50))
+    console.log('\n' + '─'.repeat(55))
+    console.log('  🤖 RonnBot v2.0 — Bootstrap Summary & Health Check')
+    console.log('─'.repeat(55))
     console.log(`  Fonts         : ${fonts.length > 0 ? fonts.join(', ') : 'none'}`)
     console.log(`  FFmpeg        : ${hasFfmpeg ? '✅ available' : '❌ not found (radio disabled)'}`)
     console.log(`  yt-dlp        : ${hasYtdlp ? '✅ ready' : '❌ not found (radio disabled)'}`)
     console.log(`  Owner         : ${process.env.OWNER_NUMBER ?? 'not set'}`)
     console.log(`  Prefix        : ${process.env.BOT_PREFIX ?? '!'}`)
-    console.log(`  Session path  : ${process.env.SESSION_PATH ?? './storage/sessions'}`)
     console.log(`  Node version  : ${process.version}`)
     console.log(`  Dashboard     : ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard`)
-    console.log('─'.repeat(50) + '\n')
+    console.log('─'.repeat(55))
+    console.log('  🔍 COMMAND REGISTRY STATUS:')
+    console.log(`  Total Commands: ${registered.size} registered (including aliases)`)
+
+    if (conflicts.length === 0 && problems.length === 0) {
+        console.log('  ✅ No conflicts or loading problems detected!')
+    } else {
+        if (conflicts.length > 0) {
+            console.log(`  ⚠️  Duplicate Command Conflicts (${conflicts.length}):`)
+            conflicts.forEach(c => console.log(`     - ${c}`))
+        }
+        if (problems.length > 0) {
+            console.log(`  ❌ Command Loading Problems (${problems.length}):`)
+            problems.forEach(p => console.log(`     - ${p}`))
+        }
+    }
+    console.log('─'.repeat(55) + '\n')
 }
 
 // ─────────────────────────────────────────────
@@ -540,7 +624,6 @@ async function main() {
                 }
             }
             fs.writeFileSync('./storage/logs/diagnostic.log', diag, 'utf8');
-            console.log('📝 Diagnostics written to ./storage/logs/diagnostic.log');
         } catch (diagErr) {
             console.error('Failed to run diagnostics:', diagErr);
         }
@@ -548,7 +631,8 @@ async function main() {
         await setupOpenssl()
         validateEnv()
         await setupPrisma()
-        printSummary()
+        process.stdout.write('\r\x1b[K✅ [Bootstrap] Pre-launch checks completed successfully!\n')
+        await printSummary()
         launchBot()
     } catch (e) {
         err(`Bootstrap fatal error: ${e.message}`)
