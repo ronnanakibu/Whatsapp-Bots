@@ -307,11 +307,18 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     }
                     
                     const resultData = genResponse.data
+                    let firstClip = null
                     if (Array.isArray(resultData) && resultData.length > 0) {
-                        const firstClip = resultData[0]
-                        audioUrl = firstClip.audio_url || firstClip.audioUrl || firstClip.url
+                        firstClip = resultData[0]
                     } else if (resultData && Array.isArray(resultData.clips)) {
-                        const firstClip = resultData.clips[0]
+                        firstClip = resultData.clips[0]
+                    }
+
+                    if (firstClip) {
+                        const status = String(firstClip.status || '').toLowerCase()
+                        if (status === 'error' || status === 'failed') {
+                            throw new Error(`Suno.com API Audio Generation Gagal: ${firstClip.error_message || 'Suno server error'}`)
+                        }
                         audioUrl = firstClip.audio_url || firstClip.audioUrl || firstClip.url
                     }
                     
