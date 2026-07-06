@@ -272,6 +272,55 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         throw new Error(`Stable Audio API Error: ${err.message}`)
                     }
                 }
+                
+                if (model === 'suno_com') {
+                    const apiBaseUrl = process.env.SUNO_API_URL || 'https://sunoapi-bice.vercel.app'
+                    const generateUrl = `${apiBaseUrl}/api/generate`
+                    updateJob('suno_gen', 20, `🎵 [Suno.com] Target URL: ${generateUrl}`)
+                    updateJob('suno_gen', 22, `📤 [Suno.com] Mengirim request generate ke Vercel/Suno API bypass...`)
+                    
+                    const requestPayload = {
+                        prompt: finalPrompt,
+                        make_instrumental: true,
+                        wait_audio: true
+                    }
+                    
+                    const headers = {
+                        'Content-Type': 'application/json'
+                    }
+                    if (process.env.SUNO_COOKIE) {
+                        headers['Cookie'] = process.env.SUNO_COOKIE
+                    }
+                    
+                    let genResponse
+                    try {
+                        genResponse = await axios.post(generateUrl, requestPayload, {
+                            headers,
+                            timeout: 180000 // 3 minutes
+                        })
+                    } catch (err) {
+                        const httpStatus = err.response?.status || 'N/A'
+                        const httpBody = JSON.stringify(err.response?.data || err.message)
+                        updateJob('suno_gen', 25, `❌ [Suno.com] HTTP ${httpStatus} ERROR: ${httpBody}`)
+                        throw new Error(`Suno.com API Error [HTTP ${httpStatus}]: ${httpBody}`)
+                    }
+                    
+                    const resultData = genResponse.data
+                    if (Array.isArray(resultData) && resultData.length > 0) {
+                        const firstClip = resultData[0]
+                        audioUrl = firstClip.audio_url || firstClip.audioUrl || firstClip.url
+                    } else if (resultData && Array.isArray(resultData.clips)) {
+                        const firstClip = resultData.clips[0]
+                        audioUrl = firstClip.audio_url || firstClip.audioUrl || firstClip.url
+                    }
+                    
+                    if (!audioUrl) {
+                        throw new Error(`Suno.com API tidak mengembalikan URL audio yang valid: ${JSON.stringify(resultData)}`)
+                    }
+                    
+                    updateJob('suno_gen', 50, `🎉 [Suno.com] Audio selesai! URL: ${audioUrl}`)
+                    return
+                }
 
                 // Default Suno API Logic
                 const apiBaseUrl = 'https://api.sunoapi.org/api/v1'

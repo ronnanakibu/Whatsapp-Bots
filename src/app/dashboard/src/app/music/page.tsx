@@ -46,6 +46,7 @@ export default function MusicAutomationPage() {
 
     // New States for Model Selector
     const [modelMode, setModelMode] = useState<'suno' | 'stable' | 'manual'>('suno')
+    const [sunoProvider, setSunoProvider] = useState<'suno' | 'suno_com'>('suno')
     const [audioFile, setAudioFile] = useState<File | null>(null)
     const [isUploading, setIsUploading] = useState(false)
     const [isDragActive, setIsDragActive] = useState(false)
@@ -240,7 +241,7 @@ export default function MusicAutomationPage() {
                 prompt: prompt.trim(),
                 title: title.trim() || null,
                 enhance,
-                model: modelMode // 'suno' or 'stable'
+                model: modelMode === 'suno' ? sunoProvider : 'stable'
             })
         }
     }
@@ -373,6 +374,44 @@ export default function MusicAutomationPage() {
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Suno Provider Sub-Selector */}
+                            {modelMode === 'suno' && (
+                                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <h4 className="text-[9px] font-mono font-bold tracking-widest text-neutral-400 uppercase">Suno Provider</h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setSunoProvider('suno')}
+                                            className={`h-9 px-3 rounded-lg border transition-all text-[10px] font-bold flex items-center justify-center gap-1.5 ${
+                                                sunoProvider === 'suno'
+                                                    ? 'bg-pink-500/10 border-pink-500 text-pink-400'
+                                                    : 'bg-white/5 border-white/10 text-neutral-400 hover:bg-white/10'
+                                            }`}
+                                        >
+                                            <Sparkles size={12} />
+                                            <span>Suno.org API</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSunoProvider('suno_com')}
+                                            className={`h-9 px-3 rounded-lg border transition-all text-[10px] font-bold flex items-center justify-center gap-1.5 ${
+                                                sunoProvider === 'suno_com'
+                                                    ? 'bg-purple-500/10 border-purple-500 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                                                    : 'bg-white/5 border-white/10 text-neutral-400 hover:bg-white/10'
+                                            }`}
+                                        >
+                                            <Music size={12} />
+                                            <span>Suno.com (Bypass)</span>
+                                        </button>
+                                    </div>
+                                    <p className="text-[8px] text-neutral-500 leading-normal">
+                                        {sunoProvider === 'suno' 
+                                            ? 'Menggunakan managed API key dari Suno.org (bebas captcha, limitasi kuota harian gratis).'
+                                            : 'Menggunakan akun Clerk Suno.com milikmu sendiri (unlimited kuota, bypass captcha via sync session cookie).'}
+                                    </p>
+                                </div>
+                            )}
 
                             <form onSubmit={handleGenerate} className="space-y-4">
                                 {modelMode === 'manual' && (
