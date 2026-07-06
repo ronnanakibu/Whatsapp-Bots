@@ -2092,7 +2092,7 @@ export function startRadioServer() {
         }
     })
 
-    app.post('/api/music/update-cookie', async (req, res) => {
+    app.post('/api/music/update-cookie', express.json(), async (req, res) => {
         try {
             // Verify token
             const authHeader = req.headers.authorization
