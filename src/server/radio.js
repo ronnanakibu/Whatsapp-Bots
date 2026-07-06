@@ -2021,6 +2021,77 @@ export function startRadioServer() {
         res.on('error', cleanup)
     })
 
+    // Configure multer for manual music audio upload
+    const uploadDir = path.resolve('./storage/media/tmp/uploads')
+    if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true })
+    }
+
+    const storage = multer.diskStorage({
+        destination: (req, file, cb) => {
+            cb(null, uploadDir)
+        },
+        filename: (req, file, cb) => {
+            const ext = path.extname(file.originalname) || '.mp3'
+            const uniqueName = `${crypto.randomUUID()}${ext}`
+            cb(null, uniqueName)
+        }
+    })
+
+    const upload = multer({
+        storage: storage,
+        limits: { fileSize: 50 * 1024 * 1024 } // limit to 50MB
+    })
+
+    app.post('/api/music/manual-upload', upload.single('audio'), async (req, res) => {
+        try {
+            // Verify token
+            const authHeader = req.headers.authorization
+            if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
+                if (req.file && fs.existsSync(req.file.path)) {
+                    fs.unlinkSync(req.file.path)
+                }
+                return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
+            }
+
+            if (!req.file) {
+                return res.status(400).json({ success: false, message: 'No audio file uploaded.' })
+            }
+
+            const { prompt, title } = req.body
+            if (!prompt) {
+                if (fs.existsSync(req.file.path)) {
+                    fs.unlinkSync(req.file.path)
+                }
+                return res.status(400).json({ success: false, message: 'Prompt/Description is required.' })
+            }
+
+            const manualAudioPath = req.file.path
+            logger.info(`[Music] Received manual audio upload. File: ${req.file.originalname} -> ${manualAudioPath}`)
+
+            // Start the suno pipeline with manual mode
+            const jobId = startSunoPipeline({
+                prompt: prompt,
+                title: title || 'Manual Audio Render',
+                enhance: false,
+                model: 'manual',
+                manualAudioPath: manualAudioPath
+            })
+
+            res.json({
+                success: true,
+                message: 'Manual upload successfully queued.',
+                jobId: jobId
+            })
+        } catch (err) {
+            logger.error(`[Music/ManualUpload] Error: ${err.message}`)
+            if (req.file && fs.existsSync(req.file.path)) {
+                fs.unlinkSync(req.file.path)
+            }
+            res.status(500).json({ success: false, message: err.message })
+        }
+    })
+
     // Locate static build out directories
     const dashboardDir = path.resolve('./src/app/dashboard/out')
     const radioDashboardDir = path.resolve('./dashboard/out')

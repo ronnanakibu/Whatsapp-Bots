@@ -48,10 +48,36 @@ export default function MusicAutomationPage() {
     const [modelMode, setModelMode] = useState<'suno' | 'stable' | 'manual'>('suno')
     const [audioFile, setAudioFile] = useState<File | null>(null)
     const [isUploading, setIsUploading] = useState(false)
+    const [isDragActive, setIsDragActive] = useState(false)
 
     const logsEndRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const { socket, emit } = useSocket()
+
+    const handleDrag = (e: React.DragEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.type === "dragenter" || e.type === "dragover") {
+            setIsDragActive(true)
+        } else if (e.type === "dragleave") {
+            setIsDragActive(false)
+        }
+    }
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setIsDragActive(false)
+        
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            const file = e.dataTransfer.files[0]
+            if (file.type.startsWith('audio/') || file.name.endsWith('.mp3') || file.name.endsWith('.wav')) {
+                setAudioFile(file)
+            } else {
+                toast.error('Hanya menerima file audio MP3/WAV!')
+            }
+        }
+    }
 
     // 1. Authenticate Owner
     useEffect(() => {
@@ -303,7 +329,15 @@ export default function MusicAutomationPage() {
                                         <label className="text-[10px] font-mono tracking-widest text-neutral-400 uppercase">Upload Audio (MP3)</label>
                                         <div 
                                             onClick={() => fileInputRef.current?.click()}
-                                            className="w-full p-6 border-2 border-dashed border-white/10 rounded-xl flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-[#4338CA]/50 hover:bg-[#4338CA]/5 transition-all"
+                                            onDragEnter={handleDrag}
+                                            onDragOver={handleDrag}
+                                            onDragLeave={handleDrag}
+                                            onDrop={handleDrop}
+                                            className={`w-full p-6 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all ${
+                                                isDragActive 
+                                                    ? 'border-[#22C55E] bg-[#22C55E]/5 scale-[1.02]' 
+                                                    : 'border-white/10 hover:border-[#4338CA]/50 hover:bg-[#4338CA]/5'
+                                            }`}
                                         >
                                             <input 
                                                 type="file" 
@@ -321,7 +355,7 @@ export default function MusicAutomationPage() {
                                             ) : (
                                                 <>
                                                     <UploadCloud size={24} className="text-neutral-500" />
-                                                    <span className="text-xs text-neutral-400 text-center">Klik untuk upload file audio MP3/WAV</span>
+                                                    <span className="text-xs text-neutral-400 text-center">Klik atau seret file audio MP3/WAV ke sini</span>
                                                 </>
                                             )}
                                         </div>
