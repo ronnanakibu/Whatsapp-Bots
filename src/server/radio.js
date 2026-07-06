@@ -2092,6 +2092,51 @@ export function startRadioServer() {
         }
     })
 
+    app.post('/api/music/update-cookie', async (req, res) => {
+        try {
+            // Verify token
+            const authHeader = req.headers.authorization
+            if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
+                return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
+            }
+
+            const { cookie } = req.body
+            if (!cookie) {
+                return res.status(400).json({ success: false, message: 'Cookie is required.' })
+            }
+
+            // Update in-memory process.env
+            process.env.SUNO_COOKIE = cookie
+            logger.info('[Music/CookieSync] Suno session cookie successfully updated in-memory.')
+
+            // Persist to .env file
+            const envPath = path.resolve('./.env')
+            if (fs.existsSync(envPath)) {
+                let envContent = fs.readFileSync(envPath, 'utf8')
+                
+                // Check if SUNO_COOKIE exists in .env
+                const regex = /^SUNO_COOKIE=.*$/m
+                if (regex.test(envContent)) {
+                    envContent = envContent.replace(regex, `SUNO_COOKIE=${cookie}`)
+                } else {
+                    // Append if not found
+                    envContent += `\nSUNO_COOKIE=${cookie}`
+                }
+                
+                fs.writeFileSync(envPath, envContent, 'utf8')
+                logger.info('[Music/CookieSync] Suno session cookie successfully written to .env file.')
+            }
+
+            res.json({
+                success: true,
+                message: 'Suno session cookie successfully synchronized.'
+            })
+        } catch (err) {
+            logger.error(`[Music/CookieSync] Error: ${err.message}`)
+            res.status(500).json({ success: false, message: err.message })
+        }
+    })
+
     // Locate static build out directories
     const dashboardDir = path.resolve('./src/app/dashboard/out')
     const radioDashboardDir = path.resolve('./dashboard/out')

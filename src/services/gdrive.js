@@ -14,8 +14,18 @@ function getDriveClient() {
         throw new Error(`Google credentials file not found at: ${CREDENTIALS_PATH}`)
     }
 
+    const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf8'))
+    let privateKey = credentials.private_key
+    if (privateKey) {
+        // Sanitize the private key string to replace escaped or literal newlines with exact UNIX newline chars
+        privateKey = privateKey.replace(/\\n/g, '\n').replace(/\r/g, '')
+    }
+
     const auth = new google.auth.GoogleAuth({
-        keyFile: CREDENTIALS_PATH,
+        credentials: {
+            client_email: credentials.client_email,
+            private_key: privateKey
+        },
         scopes: [
             'https://www.googleapis.com/auth/drive.file',
             'https://www.googleapis.com/auth/drive'

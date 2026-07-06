@@ -148,8 +148,22 @@ export async function startSunoPipeline({ prompt, title, enhance = false, source
         job.stage = stage
         job.progress = progress
         if (logMsg) {
-            const timestamp = new Date().toLocaleTimeString()
+            const timestamp = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             const fullLog = `[${timestamp}] ${logMsg}`
+            
+            // Avoid flooding the terminal logs: check if the new log and the last log are transient progress updates
+            if (job.logs.length > 0) {
+                const lastLog = job.logs[job.logs.length - 1]
+                const isFfmpegProgress = logMsg.includes('[FFmpeg] Rendering') && lastLog.includes('[FFmpeg] Rendering')
+                const isYoutubeProgress = logMsg.includes('[YouTube] Upload progress') && lastLog.includes('[YouTube] Upload progress')
+                
+                if (isFfmpegProgress || isYoutubeProgress) {
+                    job.logs[job.logs.length - 1] = fullLog
+                    eventBus.emitEvent('suno:status', job)
+                    return
+                }
+            }
+            
             job.logs.push(fullLog)
             logger.info(`[Suno/Pipeline/${jobId}] ${logMsg}`)
         }
@@ -473,6 +487,31 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             }
 
             // ─────────────────────────────────────────────
+            // 4b. PARALLEL BACKGROUND UPLOAD TO GOOGLE DRIVE
+            // ─────────────────────────────────────────────
+            let drivePromise = null
+            let driveUrl = null
+            try {
+                updateJob('downloading', 72, '📤 [Google Drive] Menginisiasi upload audio mentah ke Google Drive di background...')
+                const cleanTitle = videoTitle.replace(/[\\/:*?"<>|]/g, '_').trim() || `song_${jobId}`
+                const driveFileName = `${cleanTitle}.mp3`
+                
+                drivePromise = uploadToDrive(audioPath, driveFileName, 'audio/mpeg')
+                    .then(url => {
+                        updateJob('downloading', 72, `✅ [Google Drive] Background upload sukses! Link: ${url}`)
+                        driveUrl = url
+                        return url
+                    })
+                    .catch(err => {
+                        logger.error(`[Google Drive Background Upload] Gagal: ${err.message}`)
+                        updateJob('downloading', 72, `⚠️ [Google Drive] Background upload gagal: ${err.message}`)
+                        return null
+                    })
+            } catch (driveErr) {
+                logger.error(`[Google Drive Background Setup] Gagal: ${driveErr.message}`)
+            }
+
+            // ─────────────────────────────────────────────
             // 5. FFMPEG VIDEO RENDER
             // ─────────────────────────────────────────────
             updateJob('ffmpeg', 73, '━━━ [STEP 5] FFmpeg Video Render ━━━')
@@ -601,19 +640,21 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             })
 
             // ─────────────────────────────────────────────
-            // 6b. UPLOAD TO GOOGLE DRIVE
+            // 6b. RESOLVE GOOGLE DRIVE UPLOAD
             // ─────────────────────────────────────────────
-            let driveUrl = null
-            try {
-                updateJob('youtube_upload', 96, '📤 [Google Drive] Mengupload audio mentah ke Google Drive...')
-                const cleanTitle = videoTitle.replace(/[\\/:*?"<>|]/g, '_').trim() || `song_${jobId}`
-                const driveFileName = `${cleanTitle}.mp3`
-                
-                driveUrl = await uploadToDrive(audioPath, driveFileName, 'audio/mpeg')
-                updateJob('youtube_upload', 99, `✅ [Google Drive] Sukses! Link: ${driveUrl}`)
-            } catch (driveErr) {
-                logger.error(`[Google Drive Upload] Gagal: ${driveErr.message}`)
-                updateJob('youtube_upload', 98, `⚠️ [Google Drive] Gagal upload: ${driveErr.message}`)
+            if (drivePromise) {
+                updateJob('youtube_upload', 96, '⏳ [Google Drive] Menunggu upload Google Drive selesai...')
+                try {
+                    driveUrl = await drivePromise
+                    if (driveUrl) {
+                        updateJob('youtube_upload', 99, `✅ [Google Drive] Sukses! Link: ${driveUrl}`)
+                    } else {
+                        updateJob('youtube_upload', 98, `⚠️ [Google Drive] Gagal upload`)
+                    }
+                } catch (driveErr) {
+                    logger.error(`[Google Drive Finalize] Gagal: ${driveErr.message}`)
+                    updateJob('youtube_upload', 98, `⚠️ [Google Drive] Gagal upload: ${driveErr.message}`)
+                }
             }
 
             // ─────────────────────────────────────────────

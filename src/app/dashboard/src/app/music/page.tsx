@@ -50,7 +50,7 @@ export default function MusicAutomationPage() {
     const [isUploading, setIsUploading] = useState(false)
     const [isDragActive, setIsDragActive] = useState(false)
 
-    const logsEndRef = useRef<HTMLDivElement>(null)
+    const logsContainerRef = useRef<HTMLDivElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const { socket, emit } = useSocket()
 
@@ -76,6 +76,47 @@ export default function MusicAutomationPage() {
             } else {
                 toast.error('Hanya menerima file audio MP3/WAV!')
             }
+        }
+    }
+
+    const [manualCookie, setManualCookie] = useState('')
+    const [isSyncingCookie, setIsSyncingCookie] = useState(false)
+    const [bookmarkletUrl, setBookmarkletUrl] = useState('')
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const apiBase = window.location.origin.replace(':3001', ':3000')
+            const jsCode = `javascript:(function(){const c=document.cookie;fetch('${apiBase}/api/music/update-cookie', {method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer 6285172013920_2007'},body:JSON.stringify({cookie:c})}).then(r=>r.json()).then(d=>alert(d.success?'Suno Session Synced!':d.message)).catch(e=>alert('Error: '+e.message))})()`
+            setBookmarkletUrl(jsCode)
+        }
+    }, [])
+
+    const handleSyncCookie = async () => {
+        if (!manualCookie.trim()) {
+            return toast.error('Masukkan cookie Suno terlebih dahulu!')
+        }
+        setIsSyncingCookie(true)
+        try {
+            const apiBase = window.location.origin.replace(':3001', ':3000')
+            const res = await fetch(`${apiBase}/api/music/update-cookie`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer 6285172013920_2007` 
+                },
+                body: JSON.stringify({ cookie: manualCookie.trim() })
+            })
+            const data = await res.json()
+            if (data.success) {
+                toast.success('Suno Session Cookie berhasil diperbarui!')
+                setManualCookie('')
+            } else {
+                toast.error(`Gagal sync: ${data.message}`)
+            }
+        } catch (err) {
+            toast.error('Gagal menghubungi server untuk update cookie.')
+        } finally {
+            setIsSyncingCookie(false)
         }
     }
 
@@ -129,7 +170,17 @@ export default function MusicAutomationPage() {
     }, [socket, activeJob, prompt, title])
 
     useEffect(() => {
-        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        const container = logsContainerRef.current
+        if (container) {
+            const threshold = 100 // px
+            const isNearBottom = container.scrollHeight - container.clientHeight - container.scrollTop < threshold
+            if (isNearBottom) {
+                container.scrollTo({
+                    top: container.scrollHeight,
+                    behavior: 'smooth'
+                })
+            }
+        }
     }, [activeJob?.logs])
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -428,6 +479,66 @@ export default function MusicAutomationPage() {
                                 </button>
                             </form>
                         </div>
+
+                        {/* Suno Session Sync Card */}
+                        <div className="p-5 md:p-6 bg-white/[0.02] border border-white/5 rounded-2xl backdrop-blur-xl space-y-4 shadow-2xl animate-in fade-in slide-in-from-bottom duration-300">
+                            <div>
+                                <h3 className="text-xs font-bold font-mono tracking-wider text-neutral-200 flex items-center gap-2">
+                                    <Settings size={14} className="text-[#4338CA] animate-pulse" />
+                                    <span>SUNO SESSION SYNC</span>
+                                </h3>
+                                <p className="text-[10px] text-neutral-400 mt-1">Suno session expired or captcha blocked? Sync it instantly here.</p>
+                            </div>
+
+                            {/* Option 1: Bookmarklet (Easiest) */}
+                            <div className="p-3.5 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-[#4338CA]/20 text-[#818CF8] font-mono font-bold rounded">METHOD A</span>
+                                    <span className="text-[10px] font-bold text-neutral-300">Fast Bookmarklet (PC)</span>
+                                </div>
+                                <p className="text-[9px] leading-relaxed text-neutral-400">
+                                    Drag the button below to your browser Bookmark Bar. Open <a href="https://suno.com" target="_blank" rel="noreferrer" className="text-[#818CF8] hover:underline font-bold">suno.com</a> (login and solve any captchas), then click the bookmarklet to sync cookie automatically!
+                                </p>
+                                <div className="pt-1">
+                                    <a
+                                        href={bookmarkletUrl || '#'}
+                                        onClick={(e) => {
+                                            if (!bookmarkletUrl) e.preventDefault()
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-3.5 h-8 bg-[#4338CA] hover:bg-[#3730A3] text-white font-mono font-bold text-[10px] rounded-lg transition-colors cursor-grab active:cursor-grabbing shadow-[0_2px_8px_rgba(67,56,202,0.3)]"
+                                    >
+                                        <span>+ Drag to Bookmarks</span>
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Option 2: Paste Cookie (Mobile / Fallback) */}
+                            <div className="p-3.5 bg-white/[0.02] border border-white/5 rounded-xl space-y-2.5">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 font-mono font-bold rounded">METHOD B</span>
+                                    <span className="text-[10px] font-bold text-neutral-300">Paste Cookie Manually</span>
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder="Paste document.cookie string here..."
+                                    value={manualCookie}
+                                    onChange={(e) => setManualCookie(e.target.value)}
+                                    className="w-full h-9 px-3 bg-white/[0.02] border border-white/10 rounded-lg text-[10px] text-white outline-none focus:border-[#4338CA] transition-colors font-mono"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleSyncCookie}
+                                    disabled={isSyncingCookie}
+                                    className="w-full h-8 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-[#0F0F23] font-bold text-[10px] rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                    {isSyncingCookie ? (
+                                        <><Loader2 size={12} className="animate-spin" /><span>Syncing...</span></>
+                                    ) : (
+                                        <><span>Sync Session Cookie</span></>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Right Column: Live Pipeline & Logs */}
@@ -490,9 +601,23 @@ export default function MusicAutomationPage() {
                                                     <motion.div
                                                         key={node.id}
                                                         layout
+                                                        animate={status === 'running' ? {
+                                                            scale: [1, 1.015, 1],
+                                                            borderColor: ['rgba(67, 56, 202, 0.3)', 'rgba(99, 102, 241, 0.8)', 'rgba(67, 56, 202, 0.3)'],
+                                                            boxShadow: [
+                                                                '0 0 15px rgba(67, 56, 202, 0.1)',
+                                                                '0 0 25px rgba(67, 56, 202, 0.3)',
+                                                                '0 0 15px rgba(67, 56, 202, 0.1)'
+                                                             ]
+                                                        } : {}}
+                                                        transition={status === 'running' ? {
+                                                            repeat: Infinity,
+                                                            duration: 2.5,
+                                                            ease: "easeInOut"
+                                                        } : {}}
                                                         className={`p-3 md:p-4 rounded-xl border backdrop-blur-xl transition-all duration-300 relative overflow-hidden flex items-start gap-3 w-full text-left ${
                                                             status === 'completed' ? 'bg-emerald-500/[0.02] border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.03)]' :
-                                                            status === 'running' ? 'bg-[#4338CA]/10 border-[#4338CA]/50 shadow-[0_0_20px_rgba(67,56,202,0.15)] scale-[1.01] z-10' :
+                                                            status === 'running' ? 'bg-[#4338CA]/10 z-10' :
                                                             status === 'failed' ? 'bg-rose-500/[0.03] border-rose-500/30' :
                                                             'bg-white/[0.01] border-white/5 opacity-40'
                                                         }`}
@@ -731,7 +856,10 @@ export default function MusicAutomationPage() {
                                 </div>
                             </div>
 
-                            <div className="h-48 md:h-64 rounded-xl border border-white/5 bg-black/60 p-4 font-mono text-[10px] leading-relaxed overflow-y-auto space-y-2 selection:bg-[#4338CA]/30">
+                            <div 
+                                ref={logsContainerRef}
+                                className="h-48 md:h-64 rounded-xl border border-white/5 bg-black/60 p-4 font-mono text-[10px] leading-relaxed overflow-y-auto space-y-2 selection:bg-[#4338CA]/30"
+                            >
                                 {activeJob && activeJob.logs.length > 0 ? (
                                     activeJob.logs.map((log, idx) => (
                                         <div key={idx} className="text-neutral-300 flex items-start gap-2">
@@ -742,7 +870,6 @@ export default function MusicAutomationPage() {
                                 ) : (
                                     <div className="text-neutral-600 italic">Waiting for incoming logs...</div>
                                 )}
-                                <div ref={logsEndRef} />
                             </div>
                         </div>
                     </div>

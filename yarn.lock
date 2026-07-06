@@ -136,6 +136,16 @@
     tough-cookie "^5.1.2"
     undici "^7.8.0"
 
+"@google/genai@^2.10.0":
+  version "2.10.0"
+  resolved "https://registry.npmjs.org/@google/genai/-/genai-2.10.0.tgz"
+  integrity sha512-e4cFxj3tiuMtsgOT4G9c1hXyGJhg7/Buj7VVeBacRY3fRtkRZZ59Q3nuVp2xbq8BGQXLXCDB253qMhklMOeUDg==
+  dependencies:
+    google-auth-library "^10.3.0"
+    p-retry "^4.6.2"
+    protobufjs "^7.5.4"
+    ws "^8.18.0"
+
 "@google/generative-ai@^0.24.1":
   version "0.24.1"
   resolved "https://registry.npmjs.org/@google/generative-ai/-/generative-ai-0.24.1.tgz"
@@ -438,6 +448,11 @@
   integrity sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==
   dependencies:
     undici-types ">=7.24.0 <7.24.7"
+
+"@types/retry@0.12.0":
+  version "0.12.0"
+  resolved "https://registry.npmjs.org/@types/retry/-/retry-0.12.0.tgz"
+  integrity sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==
 
 "@types/ws@^8.18.1", "@types/ws@^8.5.10", "@types/ws@^8.5.12":
   version "8.18.1"
@@ -1670,7 +1685,7 @@ glob@^10.3.7:
     package-json-from-dist "^1.0.0"
     path-scurry "^1.11.1"
 
-google-auth-library@^10.2.0:
+google-auth-library@^10.2.0, google-auth-library@^10.3.0:
   version "10.9.0"
   resolved "https://registry.npmjs.org/google-auth-library/-/google-auth-library-10.9.0.tgz"
   integrity sha512-xtvUqvINPhTaBm7nXqlYPcrMHJPm1lCNdSovxnKKhTm+4JsvQ+KGVYJViLoH9Yxu8w+T0Qv5HubzYT9BLrppJg==
@@ -2557,6 +2572,14 @@ p-queue@^9.0.0:
     eventemitter3 "^5.0.4"
     p-timeout "^7.0.0"
 
+p-retry@^4.6.2:
+  version "4.6.2"
+  resolved "https://registry.npmjs.org/p-retry/-/p-retry-4.6.2.tgz"
+  integrity sha512-312Id396EbJdvRONlngUx0NydfrIQ5lsYu0znKVUzVvArzEIt08V1qhtyESbGVd1FGX7UKtiFp5uwKZdM8wIuQ==
+  dependencies:
+    "@types/retry" "0.12.0"
+    retry "^0.13.1"
+
 p-timeout@^7.0.0:
   version "7.0.1"
   resolved "https://registry.npmjs.org/p-timeout/-/p-timeout-7.0.1.tgz"
@@ -2803,7 +2826,7 @@ promise-retry@^2.0.1:
     err-code "^2.0.2"
     retry "^0.12.0"
 
-protobufjs@^7.5.5, protobufjs@^7.5.6:
+protobufjs@^7.5.4, protobufjs@^7.5.5, protobufjs@^7.5.6:
   version "7.6.1"
   resolved "https://registry.npmjs.org/protobufjs/-/protobufjs-7.6.1.tgz"
   integrity sha512-4K0myLaWL5EteuSAro91EGFgcfVgxb64Jx+7oDAY6GOkXD4M69yuSEljNcInGVCA5sOPxmZ/EqDLj2x0Q0+Ygg==
@@ -2988,6 +3011,11 @@ retry@^0.12.0:
   version "0.12.0"
   resolved "https://registry.npmjs.org/retry/-/retry-0.12.0.tgz"
   integrity sha512-9LkiTwjUh6rT555DtE9rTX+BKByPfrMzEAtnlEtdEwr3Nkffwiihqe2bWADg+OQRjt9gl6ICdmB/ZFDCGAtSow==
+
+retry@^0.13.1:
+  version "0.13.1"
+  resolved "https://registry.npmjs.org/retry/-/retry-0.13.1.tgz"
+  integrity sha512-XQBQ3I8W1Cge0Seh+6gjj03LbmRFWuoszgK9ooCpwYIrhhoO80pfq4cUkU5DkknwfOfFteRwlZ56PYOGYyFWdg==
 
 rimraf@^5.0.1:
   version "5.0.10"
