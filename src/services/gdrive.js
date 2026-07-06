@@ -70,7 +70,8 @@ export async function uploadToDrive(filePath, fileName, mimeType = 'video/mp4') 
         const response = await drive.files.create({
             requestBody: fileMetadata,
             media: media,
-            fields: 'id, name, webViewLink'
+            fields: 'id, name, webViewLink',
+            supportsAllDrives: true
         })
 
         const fileId = response.data.id
@@ -83,7 +84,8 @@ export async function uploadToDrive(filePath, fileName, mimeType = 'video/mp4') 
                 requestBody: {
                     role: 'reader',
                     type: 'anyone'
-                }
+                },
+                supportsAllDrives: true
             })
             logger.info(`[GDrive] Permissions updated successfully to public link reader.`)
         } catch (permErr) {
@@ -93,7 +95,8 @@ export async function uploadToDrive(filePath, fileName, mimeType = 'video/mp4') 
         // Fetch webViewLink to return
         const fileInfo = await drive.files.get({
             fileId: fileId,
-            fields: 'webViewLink'
+            fields: 'webViewLink',
+            supportsAllDrives: true
         })
 
         return fileInfo.data.webViewLink

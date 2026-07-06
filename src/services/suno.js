@@ -640,29 +640,29 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
 
             if (videoBackgroundExists) {
                 const bannerOverlayPath = path.join(tempDir, 'banner_overlay.png')
-                const bannerOverlayBuffer = await createBannerOverlay(1280, 720, videoTitle)
+                const bannerOverlayBuffer = await createBannerOverlay(1920, 1080, videoTitle)
                 if (bannerOverlayBuffer) {
                     fs.writeFileSync(bannerOverlayPath, bannerOverlayBuffer)
                 }
                 const bannerExists = fs.existsSync(bannerOverlayPath)
 
                 if (overlayExists && bannerExists) {
-                    updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + partikel + banner overlay')
-                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -stream_loop -1 -i "${overlayPath}" -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1280:720,setsar=1[v0];[1:v]scale=1280:720,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.4[v2];[v2][2:v]overlay=0:0[outv]" -map "[outv]" -map 3:a -c:v libx264 -preset veryfast -c:a aac -shortest "${outputPath}"`
+                    updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + partikel + banner overlay (1080p60)')
+                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -stream_loop -1 -i "${overlayPath}" -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1[v0];[1:v]scale=1920:1080,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.4[v2];[v2][2:v]overlay=0:0[outv]" -map "[outv]" -map 3:a -c:v libx264 -r 60 -preset veryfast -c:a aac -shortest "${outputPath}"`
                 } else if (bannerExists) {
-                    updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + banner overlay')
-                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1280:720,setsar=1[v0];[v0][1:v]overlay=0:0[outv]" -map "[outv]" -map 2:a -c:v libx264 -preset veryfast -c:a aac -shortest "${outputPath}"`
+                    updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + banner overlay (1080p60)')
+                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1[v0];[v0][1:v]overlay=0:0[outv]" -map "[outv]" -map 2:a -c:v libx264 -r 60 -preset veryfast -c:a aac -shortest "${outputPath}"`
                 } else {
-                    updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background saja')
-                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -i "${audioPath}" -vf "scale=1280:720,setsar=1" -c:v libx264 -preset veryfast -c:a aac -shortest "${outputPath}"`
+                    updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background saja (1080p60)')
+                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -i "${audioPath}" -vf "scale=1920:1080,setsar=1" -c:v libx264 -r 60 -preset veryfast -c:a aac -shortest "${outputPath}"`
                 }
             } else {
                 if (overlayExists) {
-                    updateJob('ffmpeg', 75, '✅ [FFmpeg] partikel_api.mp4 ditemukan → menggunakan blend filter (16:9) static')
-                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -stream_loop -1 -i "${overlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v0];[1:v]scale=1280:720,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.7[outv]" -map "[outv]" -map 2:a -c:v libx264 -preset veryfast -c:a aac -shortest "${outputPath}"`
+                    updateJob('ffmpeg', 75, '✅ [FFmpeg] partikel_api.mp4 ditemukan → menggunakan blend filter (16:9) static (1080p60)')
+                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -stream_loop -1 -i "${overlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0];[1:v]scale=1920:1080,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.7[outv]" -map "[outv]" -map 2:a -c:v libx264 -r 60 -preset veryfast -c:a aac -shortest "${outputPath}"`
                 } else {
-                    updateJob('ffmpeg', 75, '⚠️ [FFmpeg] partikel_api.mp4 tidak ada → rendering video statis (16:9) static')
-                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -i "${audioPath}" -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2" -c:v libx264 -preset veryfast -tune stillimage -c:a aac -shortest "${outputPath}"`
+                    updateJob('ffmpeg', 75, '⚠️ [FFmpeg] partikel_api.mp4 tidak ada → rendering video statis (16:9) static (1080p60)')
+                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -i "${audioPath}" -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2" -c:v libx264 -r 60 -preset veryfast -tune stillimage -c:a aac -shortest "${outputPath}"`
                 }
             }
             updateJob('ffmpeg', 76, `🔧 [FFmpeg] CMD: ${ffmpegCmd.slice(0, 200)}...`)
