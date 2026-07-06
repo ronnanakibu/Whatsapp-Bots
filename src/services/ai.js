@@ -959,6 +959,11 @@ async function generateVideoFromImage(imagePath, motionPrompt) {
             
             const videoUrl = candidate.extractUrl(result)
             if (!videoUrl) {
+                if (result?.data?.[0] && typeof result.data[0] === 'string' && result.data[0].includes('status-error')) {
+                    const match = result.data[0].match(/<div>(.*?)<\/div>/)
+                    const details = match ? match[1] : 'Space generation failed'
+                    throw new Error(`${candidate.name} failed: ${details}`)
+                }
                 throw new Error(`${candidate.name} prediction completed but no valid video URL extracted`)
             }
             
@@ -970,7 +975,12 @@ async function generateVideoFromImage(imagePath, motionPrompt) {
             const arrayBuffer = await response.arrayBuffer()
             return Buffer.from(arrayBuffer)
         } catch (err) {
-            logger.warn(`[AI/VideoGen] Candidate ${candidate.name} failed: ${err.message}`)
+            let msg = err.message
+            if (msg.includes('ZeroGPU quota exceeded')) {
+                logger.warn(`[AI/VideoGen] ⚠️ Hugging Face ZeroGPU quota exceeded for ${candidate.name}! Please update HF_TOKEN in .env with a token that has more quota.`)
+            } else {
+                logger.warn(`[AI/VideoGen] Candidate ${candidate.name} failed: ${msg}`)
+            }
             lastError = err
         }
     }

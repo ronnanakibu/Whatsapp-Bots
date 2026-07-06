@@ -6,19 +6,19 @@ import { logger } from '../utils/logger.js'
 
 export const commands = new Map()
 
+let loadedCount = 0
+
 export async function loadCommands(dir = './src/commands') {
     if (dir === './src/commands') {
         commands.clear() // Bersihkan map sebelum load ulang saat reconnect
+        loadedCount = 0
     }
     
-    console.log(`🔍 [Debug Loader] Sedang memindai direktori: ${dir}`)
     let entries = []
-
     try {
         entries = readdirSync(dir)
-        console.log(`📁 [Debug Loader] Isi folder ${dir}:`, entries)
     } catch (err) {
-        console.error(`❌ [Debug Loader] Gagal membaca folder ${dir}:`, err.message)
+        process.stdout.write(`\n❌ [Loader Error] Gagal membaca folder ${dir}: ${err.message}\n`)
         return
     }
 
@@ -34,9 +34,6 @@ export async function loadCommands(dir = './src/commands') {
         if (!entry.endsWith('.js')) continue
 
         try {
-            // ✅ FIX: pakai path absolute + file:// URL
-            // Sebelumnya: import(`../../${fullPath}`) → path relatif kacau
-            // Sekarang: import(fileURL) → selalu resolve dari root project
             const absolutePath = path.resolve(fullPath)
             const fileURL = pathToFileURL(absolutePath).href
 
@@ -44,35 +41,41 @@ export async function loadCommands(dir = './src/commands') {
             const cmd = mod.default
 
             if (!cmd) {
-                console.log(`⚠️ [Debug Loader] Berkas ${entry} tidak memiliki 'export default'!`)
+                process.stdout.write(`\n⚠️  [Loader Warning] Berkas ${entry} tidak memiliki 'export default'!\n`)
                 continue
             }
             if (!cmd.name) {
-                console.log(`⚠️ [Debug Loader] Berkas ${entry} kehilangan properti 'name'!`)
+                process.stdout.write(`\n⚠️  [Loader Warning] Berkas ${entry} kehilangan properti 'name'!\n`)
                 continue
             }
 
             if (commands.has(cmd.name)) {
                 const existing = commands.get(cmd.name)
-                console.warn(`⚠️ [Debug Loader] CONFLICT: Nama command '${cmd.name}' di ${entry} menimpa command/alias yang sudah terdaftar (${existing.name} [kategori: ${existing.category}])!`)
+                process.stdout.write(`\n⚠️  [Loader Conflict] Nama command '${cmd.name}' di ${entry} menimpa command/alias yang sudah terdaftar (${existing.name} [kategori: ${existing.category}])!\n`)
             }
             commands.set(cmd.name, cmd)
+            loadedCount++
 
             if (cmd.aliases) {
                 for (const alias of cmd.aliases) {
                     if (commands.has(alias)) {
                         const existing = commands.get(alias)
-                        console.warn(`⚠️ [Debug Loader] CONFLICT: Alias '${alias}' di ${entry} menimpa command/alias yang sudah terdaftar (${existing.name} [kategori: ${existing.category}])!`)
+                        process.stdout.write(`\n⚠️  [Loader Conflict] Alias '${alias}' di ${entry} menimpa command/alias yang sudah terdaftar (${existing.name} [kategori: ${existing.category}])!\n`)
                     }
                     commands.set(alias, cmd)
+                    loadedCount++
                 }
             }
 
-            console.log(`✅ [Debug Loader] SUKSES memuat command: ${cmd.name} (Aliases: ${cmd.aliases?.join(', ') || 'tidak ada'})`)
+            process.stdout.write(`\r\x1b[K🔍 [Loader] Memuat command: ${cmd.name}...`)
             logger.info(`Loaded command: ${cmd.name} [${cmd.category}]`)
 
         } catch (importErr) {
-            console.error(`❌ [Debug Loader] Gagal import ${fullPath}:`, importErr.message)
+            process.stdout.write(`\n❌ [Loader Error] Gagal import ${fullPath}: ${importErr.message}\n`)
         }
+    }
+
+    if (dir === './src/commands') {
+        process.stdout.write(`\r\x1b[K✅ [Loader] Berhasil memuat ${loadedCount} command & alias ke dalam registry!\n`)
     }
 }
