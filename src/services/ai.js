@@ -778,39 +778,197 @@ async function generateVideoFromImage(imagePath, motionPrompt) {
     const hfToken = process.env.HF_TOKEN ? process.env.HF_TOKEN.replace(/^["']|["']$/g, '') : null;
     const clientOptions = hfToken ? { hf_token: hfToken } : {};
     
-    const spaceUrl = "https://dream2589632147-dream-wan2-2-faster-pro.hf.space"
-    logger.info(`[AI/VideoGen] Connecting to video generation space: ${spaceUrl}...`)
-    const app = await Client.connect(spaceUrl, clientOptions)
-    
     const imageBuffer = fs.readFileSync(imagePath)
     const fileObj = new Blob([imageBuffer], { type: 'image/png' })
-    
     const finalPrompt = motionPrompt || "make this image come alive with slow cinematic motion, 4k"
-    logger.info(`[AI/VideoGen] Triggering video generation with motion prompt: "${finalPrompt}"`)
-    
-    const result = await app.predict("/generate_video", [
-        fileObj,       // 📸 Upload Image
-        finalPrompt,   // ✍️ Motion Prompt
-        6,             // 🔁 Inference Steps
-        "static, blurry, low quality, watermark, text, deformed, ugly", // 🚫 Negative Prompt
-        3.5,           // ⏱️ Duration (seconds)
-        1.0,           // 🎯 Guidance Scale 1
-        1.0,           // 🎯 Guidance Scale 2
-        Math.floor(Math.random() * 100000), // 🌱 Seed
-        true           // 🎲 Randomize Seed
-    ])
-    
-    if (!result.data || !result.data[0] || !result.data[0].url) {
-        throw new Error("Video generation space did not return a valid video URL")
+
+    const candidates = [
+        {
+            name: "Wan 2.2 Lightning FP8 (AOTI Faster)",
+            url: "https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",
+            endpoint: "/generate_video",
+            buildArgs: (file, prompt) => [
+                file,
+                prompt,
+                6, // Steps
+                "static, blurry, low quality, watermark, text, deformed, ugly",
+                3.5, // Duration
+                1.0, // Guidance scale high
+                1.0, // Guidance scale low
+                Math.floor(Math.random() * 100000),
+                true
+            ],
+            extractUrl: (result) => result.data?.[0]?.url
+        },
+        {
+            name: "Wan 2.2 Faster Pro",
+            url: "https://dream2589632147-dream-wan2-2-faster-pro.hf.space",
+            endpoint: "/generate_video",
+            buildArgs: (file, prompt) => [
+                file,
+                prompt,
+                6, // Steps
+                "static, blurry, low quality, watermark, text, deformed, ugly",
+                3.5, // Duration
+                1.0, // Guidance scale high
+                1.0, // Guidance scale low
+                Math.floor(Math.random() * 100000),
+                true
+            ],
+            extractUrl: (result) => result.data?.[0]?.url
+        },
+        {
+            name: "Jasfn LTX-Video 2.3",
+            url: "https://jasfn-ltx-2-3-10eros.hf.space",
+            endpoint: "generate",
+            buildArgs: (file, prompt) => [
+                file, // ID 5
+                prompt, // ID 10
+                "captions, music, transition, VR, bad quality, subtitles, text, watermark, overlay effects, cartoon, childish, ugly, text, blur, logo, static, low quality, noise, mutant, horror, film grain", // ID 16
+                "tuned", // ID 12
+                4, // ID 17
+                1120, // ID 33
+                1344, // ID 34
+                "anchor only", // ID 37
+                null, // ID 38
+                0.9, // ID 39
+                0.15, // ID 40
+                0.08, // ID 41
+                0.82, // ID 42
+                -1, // ID 95
+                true, // ID 96
+                0, // ID 92
+                0.15, // ID 19
+                0.15, // ID 20
+                0.5, // ID 21
+                0.6, // ID 22
+                0, // ID 23
+                0, // ID 24
+                0.3, // ID 25
+                0.8, // ID 26
+                0, // ID 27
+                0, // ID 28
+                0, // ID 29
+                0, // ID 30
+                0.15, // ID 64
+                0.15, // ID 65
+                0.5, // ID 66
+                0.6, // ID 67
+                0, // ID 68
+                0, // ID 69
+                0.3, // ID 70
+                0.8, // ID 71
+                0, // ID 72
+                0, // ID 73
+                0, // ID 74
+                0, // ID 75
+                0, // ID 85
+                400, // ID 86
+                0.3, // ID 87
+                0.3, // ID 84
+                "0.4824, 0.2412, 0.0", // ID 88
+                "single image (i2v)", // ID 4
+                null, // ID 6
+                null, // ID 7
+                null, // ID 8
+                null, // ID 9
+                41, // ID 79
+                1, // ID 80
+                0.7, // ID 81
+                false, // ID 13
+                null, // ID 14
+                false, // ID 48
+                null, // ID 49
+                2, // ID 50
+                8, // ID 51
+                true, // ID 52
+                0.25, // ID 53
+                false, // ID 45
+                1, // ID 46
+                false, // ID 57
+                null, // ID 61
+                3, // ID 58
+                false, // ID 59
+                true // ID 60
+            ],
+            extractUrl: (result) => {
+                const data = result?.data
+                if (Array.isArray(data)) {
+                    for (const item of data) {
+                        if (item?.video?.url) return item.video.url
+                        if (item?.url && item.url.includes('.mp4')) return item.url
+                        if (typeof item === 'string' && item.includes('.mp4')) return item
+                    }
+                }
+                return null
+            }
+        },
+        {
+            name: "Techfreakworm LTX-Video 2.3 Studio",
+            url: "https://techfreakworm-ltx2-3-studio.hf.space",
+            endpoint: "handler_1",
+            buildArgs: (file, prompt) => [
+                prompt, // ID 63
+                "Balanced", // ID 65
+                512, // ID 67
+                768, // ID 68
+                3, // ID 71
+                24, // ID 72
+                42, // ID 76
+                true, // ID 77
+                file, // ID 64
+                "static, blurry, text, logo", // ID 99
+                "none", // ID 82
+                0.8, // ID 83
+                false, // ID 87
+                0.5, // ID 88
+                "union", // ID 92
+                0.5, // ID 93
+                false // ID 97
+            ],
+            extractUrl: (result) => {
+                const data = result?.data
+                if (Array.isArray(data)) {
+                    for (const item of data) {
+                        if (item?.video?.url) return item.video.url
+                        if (item?.url && item.url.includes('.mp4')) return item.url
+                        if (typeof item === 'string' && item.includes('.mp4')) return item
+                    }
+                }
+                return null
+            }
+        }
+    ]
+
+    let lastError = null
+    for (const candidate of candidates) {
+        try {
+            logger.info(`[AI/VideoGen] Trying candidate: ${candidate.name} (${candidate.url})...`)
+            const app = await Client.connect(candidate.url, clientOptions)
+            
+            const args = candidate.buildArgs(fileObj, finalPrompt)
+            logger.info(`[AI/VideoGen] Triggering prediction on ${candidate.name} endpoint: ${candidate.endpoint}`)
+            const result = await app.predict(candidate.endpoint, args)
+            
+            const videoUrl = candidate.extractUrl(result)
+            if (!videoUrl) {
+                throw new Error(`${candidate.name} prediction completed but no valid video URL extracted`)
+            }
+            
+            logger.info(`[AI/VideoGen] Successfully generated video URL: ${videoUrl} from ${candidate.name}`)
+            logger.info(`[AI/VideoGen] Downloading video from URL...`)
+            const response = await fetch(videoUrl)
+            if (!response.ok) throw new Error(`Failed to download generated video from ${videoUrl}`)
+            
+            const arrayBuffer = await response.arrayBuffer()
+            return Buffer.from(arrayBuffer)
+        } catch (err) {
+            logger.warn(`[AI/VideoGen] Candidate ${candidate.name} failed: ${err.message}`)
+            lastError = err
+        }
     }
-    
-    const videoUrl = result.data[0].url
-    logger.info(`[AI/VideoGen] Downloading video from URL: ${videoUrl}`)
-    const response = await fetch(videoUrl)
-    if (!response.ok) throw new Error(`Failed to download generated video from ${videoUrl}`)
-    
-    const arrayBuffer = await response.arrayBuffer()
-    return Buffer.from(arrayBuffer)
+
+    throw lastError || new Error("All video generation candidates failed to generate a video")
 }
 
 async function geminiFactCheck(query) {
