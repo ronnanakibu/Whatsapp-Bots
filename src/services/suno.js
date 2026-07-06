@@ -235,13 +235,13 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             }
 
             // ─────────────────────────────────────────────
-            // 2. PARALLEL: SUNO GENERATION + GEMINI METADATA
+            // 2. AUDIO GENERATION
             // ─────────────────────────────────────────────
-            updateJob('suno_gen', 18, '━━━ [PARALLEL START] Meluncurkan Audio Gen + Gemini secara bersamaan ━━━')
+            updateJob('suno_gen', 18, '━━━ [STEP 2] Audio Generation ━━━')
 
             let audioUrl = null
 
-            const sunoPromise = (async () => {
+            await (async () => {
                 if (model === 'manual') {
                     updateJob('suno_gen', 50, '🎵 [Manual] Menggunakan MP3 hasil upload user...')
                     if (!manualAudioPath) throw new Error('Audio file not provided for manual mode.')
@@ -445,11 +445,12 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             })()
 
             // ─────────────────────────────────────────────
-            // GEMINI METADATA (parallel dengan Suno)
+            // 2b. GEMINI METADATA GENERATION
             // ─────────────────────────────────────────────
-            const geminiPromise = (async () => {
-                updateJob('gemini_meta', 20, '🧠 [Gemini] Memulai generasi metadata YouTube...')
-                updateJob('gemini_meta', 21, `📝 [Gemini] Input prompt untuk metadata: "${finalPrompt.slice(0, 100)}..."`)
+            updateJob('gemini_meta', 51, '━━━ [STEP 2b] Gemini Metadata Generation ━━━')
+            await (async () => {
+                updateJob('gemini_meta', 52, '🧠 [Gemini] Memulai generasi metadata YouTube...')
+                updateJob('gemini_meta', 53, `📝 [Gemini] Input prompt untuk metadata: "${finalPrompt.slice(0, 100)}..."`)
                 try {
                     const metadata = await aiService.generateYoutubeMetadata(finalPrompt)
                     if (metadata && metadata.title) {
@@ -458,23 +459,18 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         youtubeTags = metadata.tags || youtubeTags
                         imgGenPrompt = metadata.imagePrompt || finalPrompt
                         videoMotionPrompt = metadata.videoMotionPrompt || videoMotionPrompt
-                        updateJob('gemini_meta', 35, `✅ [Gemini] Metadata selesai!`)
-                        updateJob('gemini_meta', 36, `📌 Judul: "${videoTitle}"`)
-                        updateJob('gemini_meta', 37, `🏷️ Tags: [${youtubeTags.slice(0, 5).join(', ')}...]`)
-                        updateJob('gemini_meta', 38, `🖼️ Image Prompt: "${imgGenPrompt.slice(0, 100)}..."`)
-                        updateJob('gemini_meta', 39, `🎥 Motion Prompt: "${videoMotionPrompt.slice(0, 100)}..."`)
+                        updateJob('gemini_meta', 53, `✅ [Gemini] Metadata selesai!`)
+                        updateJob('gemini_meta', 53, `📌 Judul: "${videoTitle}"`)
+                        updateJob('gemini_meta', 53, `🏷️ Tags: [${youtubeTags.slice(0, 5).join(', ')}...]`)
+                        updateJob('gemini_meta', 53, `🖼️ Image Prompt: "${imgGenPrompt.slice(0, 100)}..."`)
+                        updateJob('gemini_meta', 53, `🎥 Motion Prompt: "${videoMotionPrompt.slice(0, 100)}..."`)
                     } else {
-                        updateJob('gemini_meta', 35, `⚠️ [Gemini] Response tidak valid, menggunakan fallback metadata.`)
+                        updateJob('gemini_meta', 53, `⚠️ [Gemini] Response tidak valid, menggunakan fallback metadata.`)
                     }
                 } catch (err) {
-                    updateJob('gemini_meta', 35, `⚠️ [Gemini] Gagal (${err.message}). Menggunakan fallback metadata.`)
+                    updateJob('gemini_meta', 53, `⚠️ [Gemini] Gagal (${err.message}). Menggunakan fallback metadata.`)
                 }
             })()
-
-            // Wait for both
-            updateJob('suno_gen', 19, '⏳ Menunggu Suno + Gemini selesai (parallel)...')
-            await Promise.all([sunoPromise, geminiPromise])
-            updateJob('suno_gen', 52, '✅ [PARALLEL] Suno + Gemini keduanya selesai!')
 
             // ─────────────────────────────────────────────
             // 3. GENERATE THUMBNAIL IMAGE
