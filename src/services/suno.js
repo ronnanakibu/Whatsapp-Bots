@@ -27,6 +27,7 @@ function escapeXml(unsafe) {
             default: return c;
         }
     });
+}
 function getProgressBar(pct) {
     const width = 12
     const filledCount = Math.round((pct / 100) * width)
