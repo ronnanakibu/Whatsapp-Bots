@@ -213,10 +213,16 @@ async function sendMedia(sock, chatId, quotedMsg, result) {
         }, baseOpts)
 
     } else if (type === 'audio' || mimeType?.startsWith('audio/')) {
+        let docMime = 'audio/mp3'
+        const lowerExt = ext?.toLowerCase()
+        if (lowerExt === 'wav') docMime = 'audio/wav'
+        else if (lowerExt === 'ogg') docMime = 'audio/ogg'
+        else if (lowerExt === 'm4a') docMime = 'audio/m4a'
+
         await sock.sendMessage(chatId, {
             document: buffer,
             caption,
-            mimetype: mimeType ?? 'audio/mpeg',
+            mimetype: docMime,
             fileName: result.filename,
         }, baseOpts)
 

@@ -96,7 +96,7 @@ export async function downloadYtdlp(url, options = {}) {
                 const ext = (rawExt && !tempExts.includes(rawExt))
                     ? rawExt
                     : (format === 'audio' ? 'mp3' : 'mp4')
-                const mimeType = format === 'audio' ? 'audio/mpeg' : 'video/mp4'
+                const mimeType = format === 'audio' ? 'audio/mp3' : 'video/mp4'
                 
                 let caption = format === 'video' ? `🎬 *${title}*` : `🎵 *${title}*`
                 if (metadata.duration_string) caption += `\n⏱️ ${metadata.duration_string}`
@@ -182,7 +182,7 @@ async function downloadViaHF(url, format) {
         })
 
         const ext = format === 'audio' ? 'mp3' : 'mp4'
-        const mimeType = format === 'audio' ? 'audio/mpeg' : 'video/mp4'
+        const mimeType = format === 'audio' ? 'audio/mp3' : 'video/mp4'
         
         // Coba ambil judul dari custom header
         const rawTitle = res.headers?.['x-title'] || 'Media'
