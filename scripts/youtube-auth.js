@@ -23,7 +23,9 @@ const oauth2Client = new google.auth.OAuth2(
 
 const scopes = [
     'https://www.googleapis.com/auth/youtube.upload',
-    'https://www.googleapis.com/auth/youtube.readonly'
+    'https://www.googleapis.com/auth/youtube.readonly',
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive'
 ]
 
 const authUrl = oauth2Client.generateAuthUrl({
