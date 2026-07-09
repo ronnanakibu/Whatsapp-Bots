@@ -105,7 +105,7 @@ function getTableNames() {
     }
 }
 
-function resolveSongId(songId) {
+export function resolveSongId(songId) {
     if (!songId || !db) return songId
     try {
         const row = db.prepare('SELECT song_id FROM songs WHERE song_id = ? OR song_id = ? OR song_id = ?').get(
@@ -257,7 +257,7 @@ function addToHistory(track) {
 // SSE CLIENT MANAGEMENT
 const sseClients = new Set()
 
-function broadcastSSE(event, data, correlationId = null) {
+export function broadcastSSE(event, data, correlationId = null) {
     const eventId = sseEventCounter++
     const hasCorrelation = ['engagement:reaction', 'queue:update', 'engagement:favorite'].includes(event)
     const activeCorrelationId = hasCorrelation ? correlationId : null
