@@ -431,9 +431,9 @@ async function generateImage(rawPrompt, width = 1024, height = 1024) {
 
     // 2. GRADIO SPACE IMAGES (NEW)
     const spaces = [
+        { url: "black-forest-labs/FLUX.1-schnell", api: "infer", name: "FLUX.1-Schnell" },
         { url: "https://mrfakename-z-image-turbo.hf.space", api: "generate_image", name: "Z-Image-Turbo" },
-        { url: "https://krea-krea-2.hf.space", api: "generate", name: "Krea-2" },
-        { url: "https://m3st3rj4k3l-flux-2-klein-multi-lora.hf.space", api: "infer", name: "Klein-Multi-LoRA" }
+        { url: "https://krea-krea-2.hf.space", api: "generate", name: "Krea-2" }
     ]
 
     for (const space of spaces) {

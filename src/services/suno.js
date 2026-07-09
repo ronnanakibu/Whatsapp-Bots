@@ -579,8 +579,22 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             try {
                 const videoBuffer = await aiService.generateVideoFromImage(path.join(tempDir, 'plain_thumbnail.png'), videoMotionPrompt)
                 fs.writeFileSync(videoBackgroundPath, videoBuffer)
+                
+                // Membuat ping-pong loop agar transisi video seamless ketika di-loop
+                try {
+                    updateJob('img_gen', 62, `🔄 [VideoGen] Membuat ping-pong seamless loop background...`)
+                    const pingpongPath = path.join(tempDir, 'pingpong_background.mp4')
+                    execSync(`ffmpeg -y -i "${videoBackgroundPath}" -filter_complex "[0:v]reverse[r];[0:v][r]concat=n=2:v=1[outv]" -map "[outv]" -c:v libx264 -preset ultrafast "${pingpongPath}"`, { stdio: 'ignore' })
+                    if (fs.existsSync(pingpongPath)) {
+                        fs.copyFileSync(pingpongPath, videoBackgroundPath)
+                        try { fs.unlinkSync(pingpongPath) } catch(_) {}
+                    }
+                } catch (loopErr) {
+                    logger.warn(`[VideoGen] Gagal membuat ping-pong loop: ${loopErr.message}`)
+                }
+                
                 videoBackgroundExists = true
-                updateJob('img_gen', 62, `✅ [VideoGen] Video background berhasil dibuat!`)
+                updateJob('img_gen', 62, `✅ [VideoGen] Video background (seamless ping-pong) berhasil dibuat!`)
             } catch (videoErr) {
                 updateJob('img_gen', 62, `⚠️ [VideoGen] Gagal generate video: ${videoErr.message}. Fallback ke static image.`)
             }
