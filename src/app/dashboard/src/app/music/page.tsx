@@ -35,6 +35,21 @@ const NODES_CONFIG = [
     { id: 'youtube_upload', label: 'YouTube Cloud Upload', desc: 'Publish official music video to channel', model: 'YouTube Data API', icon: Youtube, color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' }
 ]
 
+const getApiHost = () => {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '')
+  }
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      const devHost = process.env.NEXT_PUBLIC_DEV_API_URL || 'http://localhost:25637'
+      return devHost.replace(/\/$/, '')
+    }
+    return origin
+  }
+  return 'http://localhost:25637'
+}
+
 export default function MusicAutomationPage() {
     const [isAuthenticated, setIsAuthenticated] = useState(false)
     const [isLoadingAuth, setIsLoadingAuth] = useState(true)
@@ -96,7 +111,7 @@ export default function MusicAutomationPage() {
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            const apiBase = window.location.origin.replace(':3001', ':3000')
+            const apiBase = getApiHost()
             const jsCode = `javascript:(function(){const c=document.cookie;fetch('${apiBase}/api/music/update-cookie', {method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer 6285172013920_2007'},body:JSON.stringify({cookie:c})}).then(r=>r.json()).then(d=>alert(d.success?'Suno Session Synced!':d.message)).catch(e=>alert('Error: '+e.message))})()`
             setBookmarkletUrl(jsCode)
             if (bookmarkletRef.current) {
@@ -127,7 +142,7 @@ export default function MusicAutomationPage() {
         }
         setIsSyncingCookie(true)
         try {
-            const apiBase = window.location.origin.replace(':3001', ':3000')
+            const apiBase = getApiHost()
             const res = await fetch(`${apiBase}/api/music/update-cookie`, {
                 method: 'POST',
                 headers: { 
@@ -156,7 +171,7 @@ export default function MusicAutomationPage() {
         }
         setIsSyncingTunnel(true)
         try {
-            const apiBase = window.location.origin.replace(':3001', ':3000')
+            const apiBase = getApiHost()
             const res = await fetch(`${apiBase}/api/music/update-tunnel`, {
                 method: 'POST',
                 headers: { 
@@ -274,7 +289,7 @@ export default function MusicAutomationPage() {
 
             try {
                 // Determine base URL dynamically (socket usually uses same host)
-                const apiBase = window.location.origin.replace(':3001', ':3000') // Adjust for express port
+                const apiBase = getApiHost()
                 const res = await fetch(`${apiBase}/api/music/manual-upload`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer 6285172013920_2007` },
