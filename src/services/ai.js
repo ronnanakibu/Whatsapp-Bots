@@ -53,7 +53,6 @@ const GROQ_MODELS = [
     'llama-3.3-70b-versatile',
     'llama-3.1-8b-instant',
     'gemma2-9b-it',
-    'mixtral-8x7b-32768',
 ]
 
 const GEMINI_MODELS = [
@@ -363,6 +362,76 @@ async function enhancePrompt(rawPrompt) {
         }
     }
     return rawPrompt // Fallback ke prompt asli
+}
+
+async function enhanceVideoPrompt(rawPrompt) {
+    const cleanPrompt = rawPrompt || "make this image come alive with slow cinematic motion"
+    const instructions = `
+        You are an expert cinematographer and AI video prompt engineer.
+        The user wants to generate a short animated video from a static image based on this theme: "${cleanPrompt}"
+        Write a highly detailed, descriptive, and visually rich image-to-video motion prompt in English.
+        
+        CRITICAL RULES:
+        1. Write exactly ONE continuous flowing paragraph (no bullet points, no lists).
+        2. Start directly with the visual action or movement (do NOT use intros like "in this video", "a video of", etc.).
+        3. Every sentence MUST describe a moving element (e.g. hair gently swaying, fabric fluttering, smoke rising, lights flickering, water flowing, dust particles dancing).
+        4. Explicitly mention at least one camera movement (e.g., "slow push-in", "slow zoom", "gentle handheld sway", "slow tracking shot").
+        5. Structure it chronologically, like a professional cinematographer's shot-list.
+        6. Do NOT describe static composition, static colors, or static objects unless they are actively moving.
+        7. Keep the entire prompt under 200 words.
+        8. Return ONLY the prompt text, no intro, no explanation, no quotes.
+    `
+    try {
+        logger.info(`[AI] Enhancing video prompt via Gemini...`)
+        const enhancerModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+        const enhanceRes = await enhancerModel.generateContent(instructions)
+        const enhanced = enhanceRes.response.text()?.trim()
+        if (enhanced && enhanced.length > 10) {
+            logger.info(`[AI] Enhanced Video Prompt via Gemini: ${enhanced.slice(0, 120)}...`)
+            return enhanced
+        }
+    } catch (e) {
+        logger.warn(`[AI] Gemini failed to enhance video prompt: ${e.message}. Trying Groq fallback...`)
+        
+        // Try Groq fallback
+        try {
+            const groqModel = getAvailableModel(GROQ_MODELS)
+            const res = await groq.chat.completions.create({
+                model: groqModel,
+                messages: [{ role: 'user', content: instructions }],
+                temperature: 0.7,
+            })
+            const reply = res.choices[0]?.message?.content?.trim()
+            if (reply && reply.length > 10) {
+                logger.info(`[AI] Enhanced Video Prompt via Groq: ${reply.slice(0, 120)}...`)
+                return reply
+            }
+        } catch (groqErr) {
+            logger.warn(`[AI] Groq video fallback failed: ${groqErr.message}`)
+        }
+
+        // Try NVIDIA fallback
+        if (nvidiaClient) {
+            try {
+                const nvidiaModel = getAvailableModel(NVIDIA_MODELS)
+                const res = await nvidiaClient.chat.completions.create({
+                    model: nvidiaModel,
+                    messages: [{ role: 'user', content: instructions }],
+                    temperature: 0.7,
+                })
+                const reply = res.choices[0]?.message?.content?.trim()
+                if (reply && reply.length > 10) {
+                    logger.info(`[AI] Enhanced Video Prompt via NVIDIA: ${reply.slice(0, 120)}...`)
+                    return reply
+                }
+            } catch (nvErr) {
+                logger.warn(`[AI] NVIDIA video fallback failed: ${nvErr.message}`)
+            }
+        }
+    }
+    
+    // Fallback terakhir berupa template manual yang eksplisit soal motion
+    return `A slow cinematic camera push-in on the subject, showing subtle realistic movement, gentle wind blowing, dust particles floating, soft ambient lighting shifts, high detail.`
 }
 
 // ─────────────────────────────────────────────
@@ -781,9 +850,27 @@ async function generateVideoFromImage(imagePath, motionPrompt) {
     
     const imageBuffer = fs.readFileSync(imagePath)
     const fileObj = new Blob([imageBuffer], { type: 'image/png' })
-    const finalPrompt = motionPrompt || "make this image come alive with slow cinematic motion, 4k"
+    const finalPrompt = await enhanceVideoPrompt(motionPrompt)
 
     const candidates = [
+        {
+            name: "RonnBot Own LTX-Video",
+            url: "https://ronnlbtrn-ronnbot-ltxvideo.hf.space",
+            endpoint: "/generate_video",
+            buildArgs: (file, prompt) => [
+                file,
+                prompt,
+                73,   // ~3 detik @ 24fps, pola valid LTX-Video (8n+1)
+                30,   // inference steps default
+            ],
+            extractUrl: (result) => {
+                const item = result?.data?.[0]
+                if (typeof item === 'string') return item
+                if (item?.video?.url) return item.video.url
+                if (item?.url) return item.url
+                return null
+            }
+        },
         {
             name: "Wan 2.2 Lightning FP8 (AOTI Faster)",
             url: "https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",
@@ -1094,6 +1181,7 @@ export const aiService = {
     generateImage,
     generateVideoFromImage,
     enhancePrompt,
+    enhanceVideoPrompt,
     generateYoutubeMetadata,
     debugCode,  // sudah handle chatId
     getDailyFact,
