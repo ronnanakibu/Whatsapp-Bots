@@ -492,7 +492,7 @@ export default function MusicAutomationPage() {
                 .btn-green:disabled { opacity: 0.4; cursor: not-allowed; }
             `}</style>
 
-            <div className="min-h-screen w-full bg-[#09090B] text-[#F4F4F5] overflow-x-hidden pb-16 select-none">
+            <div className="h-screen w-full bg-[#09090B] text-[#F4F4F5] overflow-x-hidden overflow-y-auto pb-16 select-none">
 
                 {/* ── Static ambient blobs (GPU-only, fixed) ── */}
                 <div aria-hidden className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
