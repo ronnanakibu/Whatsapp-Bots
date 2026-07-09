@@ -91,7 +91,11 @@ export async function downloadYtdlp(url, options = {}) {
                 cleanupTempFiles(sessionId)
 
                 const title = metadata.title || 'Video'
-                const ext = path.extname(downloadedFile).slice(1) || (format === 'audio' ? 'mp3' : 'mp4')
+                const rawExt = path.extname(downloadedFile).slice(1)
+                const tempExts = ['ffmpeg', 'ytdl', 'part', 'temp', 'tmp']
+                const ext = (rawExt && !tempExts.includes(rawExt))
+                    ? rawExt
+                    : (format === 'audio' ? 'mp3' : 'mp4')
                 const mimeType = format === 'audio' ? 'audio/mpeg' : 'video/mp4'
                 
                 let caption = format === 'video' ? `🎬 *${title}*` : `🎵 *${title}*`
@@ -132,7 +136,15 @@ export async function downloadYtdlp(url, options = {}) {
 function findDownloadedFile(sessionId) {
     if (!fs.existsSync(TEMP_DIR)) return null
     const files = fs.readdirSync(TEMP_DIR)
-    const match = files.find(f => f.startsWith(sessionId) && !f.endsWith('.info.json'))
+    const match = files.find(f => 
+        f.startsWith(sessionId) && 
+        !f.endsWith('.info.json') && 
+        !f.endsWith('.ytdl') && 
+        !f.endsWith('.part') && 
+        !f.endsWith('.ffmpeg') && 
+        !f.endsWith('.temp') && 
+        !f.endsWith('.tmp')
+    )
     if (match) return path.join(TEMP_DIR, match)
     return null
 }

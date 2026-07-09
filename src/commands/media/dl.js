@@ -214,11 +214,10 @@ async function sendMedia(sock, chatId, quotedMsg, result) {
 
     } else if (type === 'audio' || mimeType?.startsWith('audio/')) {
         await sock.sendMessage(chatId, {
-            audio: buffer,
+            document: buffer,
             caption,
             mimetype: mimeType ?? 'audio/mpeg',
             fileName: result.filename,
-            ptt: false, // false = audio file, bukan voice note
         }, baseOpts)
 
     } else if (type === 'image' || mimeType?.startsWith('image/')) {
