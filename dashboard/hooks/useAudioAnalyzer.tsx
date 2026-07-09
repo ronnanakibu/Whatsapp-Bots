@@ -3,7 +3,18 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 
 const getStreamUrl = () => {
-    return 'http://ap2.nzb.zelpstore.id:25637/stream'
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return `${process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '')}/stream`
+    }
+    if (typeof window !== 'undefined') {
+        const origin = window.location.origin
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            const devHost = process.env.NEXT_PUBLIC_DEV_API_URL || 'http://localhost:25637'
+            return `${devHost.replace(/\/$/, '')}/stream`
+        }
+        return `${origin}/stream`
+    }
+    return 'http://localhost:25637/stream'
 }
 
 const STREAM_URL = getStreamUrl()

@@ -61,8 +61,9 @@ export default {
 
             if (!notifiedUsers.has(sender)) {
                 notifiedUsers.add(sender)
-                const port = process.env.RADIO_PORT ?? '8080'
-                text += `\n\n🎧 *Dengarkan radio di sini:*\nap2.nzb.zelpstore.id:${port}/radio`
+                const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
+                const port = process.env.RADIO_PORT || '25637'
+                text += `\n\n🎧 *Dengarkan radio di sini:*\n${host}:${port}/radio`
             }
 
             await reply(text)
@@ -80,8 +81,9 @@ export default {
                 let linkMsg = ''
                 if (!notifiedUsers.has(sender)) {
                     notifiedUsers.add(sender)
-                    const port = process.env.RADIO_PORT ?? '8080'
-                    linkMsg = `\n\n🎧 *Dengarkan radio di sini:*\nap2.nzb.zelpstore.id:${port}/radio`
+                    const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
+                    const port = process.env.RADIO_PORT || '25637'
+                    linkMsg = `\n\n🎧 *Dengarkan radio di sini:*\n${host}:${port}/radio`
                 }
 
                 await reply(

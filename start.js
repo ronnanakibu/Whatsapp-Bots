@@ -548,7 +548,9 @@ async function printSummary() {
     console.log(`  Owner         : ${process.env.OWNER_NUMBER ?? 'not set'}`)
     console.log(`  Prefix        : ${process.env.BOT_PREFIX ?? '!'}`)
     console.log(`  Node version  : ${process.version}`)
-    console.log(`  Dashboard     : ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard`)
+    const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
+    const port = process.env.RADIO_PORT || '25637'
+    console.log(`  Dashboard     : ${host}:${port}/dashboard`)
     console.log('─'.repeat(55))
     console.log('  🔍 COMMAND REGISTRY STATUS:')
     console.log(`  Total Commands: ${registered.size} registered (including aliases)`)

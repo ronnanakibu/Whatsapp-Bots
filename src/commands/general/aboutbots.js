@@ -28,8 +28,10 @@ export default {
         text += `• *Base Engine:* WhiskeySockets Baileys (WebSocket Connection)\n`
         text += `• *Database Cache:* Better-SQLite3 (High Performance SQL)\n`
         text += `• *Timezone:* Asia/Jakarta (GMT+7)\n`
-        text += `• *RonnBot Dashboard:* http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard\n`
-        text += `• *Radio Dashboard:* http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/radio\n\n`
+        const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
+        const port = process.env.RADIO_PORT || '25637'
+        text += `• *RonnBot Dashboard:* http://${host}:${port}/dashboard\n`
+        text += `• *Radio Dashboard:* http://${host}:${port}/radio\n\n`
 
         text += `──────────────────────────────\n\n`
 

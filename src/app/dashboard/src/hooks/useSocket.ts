@@ -10,7 +10,20 @@ export function useSocket() {
     if (typeof window === 'undefined') return
 
     if (!socket) {
-      const socketUrl = 'http://ap2.nzb.zelpstore.id:25637'
+      const getSocketUrl = () => {
+        if (process.env.NEXT_PUBLIC_API_URL) {
+          return process.env.NEXT_PUBLIC_API_URL
+        }
+        if (typeof window !== 'undefined') {
+          const origin = window.location.origin
+          if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            return process.env.NEXT_PUBLIC_DEV_API_URL || 'http://localhost:25637'
+          }
+          return origin
+        }
+        return 'http://localhost:25637'
+      }
+      const socketUrl = getSocketUrl()
       console.log(`Connecting to WebSocket singleton: ${socketUrl}`)
       
       socket = io(socketUrl, {

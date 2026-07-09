@@ -47,6 +47,21 @@ function AnimatedCounter({ value }: { value: number }) {
   return <span>{count.toLocaleString()}</span>
 }
 
+const getApiHost = () => {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '')
+  }
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      const devHost = process.env.NEXT_PUBLIC_DEV_API_URL || 'http://localhost:25637'
+      return devHost.replace(/\/$/, '')
+    }
+    return origin
+  }
+  return 'http://localhost:25637'
+}
+
 export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
   const { metrics, uptime, botStatus, isConnected } = useDashboardStore()
 
@@ -129,11 +144,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
   useEffect(() => {
     const fetchRadioMetadata = async () => {
       try {
-        const origin = window.location.origin
-        // Fallback for development
-        const host = origin.includes('localhost') || origin.includes('127.0.0.1')
-          ? 'http://ap2.nzb.zelpstore.id:25637'
-          : origin
+        const host = getApiHost()
         const res = await fetch(`${host}/status`)
         if (res.ok) {
           const data = await res.json()
@@ -152,10 +163,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
   // Audio Stream handler
   const toggleRadioAudio = () => {
     if (!audioRef.current) {
-      const origin = window.location.origin
-      const host = origin.includes('localhost') || origin.includes('127.0.0.1')
-        ? 'http://ap2.nzb.zelpstore.id:25637'
-        : origin
+      const host = getApiHost()
       const audio = new Audio(`${host}/stream`)
       audio.volume = radioVolume
       audioRef.current = audio
@@ -846,7 +854,7 @@ export default function PublicSummary({ setViewMode }: PublicSummaryProps) {
               </button>
 
               <a
-                href={typeof window !== 'undefined' ? `${window.location.origin}/stream` : 'http://ap2.nzb.zelpstore.id:25637/stream'}
+                href={`${getApiHost()}/stream`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[10.5px] text-muted-foreground hover:text-white transition-colors flex items-center gap-1.5 ml-0 sm:ml-2"

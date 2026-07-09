@@ -8,10 +8,10 @@ import { config as dotenvConfig } from 'dotenv';
 dotenvConfig();
 
 const config = {
-    host: 'ap2.nzb.zelpstore.id',
-    port: 2022,
-    username: 'ronnlbtrn_11484.dfbf800f',
-    password: 'Shbng2007'
+    host: process.env.SFTP_HOST || process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id',
+    port: parseInt(process.env.SFTP_PORT || '2022'),
+    username: process.env.SFTP_USERNAME || 'ronnlbtrn_11484.dfbf800f',
+    password: process.env.SFTP_PASSWORD || 'Shbng2007'
 };
 
 // Daftar file/folder yang dilarang ikut ke server

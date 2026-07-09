@@ -22,8 +22,8 @@ export const redisConfig = {
 };
 
 export const radioConfig = {
-  statusUrl: process.env.RADIO_STATUS_URL || 'http://ap2.nzb.zelpstore.id:25637/status',
-  streamUrl: process.env.RADIO_STREAM_URL || 'http://ap2.nzb.zelpstore.id:25637/stream',
+  statusUrl: process.env.RADIO_STATUS_URL || `http://${process.env.RADIO_HOST || 'ap2.nzb.zelpstore.id'}:${process.env.RADIO_PORT || '25637'}/status`,
+  streamUrl: process.env.RADIO_STREAM_URL || `http://${process.env.RADIO_HOST || 'ap2.nzb.zelpstore.id'}:${process.env.RADIO_PORT || '25637'}/stream`,
 };
 
 export default {

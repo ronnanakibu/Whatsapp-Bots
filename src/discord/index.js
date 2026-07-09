@@ -37,7 +37,7 @@ function setBotPresence(trackName = null) {
 
 function playStream() {
     if (!currentConnection || !audioPlayer) return
-    const radioPort = process.env.RADIO_PORT || 8080
+    const radioPort = process.env.RADIO_PORT || 25637
     logger.info(`[Discord] Memutar/menghubungkan kembali stream dari port ${radioPort}`)
     try {
         const resource = createAudioResource(`http://127.0.0.1:${radioPort}/stream`)

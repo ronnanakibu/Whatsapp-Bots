@@ -122,8 +122,9 @@ export default {
                     radioService.addToQueue(track)
                     
                     let linkMsg = ''
-                    const port = process.env.RADIO_PORT ?? '8080'
-                    linkMsg = `\n\n🎧 *Dengarkan radio di sini:*\nap2.nzb.zelpstore.id:${port}/radio`
+                    const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
+                    const port = process.env.RADIO_PORT || '25637'
+                    linkMsg = `\n\n🎧 *Dengarkan radio di sini:*\n${host}:${port}/radio`
 
                     await reply(
                         `✅ *Memutar Acak Favorit!*\n\n` +

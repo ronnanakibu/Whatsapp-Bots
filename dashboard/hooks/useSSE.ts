@@ -5,7 +5,18 @@ import { useDashboardStore } from '@/lib/store'
 import type { Track, BotEvent, PipelineStage } from '@/types'
 
 const getSseUrl = () => {
-    return 'http://ap2.nzb.zelpstore.id:25637/events'
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return `${process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '')}/events`
+    }
+    if (typeof window !== 'undefined') {
+        const origin = window.location.origin
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            const devHost = process.env.NEXT_PUBLIC_DEV_API_URL || 'http://localhost:25637'
+            return `${devHost.replace(/\/$/, '')}/events`
+        }
+        return `${origin}/events`
+    }
+    return 'http://localhost:25637/events'
 }
 
 const SSE_URL = getSseUrl()

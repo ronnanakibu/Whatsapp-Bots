@@ -224,7 +224,9 @@ export default {
             botVersion = pkg.version || '5.3.0'
         } catch (_) { }
 
-        const dashboardUrl = `http://ap2.nzb.zelpstore.id:${process.env.RADIO_PORT ?? '25637'}/dashboard`
+        const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
+        const port = process.env.RADIO_PORT || '25637'
+        const dashboardUrl = `http://${host}:${port}/dashboard`
 
         let text = `╭───〔 RONN BOT 〕───⬣\n`
         text += `│ 👋 Hai, ${ctx.pushName || 'User'}\n`
