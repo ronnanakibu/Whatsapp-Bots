@@ -697,21 +697,21 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
 
                 if (overlayExists && bannerExists) {
                     updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + partikel + banner overlay (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -stream_loop -1 -i "${overlayPath}" -loop 1 -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1[v0];[1:v]scale=1920:1080,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.4[v2];[v2][2:v]overlay=0:0:shortest=1[v_overlay]${videoFadeFilter}" -map "[v_overlay]" -map 3:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
+                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -stream_loop -1 -i "${overlayPath}" -loop 1 -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1[v0];[1:v]scale=1920:1080,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.4[v2];[v2][2:v]overlay=0:0:shortest=1${videoFadeFilter}[v_overlay]" -map "[v_overlay]" -map 3:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
                 } else if (bannerExists) {
                     updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + banner overlay (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -loop 1 -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1[v0];[v0][1:v]overlay=0:0:shortest=1[v_overlay]${videoFadeFilter}" -map "[v_overlay]" -map 2:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
+                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -loop 1 -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1[v0];[v0][1:v]overlay=0:0:shortest=1${videoFadeFilter}[v_overlay]" -map "[v_overlay]" -map 2:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
                 } else {
                     updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background saja (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1[v_overlay]${videoFadeFilter}" -map "[v_overlay]" -map 1:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
+                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1${videoFadeFilter}[v_overlay]" -map "[v_overlay]" -map 1:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
                 }
             } else {
                 if (overlayExists) {
                     updateJob('ffmpeg', 75, '✅ [FFmpeg] partikel_api.mp4 ditemukan → menggunakan blend filter (16:9) static (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -stream_loop -1 -i "${overlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0];[1:v]scale=1920:1080,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.7[v_blend]${videoFadeFilter}" -map "[v_blend]" -map 2:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
+                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -stream_loop -1 -i "${overlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0];[1:v]scale=1920:1080,setsar=1[v1];[v1][v0]blend=all_mode=screen:all_opacity=0.7${videoFadeFilter}[v_blend]" -map "[v_blend]" -map 2:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
                 } else {
                     updateJob('ffmpeg', 75, '⚠️ [FFmpeg] partikel_api.mp4 tidak ada → rendering video statis (16:9) static (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[v_static]${videoFadeFilter}" -map "[v_static]" -map 1:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -tune stillimage -c:a aac -shortest "${outputPath}"`
+                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2${videoFadeFilter}[v_static]" -map "[v_static]" -map 1:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -tune stillimage -c:a aac -shortest "${outputPath}"`
                 }
             }
 
