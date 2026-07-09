@@ -652,14 +652,22 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             const overlayExists = fs.existsSync(overlayPath)
             let totalDuration = null
             try {
-                const probeCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`
-                const durationStr = execSync(probeCmd).toString().trim()
-                const secs = parseFloat(durationStr)
-                if (!isNaN(secs) && secs > 0) {
-                    totalDuration = secs
+                let output = ''
+                try {
+                    output = execSync(`ffmpeg -i "${audioPath}"`, { stdio: 'pipe' }).toString()
+                } catch (err) {
+                    output = (err.stdout || '').toString() + (err.stderr || '').toString()
+                }
+                const match = output.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/)
+                if (match) {
+                    const hours = parseInt(match[1], 10)
+                    const minutes = parseInt(match[2], 10)
+                    const seconds = parseFloat(match[3])
+                    totalDuration = hours * 3600 + minutes * 60 + seconds
+                    logger.info(`[FFmpeg/Probe] Durasi audio didapatkan via ffmpeg: ${totalDuration} detik`)
                 }
             } catch (err) {
-                logger.warn(`[FFmpeg/Probe] Gagal mendapatkan durasi audio: ${err.message}`)
+                logger.warn(`[FFmpeg/Probe] Gagal mendapatkan durasi audio via ffmpeg: ${err.message}`)
             }
 
             const videoFadeIn = 1.5
