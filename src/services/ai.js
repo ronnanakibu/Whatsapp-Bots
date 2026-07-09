@@ -440,7 +440,7 @@ async function enhanceVideoPrompt(rawPrompt) {
 
 async function generateGradioSpaceImage(spaceUrl, apiName, prompt, width, height) {
     const hfToken = process.env.HF_TOKEN ? process.env.HF_TOKEN.replace(/^["']|["']$/g, '') : null;
-    const clientOptions = hfToken ? { hf_token: hfToken } : {};
+    const clientOptions = hfToken ? { token: hfToken } : {};
     
     logger.info(`[AI/Gradio] Connecting to space: ${spaceUrl}...`)
     const app = await Client.connect(spaceUrl, clientOptions)
@@ -846,7 +846,7 @@ async function chat(chatId, userMessage, forcedProvider = null) {
 
 async function generateVideoFromImage(imagePath, motionPrompt) {
     const hfToken = process.env.HF_TOKEN ? process.env.HF_TOKEN.replace(/^["']|["']$/g, '') : null;
-    const clientOptions = hfToken ? { hf_token: hfToken } : {};
+    const clientOptions = hfToken ? { token: hfToken } : {};
     
     const imageBuffer = fs.readFileSync(imagePath)
     const fileObj = new Blob([imageBuffer], { type: 'image/png' })
@@ -855,8 +855,8 @@ async function generateVideoFromImage(imagePath, motionPrompt) {
     const candidates = [
         {
             name: "RonnBot Own LTX-Video",
-            url: "https://ronnlbtrn-ronnbot-ltxvideo.hf.space",
-            endpoint: "/generate_video",
+            url: "ronnLbtrn/ronnbot-ltxvideo",
+            endpoint: "generate_video",
             buildArgs: (file, prompt) => [
                 file,
                 prompt,

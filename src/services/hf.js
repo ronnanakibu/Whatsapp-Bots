@@ -19,7 +19,7 @@ async function getClient(spaceId) {
     if (clientPool.has(spaceId)) return clientPool.get(spaceId)
 
     const opts = {}
-    if (HF_TOKEN) opts.hf_token = HF_TOKEN
+    if (HF_TOKEN) opts.token = HF_TOKEN
 
     const client = await Client.connect(spaceId, opts)
     clientPool.set(spaceId, client)
