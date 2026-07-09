@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto'
 import { getYtdlpPath } from '../../ytdlp.js'
 import { logger } from '../../../utils/logger.js'
 
-import { fetchBuffer, fetchJson } from '../utils.js'
+import { fetchBuffer, fetchJson, sanitizeFilename } from '../utils.js'
 
 const TEMP_DIR = path.resolve('./storage/media/temp')
 
@@ -104,7 +104,7 @@ export async function downloadYtdlp(url, options = {}) {
 
                 resolve({
                     buffer,
-                    filename: `ytdlp_${sessionId}.${ext}`,
+                    filename: sanitizeFilename(`${metadata.title || `ytdlp_${sessionId}`}.${ext}`),
                     caption,
                     mimeType,
                     ext,
@@ -193,7 +193,7 @@ async function downloadViaHF(url, format) {
 
         return {
             buffer: res.buffer,
-            filename: `hf_${Date.now()}.${ext}`,
+            filename: sanitizeFilename(`${title || `hf_${Date.now()}`}.${ext}`),
             caption,
             mimeType,
             ext,
