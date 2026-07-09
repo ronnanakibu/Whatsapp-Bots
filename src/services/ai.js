@@ -480,7 +480,11 @@ async function generateGradioSpaceImage(spaceUrl, apiName, prompt, width, height
     
     const imgUrl = result.data[0].url
     logger.info(`[AI/Gradio] Downloading generated image from: ${imgUrl}`)
-    const imgRes = await fetch(imgUrl)
+    const fetchOpts = {}
+    if (hfToken) {
+        fetchOpts.headers = { 'Authorization': `Bearer ${hfToken}` }
+    }
+    const imgRes = await fetch(imgUrl, fetchOpts)
     if (!imgRes.ok) throw new Error(`Failed to download image from ${imgUrl}`)
     
     const arrayBuffer = await imgRes.arrayBuffer()
@@ -1056,7 +1060,11 @@ async function generateVideoFromImage(imagePath, motionPrompt) {
             
             logger.info(`[AI/VideoGen] Successfully generated video URL: ${videoUrl} from ${candidate.name}`)
             logger.info(`[AI/VideoGen] Downloading video from URL...`)
-            const response = await fetch(videoUrl)
+            const videoFetchOpts = {}
+            if (hfToken) {
+                videoFetchOpts.headers = { 'Authorization': `Bearer ${hfToken}` }
+            }
+            const response = await fetch(videoUrl, videoFetchOpts)
             if (!response.ok) throw new Error(`Failed to download generated video from ${videoUrl}`)
             
             const arrayBuffer = await response.arrayBuffer()
