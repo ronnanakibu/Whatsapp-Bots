@@ -22,7 +22,7 @@ import { chatService } from '../services/chat-v2.js'
 import { mediaService } from '../services/media.js'
 import { prisma } from '../config/database.js'
 import { BRAINS } from '../services/ai.js'
-import { startSunoPipeline, getActiveJobs } from '../services/suno.js'
+import { startSunoPipeline, getActiveJobs, confirmThumbnail, startPlaylistPipeline } from '../services/suno.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -465,6 +465,11 @@ export function startRadioServer() {
         io?.emit('suno:status', job)
     })
 
+    // Relay thumbnail_ready to all connected dashboard clients
+    eventBus.subscribe('suno:thumbnail_ready', (data) => {
+        io?.emit('suno:thumbnail_ready', data)
+    })
+
     // --- V2 Socket.IO Namespaces ---
     const chatNamespace = io.of('/chat')
     const presenceNamespace = io.of('/presence')
@@ -687,6 +692,39 @@ export function startRadioServer() {
                 socket.emit('suno:started', { jobId })
             } catch (err) {
                 socket.emit('error', `Gagal memulai generasi: ${err.message}`)
+            }
+        })
+
+        socket.on('suno:playlist_generate', async (data) => {
+            const { songs, outputTitle, transitionStyle } = data
+            if (!songs || !Array.isArray(songs) || songs.length === 0) {
+                return socket.emit('error', 'Lagu-lagu playlist tidak boleh kosong.')
+            }
+            if (!outputTitle) {
+                return socket.emit('error', 'Judul Playlist YouTube wajib diisi.')
+            }
+            logger.info(`[Socket/Suno] Triggering playlist generation from socket: ${outputTitle} (${songs.length} songs)`)
+            try {
+                const jobId = await startPlaylistPipeline({
+                    songs,
+                    outputTitle,
+                    transitionStyle: transitionStyle || 'dissolve',
+                    source: 'web',
+                    chatId: null
+                })
+                socket.emit('suno:started', { jobId })
+            } catch (err) {
+                socket.emit('error', `Gagal memulai playlist pipeline: ${err.message}`)
+            }
+        })
+
+        // Thumbnail confirmation from dashboard user
+        socket.on('suno:confirm_thumbnail', ({ jobId, approved, newPrompt }) => {
+            const ok = confirmThumbnail(jobId, { approved, newPrompt: newPrompt || null })
+            if (!ok) {
+                logger.warn(`[Socket/Suno] suno:confirm_thumbnail received for unknown job: ${jobId}`)
+            } else {
+                logger.info(`[Socket/Suno] Thumbnail ${approved ? 'approved' : 'rejected'} for job ${jobId}`)
             }
         })
 

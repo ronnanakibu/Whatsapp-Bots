@@ -333,6 +333,85 @@ router.post('/api/music/manual-upload', upload.single('audio'), async (req, res)
     }
 })
 
+router.post('/api/music/upload-temp', upload.single('file'), async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization
+        if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
+            if (req.file && fs.existsSync(req.file.path)) {
+                fs.unlinkSync(req.file.path)
+            }
+            return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No file uploaded.' })
+        }
+
+        const filePath = req.file.path
+        const originalName = req.file.originalname
+        const size = req.file.size
+        const mimeType = req.file.mimetype
+
+        let duration = 0
+        let metadataTitle = ''
+
+        const isAudio = mimeType.startsWith('audio/') || 
+                        originalName.endsWith('.mp3') || 
+                        originalName.endsWith('.wav') || 
+                        originalName.endsWith('.mpeg') ||
+                        originalName.endsWith('.m4a')
+
+        if (isAudio) {
+            try {
+                const { execSync } = await import('child_process')
+                let output = ''
+                try {
+                    output = execSync(`ffmpeg -i "${filePath}"`, { stdio: 'pipe' }).toString()
+                } catch (err) {
+                    output = (err.stdout || '').toString() + (err.stderr || '').toString()
+                }
+
+                // Parse duration
+                const durationMatch = output.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/)
+                if (durationMatch) {
+                    const hours = parseInt(durationMatch[1], 10)
+                    const minutes = parseInt(durationMatch[2], 10)
+                    const seconds = parseFloat(durationMatch[3])
+                    duration = hours * 3600 + minutes * 60 + seconds
+                }
+
+                // Parse Title tag
+                const titleMatch = output.match(/title\s*:\s*(.+)/i)
+                if (titleMatch) {
+                    metadataTitle = titleMatch[1].trim()
+                }
+            } catch (probeErr) {
+                logger.error(`[UploadTemp/Probe] Error probing audio file: ${probeErr.message}`)
+            }
+        }
+
+        logger.info(`[Music] Received temp file upload. Name: ${originalName}, Size: ${size} bytes, Type: ${mimeType}, Path: ${filePath}, Duration: ${duration}s, Title Tag: ${metadataTitle}`)
+
+        res.json({
+            success: true,
+            file: {
+                path: filePath,
+                originalName: originalName,
+                size: size,
+                mimeType: mimeType,
+                duration: duration,
+                metadataTitle: metadataTitle || null
+            }
+        })
+    } catch (err) {
+        logger.error(`[Music/UploadTemp] Error: ${err.message}`)
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path)
+        }
+        res.status(500).json({ success: false, message: err.message })
+    }
+})
+
 router.post('/api/music/update-cookie', express.json(), async (req, res) => {
     try {
         const authHeader = req.headers.authorization
