@@ -191,6 +191,7 @@ async function downloadFile(url, destPath) {
 export async function startSunoPipeline({
     prompt,
     title,
+    description = '',
     enhance = false,
     source = 'web',
     chatId = null,
@@ -263,7 +264,9 @@ export async function startSunoPipeline({
 
         let finalPrompt = prompt
         let videoTitle = job.title
-        let youtubeDesc = 'Generated automatically via Suno & Gemini Automation'
+        let youtubeDesc = description && description.trim()
+            ? description.trim()
+            : 'Generated automatically via Suno & Gemini Automation'
         let youtubeTags = ['instrumental', 'music', 'ai-generated']
         let imgGenPrompt = prompt
         let videoMotionPrompt = 'make this image come alive with slow cinematic motion, 4k'
@@ -581,7 +584,9 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         const hasUserProvidedTitle = title && title.trim() !== '' && title !== 'Untitled Music' && title !== 'Manual Track'
                         videoTitle = hasUserProvidedTitle ? title : metadata.title
                         job.title = videoTitle // Update dashboard active job title in real time
-                        youtubeDesc = metadata.description || youtubeDesc
+                        youtubeDesc = description && description.trim()
+                            ? `${description.trim()}\n\n${metadata.description || ''}`
+                            : (metadata.description || youtubeDesc)
                         youtubeTags = metadata.tags || youtubeTags
                         imgGenPrompt = metadata.imagePrompt || finalPrompt
                         videoMotionPrompt = metadata.videoMotionPrompt || videoMotionPrompt
@@ -1578,7 +1583,8 @@ export async function startPlaylistPipeline({
 
             for (let idx = 0; idx < songs.length; idx++) {
                 const songTimeStr = formatTimestamp(currentPlaylistTime)
-                descriptionTimestamps += `${songTimeStr} - ${songFinalTitles[idx]}\n`
+                const songDesc = songs[idx].description?.trim()
+                descriptionTimestamps += `${songTimeStr} - ${songFinalTitles[idx]}${songDesc ? ` | ${songDesc}` : ''}\n`
 
                 if (idx < songs.length - 1) {
                     currentPlaylistTime += clipDurations[idx] - transitionDuration

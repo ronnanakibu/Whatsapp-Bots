@@ -300,7 +300,7 @@ router.post('/api/music/manual-upload', upload.single('audio'), async (req, res)
             return res.status(400).json({ success: false, message: 'No audio file uploaded.' })
         }
 
-        const { prompt, title } = req.body
+        const { prompt, title, description } = req.body
         if (!prompt) {
             if (fs.existsSync(req.file.path)) {
                 fs.unlinkSync(req.file.path)
@@ -314,6 +314,7 @@ router.post('/api/music/manual-upload', upload.single('audio'), async (req, res)
         const jobId = startSunoPipeline({
             prompt: prompt,
             title: title || 'Manual Audio Render',
+            description: description || '',
             enhance: false,
             model: 'manual',
             manualAudioPath: manualAudioPath

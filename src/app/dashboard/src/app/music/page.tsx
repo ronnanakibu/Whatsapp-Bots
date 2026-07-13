@@ -76,6 +76,7 @@ export default function MusicAutomationPage() {
     const [isLoadingAuth, setIsLoadingAuth] = useState(true)
     const [prompt, setPrompt] = useState('')
     const [title, setTitle] = useState('')
+    const [description, setDescription] = useState('')
     const [enhance, setEnhance] = useState(true)
     const [activeJob, setActiveJob] = useState<SunoJob | null>(null)
     const [copied, setCopied] = useState(false)
@@ -470,6 +471,7 @@ export default function MusicAutomationPage() {
         const songsPayload = playlistSongs.map(s => ({
             audioPath: s.audioPath,
             title: s.title || '',
+            description: s.description || '',
             artworkMode: s.artworkMode,
             artworkPath: s.artworkPath || null,
             artworkPrompt: s.artworkPrompt || ''
@@ -516,6 +518,7 @@ export default function MusicAutomationPage() {
             formData.append('audio', audioFile)
             formData.append('prompt', prompt.trim())
             formData.append('title', title.trim() || '')
+            formData.append('description', description.trim())
             try {
                 const apiBase = getApiHost()
                 const res = await fetch(`${apiBase}/api/music/manual-upload`, {
@@ -928,6 +931,22 @@ export default function MusicAutomationPage() {
                                                         />
                                                     </div>
 
+                                                    {/* Description Input */}
+                                                    <div className="space-y-1.5">
+                                                        <div className="flex justify-between items-end">
+                                                            <label className="text-[10px] font-mono tracking-widest text-neutral-500 uppercase">Description <span className="text-neutral-700 normal-case tracking-normal">(Optional)</span></label>
+                                                            <span className="text-[9px] font-mono text-neutral-600">{description.length}/2000</span>
+                                                        </div>
+                                                        <textarea
+                                                            placeholder="YouTube video description, credits, hashtags..."
+                                                            value={description}
+                                                            onChange={e => setDescription(e.target.value)}
+                                                            maxLength={2000}
+                                                            rows={3}
+                                                            className="input-base w-full p-3.5 text-[12px] resize-none leading-relaxed"
+                                                        />
+                                                    </div>
+
                                                     {/* Prompt Input */}
                                                     <div className="space-y-1.5">
                                                         <div className="flex justify-between items-end">
@@ -1048,6 +1067,18 @@ export default function MusicAutomationPage() {
                                                                             onChange={e => setPlaylistSongs(prev => prev.map(s => s.id === song.id ? { ...s, title: e.target.value } : s))}
                                                                             placeholder="Auto-generate title if empty"
                                                                             className="input-base w-full h-9 px-3 text-[11px]"
+                                                                        />
+                                                                    </div>
+
+                                                                    {/* Per-song Description */}
+                                                                    <div className="space-y-1">
+                                                                        <label className="text-[9px] font-mono text-neutral-500 uppercase">Description <span className="normal-case tracking-normal text-neutral-600">(Optional)</span></label>
+                                                                        <textarea
+                                                                            value={song.description || ''}
+                                                                            onChange={e => setPlaylistSongs(prev => prev.map(s => s.id === song.id ? { ...s, description: e.target.value } : s))}
+                                                                            placeholder="Custom YouTube description, credits, hashtags..."
+                                                                            rows={2}
+                                                                            className="input-base w-full p-2.5 text-[11px] resize-none leading-normal"
                                                                         />
                                                                     </div>
 
