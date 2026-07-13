@@ -413,6 +413,43 @@ router.post('/api/music/upload-temp', upload.single('file'), async (req, res) =>
     }
 })
 
+router.post('/api/music/playlist-generate', express.json(), async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization
+        if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
+            return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
+        }
+
+        const { songs, outputTitle, playlistDescription, transitionStyle, generateMotion, vignetteMode } = req.body || {}
+        if (!songs || !Array.isArray(songs) || songs.length === 0) {
+            return res.status(400).json({ success: false, message: 'Lagu-lagu playlist tidak boleh kosong.' })
+        }
+        if (!outputTitle) {
+            return res.status(400).json({ success: false, message: 'Judul Playlist YouTube wajib diisi.' })
+        }
+
+        logger.info(`[Music/PlaylistGenerate] Triggering playlist generation from HTTP: ${outputTitle} (${songs.length} songs)`)
+
+        const { startPlaylistPipeline } = await import('../../services/suno.js')
+        const jobId = await startPlaylistPipeline({
+            songs,
+            outputTitle,
+            playlistDescription: playlistDescription || '',
+            transitionStyle: transitionStyle || 'dissolve',
+            generateMotion: !!generateMotion,
+            vignetteMode: vignetteMode || 'normal',
+            source: 'web',
+            chatId: null
+        })
+
+        res.json({ success: true, jobId })
+    } catch (err) {
+        logger.error(`[Music/PlaylistGenerate] Error: ${err.message}`)
+        res.status(500).json({ success: false, message: err.message })
+    }
+})
+
+
 router.post('/api/music/update-cookie', express.json(), async (req, res) => {
     try {
         const authHeader = req.headers.authorization

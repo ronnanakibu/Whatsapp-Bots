@@ -492,16 +492,44 @@ export default function MusicAutomationPage() {
         
         console.log('[DEBUG] Emitting suno:playlist_generate payload:', songsPayload)
         try {
-            emit('suno:playlist_generate', {
-                songs: songsPayload,
-                outputTitle: playlistTitle.trim(),
-                playlistDescription: (playlistDescription || '').trim(),
-                transitionStyle: playlistTransition,
-                generateMotion: generateMotion,
-                vignetteMode: vignetteMode
+            const apiHost = getApiHost()
+            const response = await fetch(`${apiHost}/api/music/playlist-generate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer 6285172013920_2007'
+                },
+                body: JSON.stringify({
+                    songs: songsPayload,
+                    outputTitle: playlistTitle.trim(),
+                    playlistDescription: (playlistDescription || '').trim(),
+                    transitionStyle: playlistTransition,
+                    generateMotion: generateMotion,
+                    vignetteMode: vignetteMode
+                })
             })
-            setPlaylistSongs([])
-            setPlaylistTitle('')
+            
+            const res = await response.json()
+            if (res.success) {
+                setActiveJob({
+                    id: res.jobId,
+                    prompt: `Playlist: ${playlistTitle.trim()}`,
+                    title: playlistTitle.trim() || 'Untitled Playlist',
+                    status: 'running',
+                    stage: 'idle',
+                    progress: 0,
+                    logs: ['[System] Job initialized, waiting for pipeline activation...'],
+                    youtubeUrl: null,
+                    source: 'web',
+                    timestamp: Date.now(),
+                    model: 'playlist'
+                })
+                setPlaylistSongs([])
+                setPlaylistTitle('')
+                toast.success('Playlist pipeline berhasil dijalankan!')
+            } else {
+                toast.error(`Gagal memulai: ${res.message || 'Error tidak diketahui'}`)
+            }
         } catch (err: any) {
             toast.error(`Gagal memulai: ${err.message}`)
         } finally {
