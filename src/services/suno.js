@@ -44,7 +44,12 @@ function getSubsButtonPath() {
  */
 function getMediaDuration(filePath) {
     try {
-        const output = execSync(`ffmpeg -i "${filePath}"`, { stdio: 'pipe' }).toString();
+        let output = '';
+        try {
+            output = execSync(`ffmpeg -i "${filePath}"`, { stdio: 'pipe' }).toString();
+        } catch (err) {
+            output = (err.stdout || '').toString() + (err.stderr || '').toString();
+        }
         const match = output.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
         if (match) {
             const hours = parseInt(match[1], 10);
@@ -1490,16 +1495,22 @@ export async function startPlaylistPipeline({
                         times.push(Math.max(cumulativeTime - D - 2, 0))
                     }
 
+                    filterComplex = filterComplex.trim()
+                    if (filterComplex && !filterComplex.endsWith(';')) {
+                        filterComplex += ';'
+                    }
+
                     let lastVideoOut = lastVideoLabel
                     for (let idx = 0; idx < times.length; idx++) {
                         const t = times[idx]
                         const webmInputIdx = subsButtonStartIdx + idx
                         const outLabel = `[v_playlist_subs_${idx}]`
 
-                        filterComplex += `; [${webmInputIdx}:v]setpts=PTS-STARTPTS+${t.toFixed(2)}/TB[subs_delayed_${idx}]; ` +
-                                         `${lastVideoOut}[subs_delayed_${idx}]overlay=x=(W-w)/2:y=(H-h)/2:enable='between(t,${t.toFixed(2)},${(t + D).toFixed(2)})':eof_action=pass${outLabel}`
+                        filterComplex += ` [${webmInputIdx}:v]setpts=PTS-STARTPTS+${t.toFixed(2)}/TB[subs_delayed_${idx}]; ` +
+                                         `${lastVideoOut}[subs_delayed_${idx}]overlay=x=(W-w)/2:y=(H-h)/2:enable='between(t,${t.toFixed(2)},${(t + D).toFixed(2)})':eof_action=pass${outLabel};`
                         lastVideoOut = outLabel
                     }
+                    filterComplex = filterComplex.trim().replace(/;$/, '')
                     lastVideoLabel = lastVideoOut
                 }
 
