@@ -1528,7 +1528,6 @@ export async function startPlaylistPipeline({
 
             let descriptionTimestamps = ''
             let currentPlaylistTime = 0
-            const transitionDuration = 1.5
 
             function formatTimestamp(secs) {
                 const h = Math.floor(secs / 3600)
