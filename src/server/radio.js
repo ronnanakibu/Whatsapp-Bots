@@ -673,7 +673,7 @@ export function startRadioServer() {
         })
 
         socket.on('suno:generate', async (data) => {
-            const { prompt, title, enhance, model, isCustom, lyrics, tags, make_instrumental, enhanceLyrics } = data
+            const { prompt, title, enhance, model, isCustom, lyrics, tags, make_instrumental, enhanceLyrics, vignetteMode } = data
             if (!prompt) return socket.emit('error', 'Prompt tidak boleh kosong')
             logger.info(`[Socket/Suno] Triggering suno generation from socket: ${prompt}`)
             try {
@@ -687,7 +687,8 @@ export function startRadioServer() {
                     lyrics,
                     tags,
                     make_instrumental,
-                    enhanceLyrics
+                    enhanceLyrics,
+                    vignetteMode: vignetteMode || 'normal'
                 })
                 socket.emit('suno:started', { jobId })
             } catch (err) {
@@ -696,7 +697,7 @@ export function startRadioServer() {
         })
 
         socket.on('suno:playlist_generate', async (data) => {
-            const { songs, outputTitle, transitionStyle } = data
+            const { songs, outputTitle, transitionStyle, generateMotion, vignetteMode } = data
             if (!songs || !Array.isArray(songs) || songs.length === 0) {
                 return socket.emit('error', 'Lagu-lagu playlist tidak boleh kosong.')
             }
@@ -709,6 +710,8 @@ export function startRadioServer() {
                     songs,
                     outputTitle,
                     transitionStyle: transitionStyle || 'dissolve',
+                    generateMotion: !!generateMotion,
+                    vignetteMode: vignetteMode || 'normal',
                     source: 'web',
                     chatId: null
                 })

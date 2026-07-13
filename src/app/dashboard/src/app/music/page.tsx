@@ -85,6 +85,8 @@ export default function MusicAutomationPage() {
     const [playlistSongs, setPlaylistSongs] = useState<any[]>([])
     const [playlistTitle, setPlaylistTitle] = useState('')
     const [playlistTransition, setPlaylistTransition] = useState('dissolve')
+    const [generateMotion, setGenerateMotion] = useState(false)
+    const [vignetteMode, setVignetteMode] = useState<'normal' | 'dark' | 'light'>('normal')
     const playlistFileInputRef = useRef<HTMLInputElement>(null)
 
     const handlePlaylistFilesAdd = async (files: FileList) => {
@@ -477,7 +479,9 @@ export default function MusicAutomationPage() {
             emit('suno:playlist_generate', {
                 songs: songsPayload,
                 outputTitle: playlistTitle.trim(),
-                transitionStyle: playlistTransition
+                transitionStyle: playlistTransition,
+                generateMotion: generateMotion,
+                vignetteMode: vignetteMode
             })
             setPlaylistSongs([])
             setPlaylistTitle('')
@@ -542,7 +546,8 @@ export default function MusicAutomationPage() {
                 lyrics: lyrics.trim() || null,
                 tags: tags.trim() || null,
                 make_instrumental: makeInstrumental,
-                enhanceLyrics
+                enhanceLyrics,
+                vignetteMode
             })
         }
     }
@@ -1165,6 +1170,24 @@ export default function MusicAutomationPage() {
                                                             </div>
                                                         </div>
 
+                                                        {/* LTX Motion Thumbnails Toggle */}
+                                                        <div className="flex items-center justify-between border-t border-white/[0.04] pt-3 pb-1">
+                                                            <div>
+                                                                <p className="text-[11px] text-neutral-300 font-semibold flex items-center gap-1.5">
+                                                                    <Video size={11} className="text-violet-400" />
+                                                                    Motion Thumbnails (LTX)
+                                                                </p>
+                                                                <p className="text-[9px] text-neutral-600 mt-0.5">Animate static images into cinematic loops</p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setGenerateMotion(!generateMotion)}
+                                                                className="text-neutral-500 hover:text-white transition-colors"
+                                                            >
+                                                                {generateMotion ? <ToggleRight className="text-violet-500 w-9.5 h-9.5" /> : <ToggleLeft className="w-9.5 h-9.5" />}
+                                                            </button>
+                                                        </div>
+
                                                         {/* Global Validation Warning List */}
                                                         {playlistValidationWarnings.length > 0 && (
                                                             <div className="p-3 bg-rose-500/10 border border-rose-500/25 rounded-xl space-y-1 shadow-[0_0_15px_rgba(244,63,94,0.08)]">
@@ -1258,6 +1281,37 @@ export default function MusicAutomationPage() {
                                             </button>
                                         </div>
                                     )}
+
+                                    {/* Vignette Mode Selector */}
+                                    <div className="space-y-1.5 border-t border-white/[0.05] pt-3">
+                                        <label className="text-[10px] font-mono tracking-widest text-neutral-500 uppercase font-bold">Vignette Mode</label>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {[
+                                                { key: 'normal', label: '✦ Normal', desc: 'No effect' },
+                                                { key: 'dark', label: '🌑 Dark', desc: 'Black border' },
+                                                { key: 'light', label: '☀️ Light', desc: 'White border' }
+                                            ].map(opt => (
+                                                <button
+                                                    key={opt.key}
+                                                    type="button"
+                                                    onClick={() => setVignetteMode(opt.key as 'normal' | 'dark' | 'light')}
+                                                    className={[
+                                                        'h-10 text-[10px] font-bold rounded-lg border transition-all flex flex-col items-center justify-center gap-0.5',
+                                                        vignetteMode === opt.key
+                                                            ? opt.key === 'dark'
+                                                                ? 'bg-slate-800/50 border-slate-500/50 text-slate-300'
+                                                                : opt.key === 'light'
+                                                                    ? 'bg-amber-500/10 border-amber-500/35 text-amber-300'
+                                                                    : 'bg-indigo-500/10 border-indigo-500/35 text-indigo-300'
+                                                            : 'border-white/[0.06] bg-white/[0.01] text-neutral-500 hover:text-neutral-300'
+                                                    ].join(' ')}
+                                                >
+                                                    <span>{opt.label}</span>
+                                                    <span className="text-[8px] font-normal opacity-60">{opt.desc}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
 
                                     {/* Generate Button */}
                                     <button

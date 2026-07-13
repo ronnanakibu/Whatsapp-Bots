@@ -200,7 +200,8 @@ export async function startSunoPipeline({
     lyrics = null,
     tags = null,
     make_instrumental = false,
-    enhanceLyrics = false
+    enhanceLyrics = false,
+    vignetteMode = 'normal'
 }) {
     const jobId = `job-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
 
@@ -808,6 +809,12 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             let filterComplex = ''
             let audioInputIdx = -1
             let finalVideoLabel = ''
+            let vignetteFilter = ''
+            if (vignetteMode === 'dark') {
+                vignetteFilter = ',vignette=color=black:angle=0.5'
+            } else if (vignetteMode === 'light') {
+                vignetteFilter = ',vignette=color=white:angle=0.5'
+            }
 
             if (videoBackgroundExists) {
                 const bannerOverlayPath = path.join(tempDir, 'banner_overlay.png')
@@ -825,7 +832,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         `-loop 1 -i "${bannerOverlayPath}"`,
                         `-i "${audioPath}"`
                     ]
-                    filterComplex = `[0:v]scale=1920:1080,setsar=1,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.4,format=yuv420p[v2];[v2][2:v]overlay=0:0:shortest=1${videoFadeFilter}[v_pre_subs]`
+                    filterComplex = `[0:v]scale=1920:1080,setsar=1${vignetteFilter},format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.4,format=yuv420p[v2];[v2][2:v]overlay=0:0:shortest=1${videoFadeFilter}[v_pre_subs]`
                     audioInputIdx = 3
                     finalVideoLabel = '[v_pre_subs]'
                 } else if (bannerExists) {
@@ -835,7 +842,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         `-loop 1 -i "${bannerOverlayPath}"`,
                         `-i "${audioPath}"`
                     ]
-                    filterComplex = `[0:v]scale=1920:1080,setsar=1[v0];[v0][1:v]overlay=0:0:shortest=1${videoFadeFilter}[v_pre_subs]`
+                    filterComplex = `[0:v]scale=1920:1080,setsar=1${vignetteFilter}[v0];[v0][1:v]overlay=0:0:shortest=1${videoFadeFilter}[v_pre_subs]`
                     audioInputIdx = 2
                     finalVideoLabel = '[v_pre_subs]'
                 } else {
@@ -844,7 +851,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         `-stream_loop -1 -i "${videoBackgroundPath}"`,
                         `-i "${audioPath}"`
                     ]
-                    filterComplex = `[0:v]scale=1920:1080,setsar=1${videoFadeFilter}[v_pre_subs]`
+                    filterComplex = `[0:v]scale=1920:1080,setsar=1${vignetteFilter}${videoFadeFilter}[v_pre_subs]`
                     audioInputIdx = 1
                     finalVideoLabel = '[v_pre_subs]'
                 }
@@ -856,7 +863,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         `-stream_loop -1 -i "${overlayPath}"`,
                         `-i "${audioPath}"`
                     ]
-                    filterComplex = `[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.7,format=yuv420p${videoFadeFilter}[v_pre_subs]`
+                    filterComplex = `[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1${vignetteFilter},format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.7,format=yuv420p${videoFadeFilter}[v_pre_subs]`
                     audioInputIdx = 2
                     finalVideoLabel = '[v_pre_subs]'
                 } else {
@@ -865,7 +872,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         `-loop 1 -i "${thumbnailPath}"`,
                         `-i "${audioPath}"`
                     ]
-                    filterComplex = `[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2${videoFadeFilter}[v_pre_subs]`
+                    filterComplex = `[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2${vignetteFilter}${videoFadeFilter}[v_pre_subs]`
                     audioInputIdx = 1
                     finalVideoLabel = '[v_pre_subs]'
                 }
@@ -1076,6 +1083,8 @@ export async function startPlaylistPipeline({
     songs,
     outputTitle,
     transitionStyle = 'dissolve',
+    generateMotion = false,
+    vignetteMode = 'normal',
     source = 'web',
     chatId = null
 }) {
@@ -1310,6 +1319,26 @@ export async function startPlaylistPipeline({
                     }
                 }
 
+                // Generate motion video from plain artwork if toggle is ON
+                if (generateMotion && !isVideoArtwork && artworkBuffer) {
+                    updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `🎥 [VideoGen] Memulai generasi motion background dari thumbnail via LTX...`)
+                    try {
+                        const plainThumbnailPath = path.join(tempDir, `plain_thumb_${i}.png`)
+                        fs.writeFileSync(plainThumbnailPath, artworkBuffer)
+                        const videoMotionPrompt = 'make this image come alive with slow cinematic motion, 4k'
+                        const videoBuffer = await aiService.generateVideoFromImage(plainThumbnailPath, videoMotionPrompt)
+                        
+                        const motionVideoPath = path.join(tempDir, `artwork_${i}.mp4`)
+                        fs.writeFileSync(motionVideoPath, videoBuffer)
+                        artworkLocalPath = motionVideoPath
+                        isVideoArtwork = true
+                        updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `✅ [VideoGen] Motion background berhasil digenerate!`)
+                    } catch (videoErr) {
+                        logger.error(`[Playlist/VideoGen] Failed to generate motion background for Song #${songNum}: ${videoErr.message}`)
+                        updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `⚠️ [VideoGen] Gagal generate motion, fallback ke gambar statis.`)
+                    }
+                }
+
                 if (!isVideoArtwork && artworkBuffer) {
                     updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `🎨 Menambahkan banner overlay judul "${songTitle}"...`)
                     try {
@@ -1330,6 +1359,13 @@ export async function startPlaylistPipeline({
                 const overlayPath = path.resolve('./storage/assets/partikel_api.mp4')
                 const overlayExists = fs.existsSync(overlayPath)
 
+                let vignetteFilter = ''
+                if (vignetteMode === 'dark') {
+                    vignetteFilter = ',vignette=color=black:angle=0.5'
+                } else if (vignetteMode === 'light') {
+                    vignetteFilter = ',vignette=color=white:angle=0.5'
+                }
+
                 if (isVideoArtwork) {
                     updateJob('playlist_render', Math.floor(40 + (i / songs.length) * 20), `🔄 [FFmpeg] Membuat seamless reverse loop dari video artwork...`)
                     const pingpongPath = path.join(tempDir, `pingpong_${i}.mp4`)
@@ -1349,17 +1385,17 @@ export async function startPlaylistPipeline({
                     const bannerExists = fs.existsSync(bannerOverlayPath)
 
                     if (overlayExists && bannerExists) {
-                        ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${currentVideoInput}" -stream_loop -1 -i "${overlayPath}" -loop 1 -i "${bannerOverlayPath}" -i "${destAudioPath}" -filter_complex "[0:v]crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080,setsar=1,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.4,format=yuv420p[v2];[v2][2:v]overlay=0:0" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
+                        ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${currentVideoInput}" -stream_loop -1 -i "${overlayPath}" -loop 1 -i "${bannerOverlayPath}" -i "${destAudioPath}" -filter_complex "[0:v]crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080,setsar=1${vignetteFilter},format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.4,format=yuv420p[v2];[v2][2:v]overlay=0:0" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
                     } else if (bannerExists) {
-                        ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${currentVideoInput}" -loop 1 -i "${bannerOverlayPath}" -i "${destAudioPath}" -filter_complex "[0:v]crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080,setsar=1[v0];[v0][1:v]overlay=0:0" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
+                        ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${currentVideoInput}" -loop 1 -i "${bannerOverlayPath}" -i "${destAudioPath}" -filter_complex "[0:v]crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080,setsar=1${vignetteFilter}[v0];[v0][1:v]overlay=0:0" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
                     } else {
-                        ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${currentVideoInput}" -i "${destAudioPath}" -filter_complex "[0:v]crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080,setsar=1" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
+                        ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${currentVideoInput}" -i "${destAudioPath}" -filter_complex "[0:v]crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080,setsar=1${vignetteFilter}" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
                     }
                 } else {
                     if (overlayExists) {
-                        ffmpegCmd = `ffmpeg -y -loop 1 -i "${artworkLocalPath}" -stream_loop -1 -i "${overlayPath}" -i "${destAudioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.4,format=yuv420p" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
+                        ffmpegCmd = `ffmpeg -y -loop 1 -i "${artworkLocalPath}" -stream_loop -1 -i "${overlayPath}" -i "${destAudioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1${vignetteFilter},crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.4,format=yuv420p" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
                     } else {
-                        ffmpegCmd = `ffmpeg -y -loop 1 -i "${artworkLocalPath}" -i "${destAudioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
+                        ffmpegCmd = `ffmpeg -y -loop 1 -i "${artworkLocalPath}" -i "${destAudioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1${vignetteFilter},crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
                     }
                 }
 
