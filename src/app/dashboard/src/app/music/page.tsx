@@ -1356,9 +1356,6 @@ export default function MusicAutomationPage() {
                                             activeJob?.status === 'running' || 
                                             isUploading ||
                                             (modelMode === 'manual' && manualSubMode === 'playlist' && (
-                                                playlistSongs.length === 0 || 
-                                                !playlistTitle.trim() || 
-                                                playlistValidationWarnings.length > 0 || 
                                                 playlistSongs.some(s => s.status === 'uploading' || s.artworkStatus === 'uploading')
                                             ))
                                         }
