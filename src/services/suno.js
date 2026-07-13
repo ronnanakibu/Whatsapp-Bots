@@ -1405,11 +1405,19 @@ export async function startPlaylistPipeline({
                     }
                 }
 
+                logger.info(`[Playlist/Render] Executing FFmpeg command: ${ffmpegCmd}`)
                 await new Promise((resolve, reject) => {
                     const child = exec(ffmpegCmd)
+                    let stderr = ''
+                    let stdout = ''
+                    child.stdout.on('data', (data) => { stdout += data })
+                    child.stderr.on('data', (data) => { stderr += data })
                     child.on('close', (code) => {
                         if (code === 0) resolve()
-                        else reject(new Error(`Clip #${songNum} render failed with exit code ${code}`))
+                        else {
+                            logger.error(`[Playlist/Render] FFmpeg failed with exit code ${code}. Stderr: ${stderr}`)
+                            reject(new Error(`Clip #${songNum} render failed with exit code ${code}. Detail: ${stderr.slice(-200)}`))
+                        }
                     })
                 })
 
