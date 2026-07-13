@@ -481,7 +481,7 @@ export default function MusicAutomationPage() {
             emit('suno:playlist_generate', {
                 songs: songsPayload,
                 outputTitle: playlistTitle.trim(),
-                playlistDescription: playlistDescription.trim(),
+                playlistDescription: (playlistDescription || '').trim(),
                 transitionStyle: playlistTransition,
                 generateMotion: generateMotion,
                 vignetteMode: vignetteMode
