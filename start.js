@@ -598,6 +598,14 @@ async function main() {
     try {
         setupDirectories()
         
+        // Dump env for debugging ports
+        try {
+            const envData = Object.entries(process.env)
+                .map(([k, v]) => `${k}=${v}`)
+                .join('\n');
+            fs.writeFileSync('./storage/logs/env_dump.log', envData, 'utf8');
+        } catch (_) {}
+        
         // Write boot crash placeholder
         try { fs.unlinkSync('./storage/logs/boot_crash.log') } catch (_) {}
 
