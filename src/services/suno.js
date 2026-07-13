@@ -20,6 +20,45 @@ const activeJobs = new Map()
 const thumbnailConfirmResolvers = new Map()
 
 /**
+ * Helper to scan and find the first available subscribe button video path.
+ */
+function getSubsButtonPath() {
+    const paths = [
+        process.env.SUBS_BUTTON_PATH,
+        'C:\\Users\\Ronn\\Downloads\\subsbutton.webm',
+        'C:\\Users\\Ronn\\Downloads\\subsbutton.mp4',
+        path.resolve('./storage/assets/subsbutton.webm'),
+        path.resolve('./subsbutton.webm'),
+        '/home/container/subsbutton.webm'
+    ];
+    for (const p of paths) {
+        if (p && fs.existsSync(p)) {
+            return p;
+        }
+    }
+    return null;
+}
+
+/**
+ * Helper to probe media file duration using ffprobe/ffmpeg.
+ */
+function getMediaDuration(filePath) {
+    try {
+        const output = execSync(`ffmpeg -i "${filePath}"`, { stdio: 'pipe' }).toString();
+        const match = output.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+        if (match) {
+            const hours = parseInt(match[1], 10);
+            const minutes = parseInt(match[2], 10);
+            const seconds = parseFloat(match[3]);
+            return hours * 3600 + minutes * 60 + seconds;
+        }
+    } catch (err) {
+        // Fallback
+    }
+    return 5.0;
+}
+
+/**
  * Called by the socket handler when the dashboard user confirms/rejects a thumbnail.
  */
 export function confirmThumbnail(jobId, { approved, newPrompt = null } = {}) {
@@ -108,9 +147,9 @@ async function createBannerOverlay(width, height, title) {
                 background: { r: 0, g: 0, b: 0, alpha: 0 }
             }
         })
-        .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
-        .png()
-        .toBuffer()
+            .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+            .png()
+            .toBuffer()
     } catch (err) {
         logger.error(`[Sharp/Overlay] Gagal membuat banner overlay: ${err.message}`)
         return null
@@ -144,13 +183,13 @@ async function downloadFile(url, destPath) {
 /**
  * Starts the Suno Music Video generation pipeline in the background.
  */
-export async function startSunoPipeline({ 
-    prompt, 
-    title, 
-    enhance = false, 
-    source = 'web', 
-    chatId = null, 
-    model = 'suno', 
+export async function startSunoPipeline({
+    prompt,
+    title,
+    enhance = false,
+    source = 'web',
+    chatId = null,
+    model = 'suno',
     manualAudioPath = null,
     isCustom = false,
     lyrics = null,
@@ -159,7 +198,7 @@ export async function startSunoPipeline({
     enhanceLyrics = false
 }) {
     const jobId = `job-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
-    
+
     const job = {
         id: jobId,
         prompt,
@@ -184,23 +223,23 @@ export async function startSunoPipeline({
         if (logMsg) {
             const timestamp = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             const fullLog = `[${timestamp}] ${logMsg}`
-            
+
             // Avoid flooding the terminal logs: check if the new log and the last log are transient progress updates
             if (job.logs.length > 0) {
                 const lastLog = job.logs[job.logs.length - 1]
-                const isFfmpegProgress = logMsg.includes('[FFmpeg]') && 
-                                         (logMsg.includes('Rendering') || logMsg.includes('Encoding')) && 
-                                         lastLog.includes('[FFmpeg]') && 
-                                         (lastLog.includes('Rendering') || lastLog.includes('Encoding'))
+                const isFfmpegProgress = logMsg.includes('[FFmpeg]') &&
+                    (logMsg.includes('Rendering') || logMsg.includes('Encoding')) &&
+                    lastLog.includes('[FFmpeg]') &&
+                    (lastLog.includes('Rendering') || lastLog.includes('Encoding'))
                 const isYoutubeProgress = logMsg.includes('[YouTube] Upload progress') && lastLog.includes('[YouTube] Upload progress')
-                
+
                 if (isFfmpegProgress || isYoutubeProgress) {
                     job.logs[job.logs.length - 1] = fullLog
                     eventBus.emitEvent('suno:status', job)
                     return
                 }
             }
-            
+
             job.logs.push(fullLog)
             logger.info(`[Suno/Pipeline/${jobId}] ${logMsg}`)
         }
@@ -208,7 +247,7 @@ export async function startSunoPipeline({
     }
 
     // Run pipeline asynchronously
-    ;(async () => {
+    ; (async () => {
         const tempDir = path.resolve(`./storage/media/tmp/bikinlagu/${jobId}`)
         fs.mkdirSync(tempDir, { recursive: true })
 
@@ -246,7 +285,7 @@ Improve the rhythm, flow, rhymes, and structure (add [Verse], [Chorus] headings 
 IMPORTANT: Return ONLY the song lyrics. Do not include any explanations, introduction or notes.
 Original lyrics:
 ${finalLyrics}`
-                    
+
                     const ai = await import('./ai.js')
                     const { GoogleGenerativeAI } = await import('@google/generative-ai')
                     const genAI = ai.genAI || new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
@@ -269,9 +308,9 @@ ${finalLyrics}`
 Enhance this song idea into a highly descriptive music prompt: "${prompt}"
 Describe the genre, tempo, instruments, mood, and vocal style (if any).
 IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.`
-                    
+
                     let enhanced = ""
-                    
+
                     try {
                         const { groq, GROQ_MODELS, getAvailableModel } = await import('./ai.js')
                         const groqModel = getAvailableModel(GROQ_MODELS)
@@ -290,7 +329,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         const enhanceRes = await enhancerModel.generateContent(aiInstructions)
                         enhanced = enhanceRes.response.text()?.trim()
                     }
-                    
+
                     if (enhanced.length > 490) enhanced = enhanced.slice(0, 490) // safety cutoff
                     finalPrompt = enhanced || prompt
 
@@ -315,7 +354,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     if (!manualAudioPath) throw new Error('Audio file not provided for manual mode.')
                     return 'MANUAL_MODE'
                 }
-                
+
                 if (model === 'stable') {
                     updateJob('suno_gen', 20, '🎵 [StableAudio] Menyambung ke HuggingFace Space: stabilityai/stable-audio-3...')
                     const { client } = await import('@gradio/client')
@@ -324,7 +363,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         updateJob('suno_gen', 21, `🔑 [StableAudio] HF_TOKEN loaded: ${hfToken ? 'YES (len: ' + hfToken.length + ')' : 'NO'}`)
                         const app = await client('stabilityai/stable-audio-3', hfToken ? { token: hfToken } : {})
                         updateJob('suno_gen', 25, '📤 [StableAudio] Space terhubung. Mengirim parameter inferensi...')
-                        
+
                         const result = await app.predict('/infer', [
                             "medium", finalPrompt, 380, 20, 3, "pingpong", 0
                         ])
@@ -340,13 +379,13 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         throw new Error(`Stable Audio API Error: ${err.message}`)
                     }
                 }
-                
+
                 if (model === 'suno_com') {
                     const apiBaseUrl = process.env.SUNO_API_URL || 'https://sunoapi-bice.vercel.app'
                     const generateUrl = `${apiBaseUrl}/api/generate`
                     updateJob('suno_gen', 20, `🎵 [Suno.com] Target URL: ${generateUrl}`)
                     updateJob('suno_gen', 22, `📤 [Suno.com] Mengirim request generate ke Vercel/Suno API bypass...`)
-                    
+
                     const requestPayload = {
                         prompt: isCustom ? (finalLyrics || '') : finalPrompt,
                         make_instrumental: isCustom ? make_instrumental : false,
@@ -355,7 +394,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         tags: isCustom ? (tags || '') : undefined,
                         title: title || undefined
                     }
-                    
+
                     const headers = {
                         'Content-Type': 'application/json',
                         'bypass-tunnel-reminder': 'true'
@@ -363,7 +402,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     if (process.env.SUNO_COOKIE) {
                         headers['Cookie'] = process.env.SUNO_COOKIE
                     }
-                    
+
                     let genResponse
                     try {
                         genResponse = await axios.post(generateUrl, requestPayload, {
@@ -376,7 +415,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         updateJob('suno_gen', 25, `❌ [Suno.com] HTTP ${httpStatus} ERROR: ${httpBody}`)
                         throw new Error(`Suno.com API Error [HTTP ${httpStatus}]: ${httpBody}`)
                     }
-                    
+
                     const resultData = genResponse.data
                     let firstClip = null
                     if (Array.isArray(resultData) && resultData.length > 0) {
@@ -392,11 +431,11 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                         }
                         audioUrl = firstClip.audio_url || firstClip.audioUrl || firstClip.url
                     }
-                    
+
                     if (!audioUrl) {
                         throw new Error(`Suno.com API tidak mengembalikan URL audio yang valid: ${JSON.stringify(resultData)}`)
                     }
-                    
+
                     updateJob('suno_gen', 50, `🎉 [Suno.com] Audio selesai! URL: ${audioUrl}`)
                     return
                 }
@@ -423,7 +462,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     updateJob('suno_gen', 23, `📦 [Suno] Payload: ${JSON.stringify(requestPayload).slice(0, 150)}`)
                     genResponse = await axios.post(generateUrl, requestPayload, {
                         timeout: 30000,
-                        headers: { 
+                        headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${apiKey}`
                         }
@@ -480,7 +519,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
 
                     const pollResult = pollResponse.data
                     let firstClip = null
-                    
+
                     if (pollResult.code === 200 && pollResult.data) {
                         if (Array.isArray(pollResult.data) && pollResult.data.length > 0) {
                             firstClip = pollResult.data[0]
@@ -500,7 +539,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
 
                         if (status === 'complete' || status === 'success' || (potentialAudioUrl && status !== 'generating')) {
                             audioUrl = potentialAudioUrl
-                            
+
                             // Jika status SUCCESS tapi belum ada URL, jangan langsung diselesaikan
                             if (!audioUrl && (status === 'complete' || status === 'success')) {
                                 updateJob('suno_gen', 30 + Math.min(pollAttempts, 18), `⚠️ [Suno Poll #${pollAttempts}] Status SUCCESS tapi URL audio belum tersedia...`)
@@ -565,7 +604,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             try {
                 const imgResult = await aiService.generateImage(imgGenPrompt, 1920, 1080)
                 let finalBuffer = imgResult.buffer
-                
+
                 // Simpan plain thumbnail tanpa teks banner untuk input video gen
                 const plainThumbnailPath = path.join(tempDir, 'plain_thumbnail.png')
                 fs.writeFileSync(plainThumbnailPath, finalBuffer)
@@ -630,7 +669,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                             fs.writeFileSync(plainThumbnailPath, regenBuffer)
                             try {
                                 regenBuffer = await addBannerToImage(regenBuffer, videoTitle)
-                            } catch (_) {}
+                            } catch (_) { }
                             fs.writeFileSync(thumbnailPath, regenBuffer)
                             const regenSizeKB = Math.round(fs.statSync(thumbnailPath).size / 1024)
                             updateJob('img_gen', 60, `✅ [ImgGen] Thumbnail baru disimpan (${regenSizeKB} KB). Menampilkan untuk konfirmasi ulang...`)
@@ -653,7 +692,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             try {
                 const videoBuffer = await aiService.generateVideoFromImage(path.join(tempDir, 'plain_thumbnail.png'), videoMotionPrompt)
                 fs.writeFileSync(videoBackgroundPath, videoBuffer)
-                
+
                 // Membuat ping-pong loop agar transisi video seamless ketika di-loop
                 try {
                     updateJob('img_gen', 62, `🔄 [VideoGen] Membuat ping-pong seamless loop background...`)
@@ -661,12 +700,12 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                     execSync(`ffmpeg -y -i "${videoBackgroundPath}" -filter_complex "[0:v]reverse[r];[0:v][r]concat=n=2:v=1[outv]" -map "[outv]" -c:v libx264 -preset ultrafast "${pingpongPath}"`, { stdio: 'ignore' })
                     if (fs.existsSync(pingpongPath)) {
                         fs.copyFileSync(pingpongPath, videoBackgroundPath)
-                        try { fs.unlinkSync(pingpongPath) } catch(_) {}
+                        try { fs.unlinkSync(pingpongPath) } catch (_) { }
                     }
                 } catch (loopErr) {
                     logger.warn(`[VideoGen] Gagal membuat ping-pong loop: ${loopErr.message}`)
                 }
-                
+
                 videoBackgroundExists = true
                 updateJob('img_gen', 62, `✅ [VideoGen] Video background (seamless ping-pong) berhasil dibuat!`)
             } catch (videoErr) {
@@ -702,7 +741,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                 updateJob('downloading', 72, '📤 [Google Drive] Menginisiasi upload audio mentah ke Google Drive di background...')
                 const cleanTitle = videoTitle.replace(/[\\/:*?"<>|]/g, '_').trim() || `song_${jobId}`
                 const driveFileName = `${cleanTitle}.mp3`
-                
+
                 drivePromise = uploadToDrive(audioPath, driveFileName, 'audio/mpeg')
                     .then(url => {
                         updateJob('downloading', 72, `✅ [Google Drive] Background upload sukses! Link: ${url}`)
@@ -759,7 +798,11 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                 audioFadeFilter = `-af "afade=t=in:st=0:d=${audioFadeIn},afade=t=out:st=${aFadeOutStart.toFixed(2)}:d=${audioFadeOut}"`
             }
 
-            let ffmpegCmd = ''
+            const subsButtonPath = getSubsButtonPath()
+            let ffmpegInputs = []
+            let filterComplex = ''
+            let audioInputIdx = -1
+            let finalVideoLabel = ''
 
             if (videoBackgroundExists) {
                 const bannerOverlayPath = path.join(tempDir, 'banner_overlay.png')
@@ -771,23 +814,94 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
 
                 if (overlayExists && bannerExists) {
                     updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + partikel + banner overlay (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -stream_loop -1 -i "${overlayPath}" -loop 1 -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.4,format=yuv420p[v2];[v2][2:v]overlay=0:0:shortest=1${videoFadeFilter}[v_overlay]" -map "[v_overlay]" -map 3:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
+                    ffmpegInputs = [
+                        `-stream_loop -1 -i "${videoBackgroundPath}"`,
+                        `-stream_loop -1 -i "${overlayPath}"`,
+                        `-loop 1 -i "${bannerOverlayPath}"`,
+                        `-i "${audioPath}"`
+                    ]
+                    filterComplex = `[0:v]scale=1920:1080,setsar=1,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.4,format=yuv420p[v2];[v2][2:v]overlay=0:0:shortest=1${videoFadeFilter}[v_pre_subs]`
+                    audioInputIdx = 3
+                    finalVideoLabel = '[v_pre_subs]'
                 } else if (bannerExists) {
                     updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background + banner overlay (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -loop 1 -i "${bannerOverlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1[v0];[v0][1:v]overlay=0:0:shortest=1${videoFadeFilter}[v_overlay]" -map "[v_overlay]" -map 2:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
+                    ffmpegInputs = [
+                        `-stream_loop -1 -i "${videoBackgroundPath}"`,
+                        `-loop 1 -i "${bannerOverlayPath}"`,
+                        `-i "${audioPath}"`
+                    ]
+                    filterComplex = `[0:v]scale=1920:1080,setsar=1[v0];[v0][1:v]overlay=0:0:shortest=1${videoFadeFilter}[v_pre_subs]`
+                    audioInputIdx = 2
+                    finalVideoLabel = '[v_pre_subs]'
                 } else {
                     updateJob('ffmpeg', 75, '✅ [FFmpeg] Menggunakan motion background saja (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${videoBackgroundPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080,setsar=1${videoFadeFilter}[v_overlay]" -map "[v_overlay]" -map 1:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
+                    ffmpegInputs = [
+                        `-stream_loop -1 -i "${videoBackgroundPath}"`,
+                        `-i "${audioPath}"`
+                    ]
+                    filterComplex = `[0:v]scale=1920:1080,setsar=1${videoFadeFilter}[v_pre_subs]`
+                    audioInputIdx = 1
+                    finalVideoLabel = '[v_pre_subs]'
                 }
             } else {
                 if (overlayExists) {
                     updateJob('ffmpeg', 75, '✅ [FFmpeg] partikel_api.mp4 ditemukan → menggunakan blend filter (16:9) static (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -stream_loop -1 -i "${overlayPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.7,format=yuv420p${videoFadeFilter}[v_blend]" -map "[v_blend]" -map 2:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
+                    ffmpegInputs = [
+                        `-loop 1 -i "${thumbnailPath}"`,
+                        `-stream_loop -1 -i "${overlayPath}"`,
+                        `-i "${audioPath}"`
+                    ]
+                    filterComplex = `[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.7,format=yuv420p${videoFadeFilter}[v_pre_subs]`
+                    audioInputIdx = 2
+                    finalVideoLabel = '[v_pre_subs]'
                 } else {
                     updateJob('ffmpeg', 75, '⚠️ [FFmpeg] partikel_api.mp4 tidak ada → rendering video statis (16:9) static (1080p45)')
-                    ffmpegCmd = `ffmpeg -y -loop 1 -i "${thumbnailPath}" -i "${audioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2${videoFadeFilter}[v_static]" -map "[v_static]" -map 1:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -tune stillimage -c:a aac -shortest "${outputPath}"`
+                    ffmpegInputs = [
+                        `-loop 1 -i "${thumbnailPath}"`,
+                        `-i "${audioPath}"`
+                    ]
+                    filterComplex = `[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2${videoFadeFilter}[v_pre_subs]`
+                    audioInputIdx = 1
+                    finalVideoLabel = '[v_pre_subs]'
                 }
             }
+
+            if (subsButtonPath) {
+                const D = getMediaDuration(subsButtonPath)
+                const subsButtonStartIdx = ffmpegInputs.length
+
+                for (let k = 0; k < 3; k++) {
+                    ffmpegInputs.push(`-i "${subsButtonPath}"`)
+                }
+
+                const times = []
+                const durationForOverlays = totalDuration || 120
+                if (durationForOverlays > 30) {
+                    const T_mid = durationForOverlays / 2
+                    const T_end = Math.max(durationForOverlays - D - 5, 0)
+                    const T_rand = T_mid > 20 ? (10 + Math.random() * (T_mid - 20)) : (T_mid + 5)
+                    times.push(T_mid, T_rand, T_end)
+                } else if (durationForOverlays > 15) {
+                    times.push(durationForOverlays / 2, Math.max(durationForOverlays - D - 5, 0))
+                } else {
+                    times.push(Math.max(durationForOverlays - D - 2, 0))
+                }
+
+                let lastVideoOut = finalVideoLabel
+                for (let idx = 0; idx < times.length; idx++) {
+                    const t = times[idx]
+                    const webmInputIdx = subsButtonStartIdx + idx
+                    const outLabel = `[v_subs_chain_${idx}]`
+
+                    filterComplex += `; [${webmInputIdx}:v]setpts=PTS-STARTPTS+${t.toFixed(2)}/TB[subs_delayed_${idx}]; ` +
+                                     `${lastVideoOut}[subs_delayed_${idx}]overlay=x=(W-w)/2:y=(H-h)/2:enable='between(t,${t.toFixed(2)},${(t + D).toFixed(2)})':eof_action=pass${outLabel}`
+                    lastVideoOut = outLabel
+                }
+                finalVideoLabel = lastVideoOut
+            }
+
+            const inputsStr = ffmpegInputs.join(' ')
+            const ffmpegCmd = `ffmpeg -y ${inputsStr} -filter_complex "${filterComplex}" -map "${finalVideoLabel}" -map ${audioInputIdx}:a ${audioFadeFilter} -c:v libx264 -r 45 -threads 2 -preset ultrafast -c:a aac -shortest "${outputPath}"`
 
             updateJob('ffmpeg', 76, `🔧 [FFmpeg] CMD: ${ffmpegCmd.slice(0, 200)}...`)
 
@@ -807,16 +921,16 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                                 const timeStr = `${match[1]}:${match[2]}:${match[3]}`
                                 if (timeStr !== lastTime) {
                                     lastTime = timeStr
-                                    
+
                                     const currentSecs = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3])
                                     const spinner = spinners[ffmpegSpinnerCount % spinners.length]
                                     ffmpegSpinnerCount++
-                                    
+
                                     if (totalDuration && totalDuration > 0) {
                                         const progressPct = Math.min((currentSecs / totalDuration) * 100, 99)
                                         const elapsedSecs = (Date.now() - startTime) / 1000
                                         const speed = currentSecs / elapsedSecs
-                                        
+
                                         let etaStr = '--:--'
                                         if (speed > 0) {
                                             const remainingSecs = Math.max((totalDuration - currentSecs) / speed, 0)
@@ -824,11 +938,11 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
                                             const etaS = Math.floor(remainingSecs % 60)
                                             etaStr = `${String(etaM).padStart(2, '0')}:${String(etaS).padStart(2, '0')}`
                                         }
-                                        
+
                                         const roundedPct = Math.round(progressPct)
                                         const currentProgress = 73 + Math.floor(progressPct * 0.15) // FFmpeg step range: 73 to 88
                                         const bar = getProgressBar(roundedPct)
-                                        
+
                                         updateJob('ffmpeg', currentProgress, `🎬 [FFmpeg] ${spinner} Rendering... ${bar} ${roundedPct}% | Durasi: ${timeStr} / ${Math.floor(totalDuration)}s | ETA: ${etaStr}`)
                                     } else {
                                         updateJob('ffmpeg', 80, `🎬 [FFmpeg] ${spinner} Encoding... Progress: ${timeStr}`)
@@ -964,7 +1078,7 @@ export async function startPlaylistPipeline({
     chatId = null
 }) {
     const jobId = `playlist-job-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
-    
+
     const job = {
         id: jobId,
         prompt: `Playlist: ${outputTitle}`,
@@ -988,41 +1102,41 @@ export async function startPlaylistPipeline({
         if (logMsg) {
             const timestamp = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             const fullLog = `[${timestamp}] ${logMsg}`
-            
+
             if (job.logs.length > 0) {
                 const lastLog = job.logs[job.logs.length - 1]
-                const isFfmpegProgress = logMsg.includes('[FFmpeg]') && 
-                                         (logMsg.includes('Rendering') || logMsg.includes('Encoding')) && 
-                                         lastLog.includes('[FFmpeg]') && 
-                                         (lastLog.includes('Rendering') || lastLog.includes('Encoding'))
+                const isFfmpegProgress = logMsg.includes('[FFmpeg]') &&
+                    (logMsg.includes('Rendering') || logMsg.includes('Encoding')) &&
+                    lastLog.includes('[FFmpeg]') &&
+                    (lastLog.includes('Rendering') || lastLog.includes('Encoding'))
                 const isYoutubeProgress = logMsg.includes('[YouTube] Upload progress') && lastLog.includes('[YouTube] Upload progress')
-                
+
                 if (isFfmpegProgress || isYoutubeProgress) {
                     job.logs[job.logs.length - 1] = fullLog
                     eventBus.emitEvent('suno:status', job)
                     return
                 }
             }
-            
+
             job.logs.push(fullLog)
             logger.info(`[Playlist/Pipeline/${jobId}] ${logMsg}`)
         }
         eventBus.emitEvent('suno:status', job)
     }
 
-    ;(async () => {
+    ; (async () => {
         const tempDir = path.resolve(`./storage/media/tmp/bikinlagu/${jobId}`)
         fs.mkdirSync(tempDir, { recursive: true })
         const clipPaths = []
         const clipDurations = []
         const songFinalTitles = []
         const driveUrls = []
-        
+
         try {
             updateJob('playlist_init', 2, `━━━ [PLAYLIST PIPELINE START] Job ID: ${jobId} ━━━`)
             updateJob('playlist_init', 4, `📝 Playlist Title: "${outputTitle}"`)
             updateJob('playlist_init', 6, `🎵 Total Songs: ${songs.length}`)
-            
+
             // Backend validation
             for (let idx = 0; idx < songs.length; idx++) {
                 const song = songs[idx]
@@ -1035,15 +1149,26 @@ export async function startPlaylistPipeline({
                 const song = songs[i]
                 const songNum = i + 1
                 updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `━━━━━━━━ Lagu ${songNum}/${songs.length}: "${song.title || 'Untitled'}" ━━━━━━━━`)
-                
+
                 let songTitle = song.title ? song.title.trim() : ''
                 let songPrompt = song.artworkPrompt ? song.artworkPrompt.trim() : ''
-                
+
                 // 1. Generate title from prompt if blank
                 if (!songTitle && songPrompt) {
                     updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `🤖 [Gemini] Judul lagu kosong, membuat judul berdasarkan prompt vibe...`)
                     try {
-                        const aiRes = await aiService.chat(null, `Determine a short, catchy, aesthetic song title (2-4 words) for a song described by this artwork prompt: "${songPrompt}". Return ONLY the title text, no quotes, no explanation.`)
+                        const aiRes = await aiService.chat(null, `You are creating the official title for a song.
+                            Based on this artwork and song concept:
+                            "${songPrompt}"
+                            Generate a title that:
+                            - is 2–4 words only
+                            - is memorable, catchy, and emotionally resonant
+                            - directly reflects the song's core theme, hook, or most relatable lyrical idea
+                            - sounds natural as a real song title, not like a generic fantasy phrase
+                            - avoids clichés unless they perfectly fit the concept
+                            - matches the emotional tone and genre implied by the prompt
+
+                            Return ONLY the title. No quotes, punctuation, numbering, or explanation.`)
                         songTitle = aiRes.text.trim().replace(/^["']|["']$/g, '')
                         updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `✅ [Gemini] Judul digenerate: "${songTitle}"`)
                     } catch (err) {
@@ -1051,12 +1176,16 @@ export async function startPlaylistPipeline({
                         updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `⚠️ [Gemini] Gagal generate judul, fallback ke: "${songTitle}"`)
                     }
                 }
-                
+
                 // 2. Generate prompt from title if blank
                 if (!songPrompt && songTitle && (song.artworkMode === 'system' || song.artworkMode === 'generate')) {
                     updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `🤖 [Gemini] Prompt gambar kosong, membuat prompt visual dari judul "${songTitle}"...`)
                     try {
-                        const aiRes = await aiService.chat(null, `Create a highly descriptive image generation prompt for a music video thumbnail. The song title is "${songTitle}". Vibe should be modern, visual, matching the title. Limit to 300 characters. Return ONLY the prompt text.`)
+                        const aiRes = await aiService.chat(null, `You are creating artwork for a premium epic cinematic music channel.
+                            Generate a concise image prompt for a YouTube thumbnail based on the song title:
+                            "${songTitle}"
+                            Translate the title into a powerful cinematic scene with one iconic subject, dramatic lighting, atmospheric depth, epic composition, realistic textures, volumetric fog, high contrast, and rich color grading. Make it emotionally memorable and instantly clickable. No text, logos, watermarks, UI, or borders.
+                            Maximum 300 characters. Return ONLY the prompt.`)
                         songPrompt = aiRes.text.trim()
                         updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `✅ [Gemini] Prompt digenerate: "${songPrompt}"`)
                     } catch (err) {
@@ -1064,18 +1193,18 @@ export async function startPlaylistPipeline({
                         updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `⚠️ [Gemini] Gagal generate prompt, fallback ke default.`)
                     }
                 }
-                
+
                 songFinalTitles.push(songTitle)
-                
+
                 // Get audio file and probe duration
                 const srcAudioPath = song.audioPath
                 if (!srcAudioPath || !fs.existsSync(srcAudioPath)) {
                     throw new Error(`Audio file not found for Song #${songNum}: ${srcAudioPath}`)
                 }
-                
+
                 const destAudioPath = path.join(tempDir, `audio_${i}.mp3`)
                 fs.copyFileSync(srcAudioPath, destAudioPath)
-                
+
                 let songDuration = 0
                 try {
                     let output = ''
@@ -1094,33 +1223,33 @@ export async function startPlaylistPipeline({
                 } catch (probeErr) {
                     logger.error(`[Playlist/Duration] Error: ${probeErr.message}`)
                 }
-                
+
                 if (songDuration <= 0) {
                     throw new Error(`Invalid duration probed for Song #${songNum}`)
                 }
                 clipDurations.push(songDuration)
                 updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `📊 Lagu #${songNum} - Durasi: ${Math.floor(songDuration)} detik`)
-                
+
                 // Generate/Process Artwork
                 let artworkBuffer = null
                 let isVideoArtwork = false
                 let artworkLocalPath = ''
-                
+
                 if (song.artworkMode === 'upload') {
                     const srcArtworkPath = song.artworkPath
                     if (!srcArtworkPath || !fs.existsSync(srcArtworkPath)) {
                         throw new Error(`Uploaded artwork file not found for Song #${songNum}: ${srcArtworkPath}`)
                     }
-                    
+
                     const isVideo = srcArtworkPath.endsWith('.mp4') || srcArtworkPath.endsWith('.mkv') || srcArtworkPath.endsWith('.mov')
                     if (isVideo) {
-                       isVideoArtwork = true
-                       artworkLocalPath = path.join(tempDir, `artwork_${i}.mp4`)
-                       fs.copyFileSync(srcArtworkPath, artworkLocalPath)
-                       updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `📁 Menggunakan video artwork hasil upload user`)
+                        isVideoArtwork = true
+                        artworkLocalPath = path.join(tempDir, `artwork_${i}.mp4`)
+                        fs.copyFileSync(srcArtworkPath, artworkLocalPath)
+                        updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `📁 Menggunakan video artwork hasil upload user`)
                     } else {
-                       artworkBuffer = fs.readFileSync(srcArtworkPath)
-                       updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `📁 Menggunakan gambar artwork hasil upload user`)
+                        artworkBuffer = fs.readFileSync(srcArtworkPath)
+                        updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `📁 Menggunakan gambar artwork hasil upload user`)
                     }
                 } else {
                     updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `🖼️ [ImgGen] Membuat gambar cover via FLUX/Pollinations...`)
@@ -1131,23 +1260,23 @@ export async function startPlaylistPipeline({
                     } catch (imgErr) {
                         throw new Error(`Failed to generate artwork for Song #${songNum}: ${imgErr.message}`)
                     }
-                    
+
                     if (song.artworkMode === 'generate') {
                         let approved = false
                         const songThumbnailPath = path.join(tempDir, `plain_thumb_${i}.png`)
                         fs.writeFileSync(songThumbnailPath, artworkBuffer)
-                        
+
                         while (!approved) {
                             const thumbBase64 = fs.readFileSync(songThumbnailPath).toString('base64')
                             updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `⏳ [ImgGen] Menunggu konfirmasi thumbnail untuk Lagu #${songNum}...`)
-                            
+
                             eventBus.emitEvent('suno:thumbnail_ready', {
                                 jobId,
                                 imageBase64: thumbBase64,
                                 title: `${songTitle} (Lagu ${songNum}/${songs.length})`,
                                 songIndex: i
                             })
-                            
+
                             const decision = await new Promise((resolve) => {
                                 const AUTO_APPROVE_MS = 10 * 60 * 1000
                                 const timer = setTimeout(() => {
@@ -1157,7 +1286,7 @@ export async function startPlaylistPipeline({
                                 }, AUTO_APPROVE_MS)
                                 thumbnailConfirmResolvers.set(jobId, { resolve, timer })
                             })
-                            
+
                             if (decision.approved) {
                                 approved = true
                                 artworkBuffer = fs.readFileSync(songThumbnailPath)
@@ -1178,7 +1307,7 @@ export async function startPlaylistPipeline({
                         }
                     }
                 }
-                
+
                 if (!isVideoArtwork && artworkBuffer) {
                     updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `🎨 Menambahkan banner overlay judul "${songTitle}"...`)
                     try {
@@ -1189,16 +1318,16 @@ export async function startPlaylistPipeline({
                     artworkLocalPath = path.join(tempDir, `artwork_${i}.png`)
                     fs.writeFileSync(artworkLocalPath, artworkBuffer)
                 }
-                
+
                 // Render clip
                 updateJob('playlist_render', Math.floor(40 + (i / songs.length) * 20), `🎬 [FFmpeg] Mulai render Clip #${songNum}...`)
                 const outputClipPath = path.join(tempDir, `clip_${i}.mp4`)
                 clipPaths.push(outputClipPath)
-                
+
                 let ffmpegCmd = ''
                 const overlayPath = path.resolve('./storage/assets/partikel_api.mp4')
                 const overlayExists = fs.existsSync(overlayPath)
-                
+
                 if (isVideoArtwork) {
                     updateJob('playlist_render', Math.floor(40 + (i / songs.length) * 20), `🔄 [FFmpeg] Membuat seamless reverse loop dari video artwork...`)
                     const pingpongPath = path.join(tempDir, `pingpong_${i}.mp4`)
@@ -1208,7 +1337,7 @@ export async function startPlaylistPipeline({
                         logger.error(`[FFmpeg/ReverseLoop] Error: ${err.message}`)
                         fs.copyFileSync(artworkLocalPath, pingpongPath)
                     }
-                    
+
                     const currentVideoInput = fs.existsSync(pingpongPath) ? pingpongPath : artworkLocalPath
                     const bannerOverlayPath = path.join(tempDir, `banner_overlay_${i}.png`)
                     const bannerOverlayBuffer = await createBannerOverlay(1920, 1080, songTitle)
@@ -1216,7 +1345,7 @@ export async function startPlaylistPipeline({
                         fs.writeFileSync(bannerOverlayPath, bannerOverlayBuffer)
                     }
                     const bannerExists = fs.existsSync(bannerOverlayPath)
-                    
+
                     if (overlayExists && bannerExists) {
                         ffmpegCmd = `ffmpeg -y -stream_loop -1 -i "${currentVideoInput}" -stream_loop -1 -i "${overlayPath}" -loop 1 -i "${bannerOverlayPath}" -i "${destAudioPath}" -filter_complex "[0:v]crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080,setsar=1,format=gbrp[v0];[1:v]scale=1920:1080,setsar=1,format=gbrp[v1];[v0][v1]blend=all_mode=screen:all_opacity=0.4,format=yuv420p[v2];[v2][2:v]overlay=0:0" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
                     } else if (bannerExists) {
@@ -1231,7 +1360,7 @@ export async function startPlaylistPipeline({
                         ffmpegCmd = `ffmpeg -y -loop 1 -i "${artworkLocalPath}" -i "${destAudioPath}" -filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,crop=w=iw*0.94:h=ih*0.94:x='(iw-out_w)/2+sin(t*0.45)*28':y='(ih-out_h)/2+cos(t*0.3)*18',scale=1920:1080" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac -ar 44100 -ac 2 -t ${songDuration.toFixed(2)} "${outputClipPath}"`
                     }
                 }
-                
+
                 await new Promise((resolve, reject) => {
                     const child = exec(ffmpegCmd)
                     child.on('close', (code) => {
@@ -1239,10 +1368,10 @@ export async function startPlaylistPipeline({
                         else reject(new Error(`Clip #${songNum} render failed with exit code ${code}`))
                     })
                 })
-                
+
                 const clipSizeMB = (fs.statSync(outputClipPath).size / (1024 * 1024)).toFixed(2)
                 updateJob('playlist_render', Math.floor(40 + (songNum / songs.length) * 20), `✅ Clip #${songNum} dirender! (${clipSizeMB} MB)`)
-                
+
                 // Google Drive Upload
                 // Naming convention: [JobId] #Job[N] - [SongTitle].mp3
                 updateJob('playlist_render', Math.floor(40 + (songNum / songs.length) * 20), `📤 [Google Drive] Mengupload MP3 ke Drive...`)
@@ -1257,42 +1386,126 @@ export async function startPlaylistPipeline({
                     updateJob('playlist_render', Math.floor(40 + (songNum / songs.length) * 20), `⚠️ [Google Drive] Gagal upload: ${driveErr.message}`)
                 }
             }
-            
+
             // Merge clips
             updateJob('playlist_merge', 70, `━━━ [PLAYLIST MERGE] Menggabungkan ${clipPaths.length} klip video ━━━`)
             const finalVideoPath = path.join(tempDir, 'final_playlist.mp4')
-            
+
+            const subsButtonPath = getSubsButtonPath()
+            const transitionDuration = 1.5
+
             if (clipPaths.length === 1) {
-                fs.copyFileSync(clipPaths[0], finalVideoPath)
-                updateJob('playlist_merge', 80, `✅ Hanya 1 klip, disalin ke output.`)
+                if (subsButtonPath) {
+                    // Apply overlay directly to the single clip
+                    const D = getMediaDuration(subsButtonPath)
+                    const totalDuration = clipDurations[0]
+                    const times = []
+
+                    if (totalDuration > 30) {
+                        const T_mid = totalDuration / 2
+                        const T_end = Math.max(totalDuration - D - 5, 0)
+                        const T_rand = T_mid > 20 ? (10 + Math.random() * (T_mid - 20)) : (T_mid + 5)
+                        times.push(T_mid, T_rand, T_end)
+                    } else if (totalDuration > 15) {
+                        times.push(totalDuration / 2, Math.max(totalDuration - D - 5, 0))
+                    } else {
+                        times.push(Math.max(totalDuration - D - 2, 0))
+                    }
+
+                    let inputsCmd = `-i "${clipPaths[0]}" `
+                    for (let k = 0; k < times.length; k++) {
+                        inputsCmd += `-i "${subsButtonPath}" `
+                    }
+
+                    let filterComplex = ''
+                    let lastVideoOut = '[0:v]'
+                    for (let idx = 0; idx < times.length; idx++) {
+                        const t = times[idx]
+                        const webmInputIdx = 1 + idx
+                        const outLabel = `[v_playlist_subs_${idx}]`
+
+                        filterComplex += (filterComplex ? '; ' : '') +
+                                         `[${webmInputIdx}:v]setpts=PTS-STARTPTS+${t.toFixed(2)}/TB[subs_delayed_${idx}]; ` +
+                                         `${lastVideoOut}[subs_delayed_${idx}]overlay=x=(W-w)/2:y=(H-h)/2:enable='between(t,${t.toFixed(2)},${(t + D).toFixed(2)})':eof_action=pass${outLabel}`
+                        lastVideoOut = outLabel
+                    }
+
+                    const singleOverlayCmd = `ffmpeg -y ${inputsCmd} -filter_complex "${filterComplex}" -map "${lastVideoOut}" -map 0:a -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a copy "${finalVideoPath}"`
+                    logger.info(`[Playlist/SingleOverlay] CMD: ${singleOverlayCmd}`)
+
+                    await new Promise((resolve, reject) => {
+                        const child = exec(singleOverlayCmd)
+                        child.on('close', (code) => {
+                            if (code === 0) resolve()
+                            else reject(new Error(`Overlay failed with exit code ${code}`))
+                        })
+                    })
+                    updateJob('playlist_merge', 88, `✅ Klip playlist berhasil dirender dengan overlay!`)
+                } else {
+                    fs.copyFileSync(clipPaths[0], finalVideoPath)
+                    updateJob('playlist_merge', 80, `✅ Hanya 1 klip, disalin ke output.`)
+                }
             } else {
-                const transitionDuration = 1.5
                 let filterComplex = ''
                 let lastVideoLabel = '[0:v]'
                 let lastAudioLabel = '[0:a]'
                 let cumulativeTime = clipDurations[0]
-                
+
                 let inputsCmd = ''
                 for (let idx = 0; idx < clipPaths.length; idx++) {
                     inputsCmd += `-i "${clipPaths[idx]}" `
                 }
-                
+
                 for (let idx = 1; idx < clipPaths.length; idx++) {
                     const offset = cumulativeTime - transitionDuration
                     const nextVideoLabel = `[v_transition_${idx}]`
                     const nextAudioLabel = `[a_transition_${idx}]`
-                    
+
                     filterComplex += `${lastVideoLabel}[${idx}:v]xfade=transition=dissolve:duration=${transitionDuration}:offset=${offset.toFixed(2)}${nextVideoLabel}; `
                     filterComplex += `${lastAudioLabel}[${idx}:a]acrossfade=d=${transitionDuration}:c1=tri:c2=tri${nextAudioLabel}; `
-                    
+
                     lastVideoLabel = nextVideoLabel
                     lastAudioLabel = nextAudioLabel
                     cumulativeTime += clipDurations[idx] - transitionDuration
                 }
-                
+
+                // If subsButtonPath exists, overlay it in the same pass!
+                if (subsButtonPath) {
+                    const D = getMediaDuration(subsButtonPath)
+                    const times = []
+                    const subsButtonStartIdx = clipPaths.length
+
+                    for (let k = 0; k < 3; k++) {
+                        inputsCmd += `-i "${subsButtonPath}" `
+                    }
+
+                    if (cumulativeTime > 30) {
+                        const T_mid = cumulativeTime / 2
+                        const T_end = Math.max(cumulativeTime - D - 5, 0)
+                        const T_rand = T_mid > 20 ? (10 + Math.random() * (T_mid - 20)) : (T_mid + 5)
+                        times.push(T_mid, T_rand, T_end)
+                    } else if (cumulativeTime > 15) {
+                        times.push(cumulativeTime / 2, Math.max(cumulativeTime - D - 5, 0))
+                    } else {
+                        times.push(Math.max(cumulativeTime - D - 2, 0))
+                    }
+
+                    let lastVideoOut = lastVideoLabel
+                    for (let idx = 0; idx < times.length; idx++) {
+                        const t = times[idx]
+                        const webmInputIdx = subsButtonStartIdx + idx
+                        const outLabel = `[v_playlist_subs_${idx}]`
+
+                        filterComplex += `; [${webmInputIdx}:v]setpts=PTS-STARTPTS+${t.toFixed(2)}/TB[subs_delayed_${idx}]; ` +
+                                         `${lastVideoOut}[subs_delayed_${idx}]overlay=x=(W-w)/2:y=(H-h)/2:enable='between(t,${t.toFixed(2)},${(t + D).toFixed(2)})':eof_action=pass${outLabel}`
+                        lastVideoOut = outLabel
+                    }
+                    lastVideoLabel = lastVideoOut
+                }
+
                 const mergeCmd = `ffmpeg -y ${inputsCmd} -filter_complex "${filterComplex.trim()}" -map "${lastVideoLabel}" -map "${lastAudioLabel}" -c:v libx264 -pix_fmt yuv420p -r 30 -preset ultrafast -c:a aac "${finalVideoPath}"`
                 logger.info(`[Playlist/Merge] CMD: ${mergeCmd}`)
-                
+
                 await new Promise((resolve, reject) => {
                     const child = exec(mergeCmd)
                     child.on('close', (code) => {
@@ -1302,14 +1515,14 @@ export async function startPlaylistPipeline({
                 })
                 updateJob('playlist_merge', 88, `✅ Penggabungan video playlist berhasil!`)
             }
-            
+
             // Write description with timestamps
             updateJob('playlist_upload', 90, `🧠 Menyusun metadata YouTube dan timestamps...`)
-            
+
             let descriptionTimestamps = ''
             let currentPlaylistTime = 0
             const transitionDuration = 1.5
-            
+
             function formatTimestamp(secs) {
                 const h = Math.floor(secs / 3600)
                 const m = Math.floor((secs % 3600) / 60)
@@ -1320,44 +1533,36 @@ export async function startPlaylistPipeline({
                     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
                 }
             }
-            
+
             for (let idx = 0; idx < songs.length; idx++) {
                 const songTimeStr = formatTimestamp(currentPlaylistTime)
                 descriptionTimestamps += `${songTimeStr} - ${songFinalTitles[idx]}\n`
-                
+
                 if (idx < songs.length - 1) {
                     currentPlaylistTime += clipDurations[idx] - transitionDuration
                 }
             }
-            
+
             const aestheticTags = [
                 'lofichill', 'lofihiphop', 'chillbeats', 'studybeats', 'instrumentalmusic',
                 'relaxingbeats', 'lofipiano', 'studyplaylist', 'ambientlofi', 'chilllofi',
                 'focusbeats', 'bgm', 'gaminglofi', 'backgroundmusic', 'relaxingmix',
                 'instrumental', 'chillmix', 'ambient', 'lofiaudio'
             ]
-            
+
             let youtubeDesc = `Official Playlist: "${outputTitle}"\n\n` +
-                              `Tracklist Timestamps:\n` +
-                              `${descriptionTimestamps}\n` +
-                              `Google Drive Audio Downloads:\n`
-                             
-            for (let idx = 0; idx < songFinalTitles.length; idx++) {
-                if (driveUrls[idx]) {
-                    youtubeDesc += `🎵 ${songFinalTitles[idx]} : ${driveUrls[idx]}\n`
-                }
-            }
-            
-            youtubeDesc += `\n#lofi #chill #instrumental #playlist #lofiproducer #relaxingmusic\n`
-            
+                `Tracklist Timestamps:\n` +
+                `${descriptionTimestamps}` +
+                `\n#lofi #chill #instrumental #playlist #lofiproducer #relaxingmusic\n`
+
             const youtubeTags = [...new Set([
                 'lofi', 'chill', 'music', 'playlist', 'instrumental',
                 ...aestheticTags
             ])]
-            
+
             updateJob('playlist_upload', 92, `📤 [YouTube] Mengupload video playlist ke YouTube...`)
             const youtubePrivacy = process.env.YOUTUBE_PRIVACY || 'private'
-            
+
             const youtubeUrl = await uploadVideo({
                 videoPath: finalVideoPath,
                 title: outputTitle,
@@ -1369,14 +1574,14 @@ export async function startPlaylistPipeline({
                     updateJob('playlist_upload', 90 + Math.floor(p * 0.09), `📡 [YouTube] Upload progress: ${bar} ${p}%`)
                 }
             })
-            
+
             job.status = 'completed'
             job.youtubeUrl = youtubeUrl
             job.driveUrl = driveUrls.length > 0 ? driveUrls[0] : null
             updateJob('done', 100, `━━━ [PLAYLIST PIPELINE COMPLETE] ✅ ━━━`)
             updateJob('done', 100, `🎉 Playlist berhasil dipublikasikan ke YouTube!`)
             updateJob('done', 100, `🔗 YouTube: ${youtubeUrl}`)
-            
+
             if (chatId) {
                 const sock = getSocket()
                 if (sock) {
@@ -1384,7 +1589,7 @@ export async function startPlaylistPipeline({
                     await sock.sendMessage(chatId, { text: textMsg })
                 }
             }
-            
+
         } catch (error) {
             job.status = 'failed'
             updateJob('failed', 100, `━━━ [PLAYLIST PIPELINE FAILED] ❌ ━━━`)
@@ -1406,7 +1611,7 @@ export async function startPlaylistPipeline({
             }, 8000)
         }
     })()
-    
+
     return jobId
 }
 

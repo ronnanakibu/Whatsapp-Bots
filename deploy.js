@@ -31,6 +31,7 @@ const ignoreList = [
     'test_hoax.js',
     'test_nvidia.js',
     'test_routing.js',
+    'upload-retry.js',
     '.next'
 ];
 
