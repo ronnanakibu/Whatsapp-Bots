@@ -33,4 +33,33 @@ router.get('/system/metrics', authenticateJwt, (req, res) => {
     })
 })
 
+router.get('/system/test-playlist', async (req, res) => {
+    try {
+        const { startPlaylistPipeline } = await import('../../services/suno.js')
+        const jobId = await startPlaylistPipeline({
+            songs: [
+                {
+                    audioPath: '/home/container/storage/media/tmp/uploads/7b4377d6-e2c5-4555-9db0-7a213ee269e7.m4a',
+                    title: 'Test Song M4A',
+                    artworkMode: 'system',
+                    artworkPath: null,
+                    artworkPrompt: ''
+                }
+            ],
+            outputTitle: 'Diagnostic Test Playlist',
+            playlistDescription: 'Diagnosing playlist generation direct start',
+            transitionStyle: 'dissolve',
+            generateMotion: false,
+            vignetteMode: 'normal',
+            source: 'web',
+            chatId: null
+        })
+        res.json({ success: true, jobId })
+    } catch (err) {
+        logger.error(`[System/TestPlaylist] Error: ${err.message}`)
+        res.status(500).json({ success: false, error: err.message, stack: err.stack })
+    }
+})
+
 export default router
+
