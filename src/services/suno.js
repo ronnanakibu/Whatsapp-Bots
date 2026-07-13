@@ -873,23 +873,20 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
 
             if (subsButtonPath) {
                 const D = getMediaDuration(subsButtonPath)
-                const subsButtonStartIdx = ffmpegInputs.length
-
-                for (let k = 0; k < 3; k++) {
-                    ffmpegInputs.push(`-i "${subsButtonPath}"`)
-                }
-
-                const times = []
                 const durationForOverlays = totalDuration || 120
-                if (durationForOverlays > 30) {
-                    const T_mid = durationForOverlays / 2
-                    const T_end = Math.max(durationForOverlays - D - 5, 0)
-                    const T_rand = T_mid > 20 ? (10 + Math.random() * (T_mid - 20)) : (T_mid + 5)
-                    times.push(T_mid, T_rand, T_end)
-                } else if (durationForOverlays > 15) {
-                    times.push(durationForOverlays / 2, Math.max(durationForOverlays - D - 5, 0))
+                const times = []
+
+                if (durationForOverlays > 20) {
+                    const T_first = durationForOverlays * 0.35
+                    const T_second = Math.max(durationForOverlays - D - 5, 0)
+                    times.push(T_first, T_second)
                 } else {
                     times.push(Math.max(durationForOverlays - D - 2, 0))
+                }
+
+                const subsButtonStartIdx = ffmpegInputs.length
+                for (let k = 0; k < times.length; k++) {
+                    ffmpegInputs.push(`-i "${subsButtonPath}"`)
                 }
 
                 let lastVideoOut = finalVideoLabel
@@ -1406,13 +1403,10 @@ export async function startPlaylistPipeline({
                     const totalDuration = clipDurations[0]
                     const times = []
 
-                    if (totalDuration > 30) {
-                        const T_mid = totalDuration / 2
-                        const T_end = Math.max(totalDuration - D - 5, 0)
-                        const T_rand = T_mid > 20 ? (10 + Math.random() * (T_mid - 20)) : (T_mid + 5)
-                        times.push(T_mid, T_rand, T_end)
-                    } else if (totalDuration > 15) {
-                        times.push(totalDuration / 2, Math.max(totalDuration - D - 5, 0))
+                    if (totalDuration > 20) {
+                        const T_first = totalDuration * 0.35
+                        const T_second = Math.max(totalDuration - D - 5, 0)
+                        times.push(T_first, T_second)
                     } else {
                         times.push(Math.max(totalDuration - D - 2, 0))
                     }
@@ -1480,19 +1474,21 @@ export async function startPlaylistPipeline({
                     const times = []
                     const subsButtonStartIdx = clipPaths.length
 
-                    for (let k = 0; k < 3; k++) {
-                        inputsCmd += `-i "${subsButtonPath}" `
+                    const count = Math.max(3, Math.floor(cumulativeTime / 180))
+                    const interval = cumulativeTime / (count + 1)
+
+                    for (let idx = 1; idx <= count; idx++) {
+                        const baseTime = interval * idx
+                        const jitter = (Math.random() - 0.5) * 30
+                        let t = baseTime + jitter
+                        t = Math.max(15, Math.min(t, cumulativeTime - D - 10))
+                        times.push(t)
                     }
 
-                    if (cumulativeTime > 30) {
-                        const T_mid = cumulativeTime / 2
-                        const T_end = Math.max(cumulativeTime - D - 5, 0)
-                        const T_rand = T_mid > 20 ? (10 + Math.random() * (T_mid - 20)) : (T_mid + 5)
-                        times.push(T_mid, T_rand, T_end)
-                    } else if (cumulativeTime > 15) {
-                        times.push(cumulativeTime / 2, Math.max(cumulativeTime - D - 5, 0))
-                    } else {
-                        times.push(Math.max(cumulativeTime - D - 2, 0))
+                    times.sort((a, b) => a - b)
+
+                    for (let k = 0; k < times.length; k++) {
+                        inputsCmd += `-i "${subsButtonPath}" `
                     }
 
                     filterComplex = filterComplex.trim()
