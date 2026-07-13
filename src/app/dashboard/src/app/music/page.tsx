@@ -459,12 +459,25 @@ export default function MusicAutomationPage() {
     }
 
     const handleProcessPlaylist = async () => {
-        if (playlistSongs.length === 0) return toast.error('Tambahkan lagu terlebih dahulu!')
-        if (!playlistTitle.trim()) return toast.error('Judul Playlist YouTube wajib diisi!')
-        if (playlistValidationWarnings.length > 0) return toast.error('Perbaiki error validasi sebelum memproses!')
+        console.log('[DEBUG] handleProcessPlaylist triggered. playlistSongs count:', playlistSongs.length)
+        if (playlistSongs.length === 0) {
+            console.log('[DEBUG] Early exit: playlistSongs is empty')
+            return toast.error('Tambahkan lagu terlebih dahulu!')
+        }
+        if (!playlistTitle.trim()) {
+            console.log('[DEBUG] Early exit: playlistTitle is empty')
+            return toast.error('Judul Playlist YouTube wajib diisi!')
+        }
+        if (playlistValidationWarnings.length > 0) {
+            console.log('[DEBUG] Early exit: playlistValidationWarnings exists', playlistValidationWarnings)
+            return toast.error('Perbaiki error validasi sebelum memproses!')
+        }
         
         const isAnyUploading = playlistSongs.some(s => s.status === 'uploading' || s.artworkStatus === 'uploading')
-        if (isAnyUploading) return toast.error('Tunggu semua file selesai diupload!')
+        if (isAnyUploading) {
+            console.log('[DEBUG] Early exit: some files are still uploading')
+            return toast.error('Tunggu semua file selesai diupload!')
+        }
         
         setIsUploading(true)
         toast.loading('Memulai render playlist batch...', { id: 'playlist-gen', duration: 2500 })
@@ -477,6 +490,7 @@ export default function MusicAutomationPage() {
             artworkPrompt: s.artworkPrompt || ''
         }))
         
+        console.log('[DEBUG] Emitting suno:playlist_generate payload:', songsPayload)
         try {
             emit('suno:playlist_generate', {
                 songs: songsPayload,
@@ -497,6 +511,7 @@ export default function MusicAutomationPage() {
 
     const handleGenerate = async (e: React.FormEvent) => {
         e.preventDefault()
+        console.log('[DEBUG] handleGenerate triggered. modelMode:', modelMode, 'manualSubMode:', manualSubMode)
         if (modelMode === 'manual' && manualSubMode === 'playlist') {
             return handleProcessPlaylist()
         }
