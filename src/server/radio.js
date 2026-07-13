@@ -697,11 +697,14 @@ export function startRadioServer() {
         })
 
         socket.on('suno:playlist_generate', async (data) => {
-            const { songs, outputTitle, playlistDescription, transitionStyle, generateMotion, vignetteMode } = data
+            logger.info(`[Socket/Suno] suno:playlist_generate event received. Payload: ${JSON.stringify(data)}`)
+            const { songs, outputTitle, playlistDescription, transitionStyle, generateMotion, vignetteMode } = data || {}
             if (!songs || !Array.isArray(songs) || songs.length === 0) {
+                logger.warn(`[Socket/Suno] Rejected playlist generation: songs is empty or invalid.`)
                 return socket.emit('error', 'Lagu-lagu playlist tidak boleh kosong.')
             }
             if (!outputTitle) {
+                logger.warn(`[Socket/Suno] Rejected playlist generation: outputTitle is empty.`)
                 return socket.emit('error', 'Judul Playlist YouTube wajib diisi.')
             }
             logger.info(`[Socket/Suno] Triggering playlist generation from socket: ${outputTitle} (${songs.length} songs)`)
