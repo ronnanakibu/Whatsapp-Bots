@@ -1599,9 +1599,26 @@ export async function startPlaylistPipeline({
             ]
 
             // Build overall description: [user/AI desc] → Tracklist → Hashtags
-            const overallDesc = playlistDescription && playlistDescription.trim()
+            let overallDesc = playlistDescription && playlistDescription.trim()
                 ? playlistDescription.trim()
-                : `Official Playlist: "${outputTitle}"`
+                : null
+
+            // If no user description, ask AI to generate one
+            if (!overallDesc) {
+                updateJob('playlist_upload', 90, `🧠 [Gemini] Generating playlist description...`)
+                try {
+                    const meta = await aiService.generateYoutubeMetadata(outputTitle)
+                    if (meta && meta.description) {
+                        overallDesc = meta.description
+                        updateJob('playlist_upload', 91, `✅ [Gemini] AI description generated!`)
+                    }
+                } catch (aiErr) {
+                    logger.warn(`[Playlist/Meta] Failed to generate AI description: ${aiErr.message}`)
+                }
+            }
+
+            // Final fallback if both user and AI are unavailable
+            if (!overallDesc) overallDesc = `Official Playlist: "${outputTitle}"`
 
             let youtubeDesc = `${overallDesc}\n\n` +
                 `Tracklist:\n` +
