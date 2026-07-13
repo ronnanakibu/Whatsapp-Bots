@@ -85,6 +85,7 @@ export default function MusicAutomationPage() {
     const [manualSubMode, setManualSubMode] = useState<'single' | 'playlist'>('single')
     const [playlistSongs, setPlaylistSongs] = useState<any[]>([])
     const [playlistTitle, setPlaylistTitle] = useState('')
+    const [playlistDescription, setPlaylistDescription] = useState('')
     const [playlistTransition, setPlaylistTransition] = useState('dissolve')
     const [generateMotion, setGenerateMotion] = useState(false)
     const [vignetteMode, setVignetteMode] = useState<'normal' | 'dark' | 'light'>('normal')
@@ -481,6 +482,7 @@ export default function MusicAutomationPage() {
             emit('suno:playlist_generate', {
                 songs: songsPayload,
                 outputTitle: playlistTitle.trim(),
+                playlistDescription: playlistDescription.trim(),
                 transitionStyle: playlistTransition,
                 generateMotion: generateMotion,
                 vignetteMode: vignetteMode
@@ -1172,6 +1174,22 @@ export default function MusicAutomationPage() {
                                                                 onChange={e => setPlaylistTitle(e.target.value)}
                                                                 className="input-base w-full h-11 px-4 text-[13px]"
                                                                 required={manualSubMode === 'playlist'}
+                                                            />
+                                                        </div>
+
+                                                        {/* Overall Playlist Description */}
+                                                        <div className="space-y-1.5">
+                                                            <div className="flex justify-between items-end">
+                                                                <label className="text-[10px] font-mono tracking-widest text-neutral-500 uppercase">Playlist Description <span className="text-neutral-700 normal-case tracking-normal">(Optional)</span></label>
+                                                                <span className="text-[9px] font-mono text-neutral-600">{playlistDescription.length}/2000</span>
+                                                            </div>
+                                                            <textarea
+                                                                placeholder="Intro text, credits, hashtags — appears above the tracklist timestamps..."
+                                                                value={playlistDescription}
+                                                                onChange={e => setPlaylistDescription(e.target.value)}
+                                                                maxLength={2000}
+                                                                rows={3}
+                                                                className="input-base w-full p-3.5 text-[12px] resize-none leading-relaxed"
                                                             />
                                                         </div>
 

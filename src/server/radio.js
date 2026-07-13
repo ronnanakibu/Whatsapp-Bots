@@ -697,7 +697,7 @@ export function startRadioServer() {
         })
 
         socket.on('suno:playlist_generate', async (data) => {
-            const { songs, outputTitle, transitionStyle, generateMotion, vignetteMode } = data
+            const { songs, outputTitle, playlistDescription, transitionStyle, generateMotion, vignetteMode } = data
             if (!songs || !Array.isArray(songs) || songs.length === 0) {
                 return socket.emit('error', 'Lagu-lagu playlist tidak boleh kosong.')
             }
@@ -709,6 +709,7 @@ export function startRadioServer() {
                 const jobId = await startPlaylistPipeline({
                     songs,
                     outputTitle,
+                    playlistDescription: playlistDescription || '',
                     transitionStyle: transitionStyle || 'dissolve',
                     generateMotion: !!generateMotion,
                     vignetteMode: vignetteMode || 'normal',

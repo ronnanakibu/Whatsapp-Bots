@@ -1087,6 +1087,7 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
 export async function startPlaylistPipeline({
     songs,
     outputTitle,
+    playlistDescription = '',
     transitionStyle = 'dissolve',
     generateMotion = false,
     vignetteMode = 'normal',
@@ -1583,8 +1584,7 @@ export async function startPlaylistPipeline({
 
             for (let idx = 0; idx < songs.length; idx++) {
                 const songTimeStr = formatTimestamp(currentPlaylistTime)
-                const songDesc = songs[idx].description?.trim()
-                descriptionTimestamps += `${songTimeStr} - ${songFinalTitles[idx]}${songDesc ? ` | ${songDesc}` : ''}\n`
+                descriptionTimestamps += `${songTimeStr} - ${songFinalTitles[idx]}\n`
 
                 if (idx < songs.length - 1) {
                     currentPlaylistTime += clipDurations[idx] - transitionDuration
@@ -1598,8 +1598,13 @@ export async function startPlaylistPipeline({
                 'instrumental', 'chillmix', 'ambient', 'lofiaudio'
             ]
 
-            let youtubeDesc = `Official Playlist: "${outputTitle}"\n\n` +
-                `Tracklist Timestamps:\n` +
+            // Build overall description: [user/AI desc] → Tracklist → Hashtags
+            const overallDesc = playlistDescription && playlistDescription.trim()
+                ? playlistDescription.trim()
+                : `Official Playlist: "${outputTitle}"`
+
+            let youtubeDesc = `${overallDesc}\n\n` +
+                `Tracklist:\n` +
                 `${descriptionTimestamps}` +
                 `\n#lofi #chill #instrumental #playlist #lofiproducer #relaxingmusic\n`
 
