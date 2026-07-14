@@ -115,7 +115,12 @@ async function addBannerToImage(imageBuffer, title) {
         </svg>
         `
         const svgBuffer = Buffer.from(svg)
-        return await sharp(imageBuffer)
+        let img = sharp(imageBuffer)
+        const metadata = await img.metadata()
+        if (metadata.width !== 1920 || metadata.height !== 1080) {
+            img = img.resize(1920, 1080, { fit: 'cover' })
+        }
+        return await img
             .composite([{ input: svgBuffer, top: 0, left: 0 }])
             .toBuffer()
     } catch (err) {
@@ -816,9 +821,9 @@ IMPORTANT: Return ONLY the prompt text. No explanations. MAXIMUM 400 CHARACTERS.
             let finalVideoLabel = ''
             let vignetteFilter = ''
             if (vignetteMode === 'dark') {
-                vignetteFilter = ',vignette=color=black:angle=0.5'
+                vignetteFilter = ',vignette=mode=forward:angle=0.5'
             } else if (vignetteMode === 'light') {
-                vignetteFilter = ',vignette=color=white:angle=0.5'
+                vignetteFilter = ',vignette=mode=backward:angle=0.5'
             }
 
             if (videoBackgroundExists) {
@@ -1367,9 +1372,9 @@ export async function startPlaylistPipeline({
 
                 let vignetteFilter = ''
                 if (vignetteMode === 'dark') {
-                    vignetteFilter = ',vignette=color=black:angle=0.5'
+                    vignetteFilter = ',vignette=mode=forward:angle=0.5'
                 } else if (vignetteMode === 'light') {
-                    vignetteFilter = ',vignette=color=white:angle=0.5'
+                    vignetteFilter = ',vignette=mode=backward:angle=0.5'
                 }
 
                 if (isVideoArtwork) {
