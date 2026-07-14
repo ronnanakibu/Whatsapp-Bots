@@ -1167,6 +1167,8 @@ export async function startPlaylistPipeline({
                 }
             }
 
+            const resolvedSongs = []
+
             for (let i = 0; i < songs.length; i++) {
                 const song = songs[i]
                 const songNum = i + 1
@@ -1252,7 +1254,7 @@ export async function startPlaylistPipeline({
                 clipDurations.push(songDuration)
                 updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `📊 Lagu #${songNum} - Durasi: ${Math.floor(songDuration)} detik`)
 
-                // Generate/Process Artwork
+                // Generate/Process Artwork Cover (Static)
                 let artworkBuffer = null
                 let isVideoArtwork = false
                 let artworkLocalPath = ''
@@ -1330,9 +1332,37 @@ export async function startPlaylistPipeline({
                     }
                 }
 
+                // Store resolved info for Phase 2
+                resolvedSongs.push({
+                    index: i,
+                    songNum,
+                    songTitle,
+                    songPrompt,
+                    destAudioPath,
+                    songDuration,
+                    artworkBuffer,
+                    isVideoArtwork,
+                    artworkLocalPath
+                })
+            }
+
+            // Phase 2: Video Rendering & Uploading (Background Processing)
+            for (let i = 0; i < resolvedSongs.length; i++) {
+                const rSong = resolvedSongs[i]
+                const songNum = rSong.songNum
+                const songTitle = rSong.songTitle
+                const songPrompt = rSong.songPrompt
+                const destAudioPath = rSong.destAudioPath
+                const songDuration = rSong.songDuration
+                let artworkBuffer = rSong.artworkBuffer
+                let isVideoArtwork = rSong.isVideoArtwork
+                let artworkLocalPath = rSong.artworkLocalPath
+
+                updateJob('playlist_render', Math.floor(40 + (i / resolvedSongs.length) * 20), `━━━━━━━━ Lagu ${songNum}/${resolvedSongs.length}: "${songTitle}" ━━━━━━━━`)
+
                 // Generate motion video from plain artwork if toggle is ON
                 if (generateMotion && !isVideoArtwork && artworkBuffer) {
-                    updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `🎥 [VideoGen] Memulai generasi motion background dari thumbnail via LTX...`)
+                    updateJob('playlist_art', Math.floor(40 + (i / resolvedSongs.length) * 20), `🎥 [VideoGen] Memulai generasi motion background dari thumbnail via LTX...`)
                     try {
                         const plainThumbnailPath = path.join(tempDir, `plain_thumb_${i}.png`)
                         fs.writeFileSync(plainThumbnailPath, artworkBuffer)
@@ -1343,15 +1373,15 @@ export async function startPlaylistPipeline({
                         fs.writeFileSync(motionVideoPath, videoBuffer)
                         artworkLocalPath = motionVideoPath
                         isVideoArtwork = true
-                        updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `✅ [VideoGen] Motion background berhasil digenerate!`)
+                        updateJob('playlist_art', Math.floor(40 + (i / resolvedSongs.length) * 20), `✅ [VideoGen] Motion background berhasil digenerate!`)
                     } catch (videoErr) {
                         logger.error(`[Playlist/VideoGen] Failed to generate motion background for Song #${songNum}: ${videoErr.message}`)
-                        updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `⚠️ [VideoGen] Gagal generate motion, fallback ke gambar statis.`)
+                        updateJob('playlist_art', Math.floor(40 + (i / resolvedSongs.length) * 20), `⚠️ [VideoGen] Gagal generate motion, fallback ke gambar statis.`)
                     }
                 }
 
                 if (!isVideoArtwork && artworkBuffer) {
-                    updateJob('playlist_art', Math.floor(6 + (i / songs.length) * 34), `🎨 Menambahkan banner overlay judul "${songTitle}"...`)
+                    updateJob('playlist_art', Math.floor(40 + (i / resolvedSongs.length) * 20), `🎨 Menambahkan banner overlay judul "${songTitle}"...`)
                     try {
                         artworkBuffer = await addBannerToImage(artworkBuffer, songTitle)
                     } catch (sharpErr) {
@@ -1362,7 +1392,7 @@ export async function startPlaylistPipeline({
                 }
 
                 // Render clip
-                updateJob('playlist_render', Math.floor(40 + (i / songs.length) * 20), `🎬 [FFmpeg] Mulai render Clip #${songNum}...`)
+                updateJob('playlist_render', Math.floor(40 + (i / resolvedSongs.length) * 20), `🎬 [FFmpeg] Mulai render Clip #${songNum}...`)
                 const outputClipPath = path.join(tempDir, `clip_${i}.mp4`)
                 clipPaths.push(outputClipPath)
 
@@ -1378,7 +1408,7 @@ export async function startPlaylistPipeline({
                 }
 
                 if (isVideoArtwork) {
-                    updateJob('playlist_render', Math.floor(40 + (i / songs.length) * 20), `🔄 [FFmpeg] Membuat seamless reverse loop dari video artwork...`)
+                    updateJob('playlist_render', Math.floor(40 + (i / resolvedSongs.length) * 20), `🔄 [FFmpeg] Membuat seamless reverse loop dari video artwork...`)
                     const pingpongPath = path.join(tempDir, `pingpong_${i}.mp4`)
                     try {
                         execSync(`ffmpeg -y -i "${artworkLocalPath}" -filter_complex "[0:v]reverse[r];[0:v][r]concat=n=2:v=1[outv]" -map "[outv]" -c:v libx264 -preset ultrafast "${pingpongPath}"`, { stdio: 'ignore' })
@@ -1427,20 +1457,19 @@ export async function startPlaylistPipeline({
                 })
 
                 const clipSizeMB = (fs.statSync(outputClipPath).size / (1024 * 1024)).toFixed(2)
-                updateJob('playlist_render', Math.floor(40 + (songNum / songs.length) * 20), `✅ Clip #${songNum} dirender! (${clipSizeMB} MB)`)
+                updateJob('playlist_render', Math.floor(40 + (songNum / resolvedSongs.length) * 20), `✅ Clip #${songNum} dirender! (${clipSizeMB} MB)`)
 
                 // Google Drive Upload
-                // Naming convention: [JobId] #Job[N] - [SongTitle].mp3
-                updateJob('playlist_render', Math.floor(40 + (songNum / songs.length) * 20), `📤 [Google Drive] Mengupload MP3 ke Drive...`)
+                updateJob('playlist_render', Math.floor(40 + (songNum / resolvedSongs.length) * 20), `📤 [Google Drive] Mengupload MP3 ke Drive...`)
                 const cleanDriveTitle = songTitle.replace(/[\\/:*?"<>|]/g, '_').trim() || `song_${i}`
                 const driveFileName = `${jobId} #Job${songNum} - ${cleanDriveTitle}.mp3`
                 try {
                     const driveUrl = await uploadToDrive(destAudioPath, driveFileName, 'audio/mpeg')
                     driveUrls.push(driveUrl)
-                    updateJob('playlist_render', Math.floor(40 + (songNum / songs.length) * 20), `✅ [Google Drive] Sukses! Link: ${driveUrl}`)
+                    updateJob('playlist_render', Math.floor(40 + (songNum / resolvedSongs.length) * 20), `✅ [Google Drive] Sukses! Link: ${driveUrl}`)
                 } catch (driveErr) {
                     logger.error(`[Playlist/DriveUpload] Gagal: ${driveErr.message}`)
-                    updateJob('playlist_render', Math.floor(40 + (songNum / songs.length) * 20), `⚠️ [Google Drive] Gagal upload: ${driveErr.message}`)
+                    updateJob('playlist_render', Math.floor(40 + (songNum / resolvedSongs.length) * 20), `⚠️ [Google Drive] Gagal upload: ${driveErr.message}`)
                 }
             }
 
