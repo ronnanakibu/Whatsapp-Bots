@@ -1444,9 +1444,50 @@ export async function startPlaylistPipeline({
                 await new Promise((resolve, reject) => {
                     const child = exec(ffmpegCmd)
                     let stderr = ''
-                    let stdout = ''
-                    child.stdout.on('data', (data) => { stdout += data })
-                    child.stderr.on('data', (data) => { stderr += data })
+                    let lastTime = ''
+                    const startTime = Date.now()
+                    let ffmpegSpinnerCount = 0
+                    const spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+                    child.stderr.on('data', (data) => {
+                        const str = data.toString()
+                        stderr += str
+                        const lines = str.split('\n')
+                        for (const line of lines) {
+                            if (line.includes('time=')) {
+                                const match = line.match(/time=(\d{2}):(\d{2}):(\d{2})/)
+                                if (match) {
+                                    const timeStr = `${match[1]}:${match[2]}:${match[3]}`
+                                    if (timeStr !== lastTime) {
+                                        lastTime = timeStr
+
+                                        const currentSecs = parseInt(match[1], 10) * 3600 + parseInt(match[2], 10) * 60 + parseInt(match[3], 10)
+                                        const spinner = spinners[ffmpegSpinnerCount % spinners.length]
+                                        ffmpegSpinnerCount++
+
+                                        const progressPct = Math.min((currentSecs / songDuration) * 100, 99)
+                                        const elapsedSecs = (Date.now() - startTime) / 1000
+                                        const speed = currentSecs / elapsedSecs
+
+                                        let etaStr = '--:--'
+                                        if (speed > 0) {
+                                            const remainingSecs = Math.max((songDuration - currentSecs) / speed, 0)
+                                            const etaM = Math.floor(remainingSecs / 60)
+                                            const etaS = Math.floor(remainingSecs % 60)
+                                            etaStr = `${String(etaM).padStart(2, '0')}:${String(etaS).padStart(2, '0')}`
+                                        }
+
+                                        const roundedPct = Math.round(progressPct)
+                                        const bar = getProgressBar(roundedPct)
+                                        const currentProgress = 40 + Math.floor(((i + (progressPct / 100)) / resolvedSongs.length) * 20)
+
+                                        updateJob('playlist_render', currentProgress, `🎬 [FFmpeg] ${spinner} Clip #${songNum} Rendering: ${bar} ${roundedPct}% | Durasi: ${timeStr} / ${Math.floor(songDuration)}s | ETA: ${etaStr}`)
+                                    }
+                                }
+                            }
+                        }
+                    })
+
                     child.on('close', (code) => {
                         if (code === 0) resolve()
                         else {
