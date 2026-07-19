@@ -250,25 +250,25 @@ async function sendMedia(sock, chatId, quotedMsg, result) {
 // ─────────────────────────────────────────────
 
 function formatError(message = '', platform = '') {
-    // Timeout
-    if (message.includes('Timeout') || message.includes('timeout')) {
-        return `Koneksi timeout. Server mungkin lambat, coba lagi.`
-    }
-
     // File terlalu besar
     if (message.includes('terlalu besar') || message.includes('MB')) {
         return `File terlalu besar untuk dikirim via WhatsApp (max 50MB).`
     }
 
-    // Semua API gagal
-    if (message.includes('Semua API')) {
+    // Jika error berasal dari provider (misal: "Gagal download Facebook...")
+    if (message.startsWith('Gagal download') || message.includes('Semua API')) {
         const tips = {
             instagram: `Pastikan:\n• Link bukan dari akun private\n• Link masih valid (tidak expired)`,
             tiktok: `Pastikan:\n• Link valid dan video masih ada\n• Coba copy link dari TikTok langsung`,
             youtube: `Pastikan:\n• Video tidak private/umur terbatas\n• Link valid`,
-            facebook: `Pastikan:\n• Video bukan dari akun private\n• Link masih valid`,
+            facebook: `Pastikan:\n• Video bukan dari akun private/grup tertutup\n• Link masih valid`,
         }
         return `${message}\n\n${tips[platform] ?? ''}`
+    }
+
+    // Direct timeout error dari koneksi/request utama
+    if (message.includes('Timeout') || message.includes('timeout')) {
+        return `Koneksi timeout. Server mungkin lambat, coba lagi.`
     }
 
     return message

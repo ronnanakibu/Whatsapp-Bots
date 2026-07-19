@@ -1,10 +1,52 @@
 // src/services/downloader/providers/facebook.js
 // Facebook Video Downloader — Posts, Reels, Watch
-// Strategy: Multi-API publik
+// Strategy: Resolve Share Links -> yt-dlp -> Multi-API fallback
 
+import https from 'https'
+import { URL } from 'url'
 import { fetchBuffer, fetchJson, sanitizeFilename } from '../utils.js'
 import { logger } from '../../../utils/logger.js'
 import { downloadYtdlp } from './ytdlp.js'
+
+/**
+ * Resolve Facebook short/share links (fb.watch, facebook.com/share/...)
+ */
+export async function resolveFbUrl(rawUrl) {
+    if (!rawUrl) return rawUrl
+    let cleanUrl = rawUrl.replace('fb.watch', 'www.facebook.com/watch?v=')
+
+    if (cleanUrl.includes('/share/')) {
+        try {
+            const parsed = new URL(cleanUrl)
+            const resolved = await new Promise((resolve) => {
+                const req = https.request({
+                    hostname: parsed.hostname,
+                    port: 443,
+                    path: parsed.pathname + parsed.search,
+                    method: 'GET',
+                    family: 4,
+                    headers: {
+                        'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+                        'Accept': '*/*',
+                    }
+                }, (res) => {
+                    req.destroy()
+                    if (res.headers.location) {
+                        const loc = res.headers.location
+                        const cleanLoc = loc.split('?')[0]
+                        return resolve(cleanLoc.startsWith('http') ? cleanLoc : `https://www.facebook.com${cleanLoc}`)
+                    }
+                    resolve(cleanUrl)
+                })
+                req.setTimeout(5000, () => { req.destroy(); resolve(cleanUrl) })
+                req.on('error', () => resolve(cleanUrl))
+                req.end()
+            })
+            if (resolved) cleanUrl = resolved
+        } catch (_) {}
+    }
+    return cleanUrl
+}
 
 const FB_APIS = [
     {
@@ -14,14 +56,13 @@ const FB_APIS = [
                 `https://sfrom.net/api/button/1?url=${encodeURIComponent(url)}`,
                 {
                     headers: {
-                        'User-Agent': 'Mozilla/5.0',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                         'X-Requested-With': 'XMLHttpRequest',
                     },
-                    timeout: 15_000,
+                    timeout: 10_000,
                 }
             )
             if (!res?.url?.length) return null
-            // Ambil kualitas HD dulu, SD sebagai fallback
             const hd = res.url.find(u => u.id === 'hd')
             const sd = res.url.find(u => u.id === 'sd')
             return {
@@ -33,52 +74,28 @@ const FB_APIS = [
         }
     },
     {
-        name: 'FBDownloader',
+        name: 'SnapSave',
         fetch: async (url) => {
             const res = await fetchJson(
-                `https://fbdownloader.net/api/facebook?url=${encodeURIComponent(url)}`,
+                'https://snapsave.app/action.php?lang=id',
                 {
-                    headers: { 'User-Agent': 'Mozilla/5.0' },
-                    timeout: 15_000,
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                        'Referer': 'https://snapsave.app/',
+                    },
+                    body: `url=${encodeURIComponent(url)}`,
+                    timeout: 10_000,
+                    isText: true,
                 }
             )
-            if (!res?.video) return null
+            if (!res || typeof res !== 'string') return null
+            const videoMatch = res.match(/href="(https:\/\/[^"]+\.mp4[^"]*)"/i)
+            if (!videoMatch) return null
             return {
-                downloadUrl: res.video,
+                downloadUrl: decodeURIComponent(videoMatch[1]),
                 quality: 'HD',
-                title: res.title ?? '',
-                thumbnail: res.thumbnail ?? null,
-            }
-        }
-    },
-    {
-        name: 'GetFVid',
-        fetch: async (url) => {
-            // GetFVid pakai form POST
-            const html = await fetchJson('https://getfvid.com/downloader', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'User-Agent': 'Mozilla/5.0',
-                    'Referer': 'https://getfvid.com/',
-                },
-                body: `url=${encodeURIComponent(url)}`,
-                timeout: 20_000,
-                isText: true,
-            })
-
-            if (!html) return null
-
-            // Scrape HD link dari response HTML
-            const hdMatch = html.match(/href="(https:\/\/video\.xx\.fbcdn[^"]+)"\s+[^>]*HD/i)
-            const sdMatch = html.match(/href="(https:\/\/video\.xx\.fbcdn[^"]+)"\s+[^>]*SD/i)
-            const url2 = hdMatch?.[1] ?? sdMatch?.[1]
-
-            if (!url2) return null
-
-            return {
-                downloadUrl: url2.replace(/&amp;/g, '&'),
-                quality: hdMatch ? 'HD' : 'SD',
                 title: '',
                 thumbnail: null,
             }
@@ -87,10 +104,11 @@ const FB_APIS = [
 ]
 
 export async function downloadFacebook(url, options = {}) {
-    // Resolve fb.watch short links
-    const cleanUrl = url.replace('fb.watch', 'www.facebook.com/watch?v=')
+    // 0. Resolve short / share links
+    const cleanUrl = await resolveFbUrl(url)
+    logger.debug(`[Facebook] Clean URL: ${cleanUrl}`)
 
-    // ── 1. Coba via yt-dlp first (sangat stabil) ──────────────────────
+    // ── 1. Coba via yt-dlp first (sangat stabil jika URL sudah resolved) ──
     try {
         logger.debug(`[Facebook] Trying local/HF yt-dlp first`)
         const ytdlpResult = await downloadYtdlp(cleanUrl, options)
@@ -103,7 +121,7 @@ export async function downloadFacebook(url, options = {}) {
         logger.warn(`[Facebook] yt-dlp fallback failed: ${err.message}`)
     }
 
-    // ── 2. Fallback ke public APIs jika yt-dlp gagal/belum siap ─────────
+    // ── 2. Fallback ke public APIs jika yt-dlp gagal ─────────
     let lastError = null
 
     for (const api of FB_APIS) {
@@ -152,5 +170,5 @@ export async function downloadFacebook(url, options = {}) {
         }
     }
 
-    throw new Error(`Gagal download Facebook. ${lastError?.message ?? 'Semua API error.'}`)
+    throw new Error(`Gagal download Facebook. ${lastError?.message ?? 'Semua API fallback Facebook gagal.'}`)
 }

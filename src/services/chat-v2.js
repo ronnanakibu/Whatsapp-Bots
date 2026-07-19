@@ -58,24 +58,29 @@ export class ChatService {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const messages = await prisma.chatMessage.findMany({
-      where: {
-        timestamp: {
-          gte: startOfDay,
-          lte: endOfDay,
-        },
-      },
-      orderBy: {
-        timestamp: 'asc',
-      },
-      include: {
-        user: {
-          select: {
-            nickname: true,
+    let messages = []
+    try {
+      messages = await prisma.chatMessage.findMany({
+        where: {
+          timestamp: {
+            gte: startOfDay,
+            lte: endOfDay,
           },
         },
-      },
-    });
+        orderBy: {
+          timestamp: 'asc',
+        },
+        include: {
+          user: {
+            select: {
+              nickname: true,
+            },
+          },
+        },
+      });
+    } catch (err) {
+      throw new Error(`Database Prisma offline / tidak terjangkau (${err.message.split('\n')[0]})`)
+    }
 
     const dateStr = startOfDay.toISOString().split('T')[0];
     const logDir = path.resolve(process.cwd(), 'chatlogs');

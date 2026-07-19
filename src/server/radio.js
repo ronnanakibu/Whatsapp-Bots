@@ -558,7 +558,7 @@ export function startRadioServer() {
         yesterday.setDate(yesterday.getDate() - 1)
         chatService.archiveDailyLogs(yesterday)
             .then((file) => logger.info(`[Scheduler] Daily logs archived to: ${file}`))
-            .catch((err) => logger.error('[Scheduler] Failed to archive logs:', err.message))
+            .catch((err) => logger.warn(`[Scheduler] Daily chat log archiving skipped: ${err.message}`))
     }, ONE_DAY_MS)
 
     // Setup periodic metrics broadcasts
