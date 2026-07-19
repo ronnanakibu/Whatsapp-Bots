@@ -50,6 +50,43 @@ export async function resolveFbUrl(rawUrl) {
 
 const FB_APIS = [
     {
+        name: 'GetMyFB',
+        fetch: async (url) => {
+            const html = await fetchJson(
+                'https://getmyfb.com/process',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Origin': 'https://getmyfb.com',
+                        'Referer': 'https://getmyfb.com/'
+                    },
+                    body: `id=${encodeURIComponent(url)}&locale=en`,
+                    timeout: 15_000,
+                    isText: true,
+                }
+            )
+            if (!html || typeof html !== 'string') return null
+            const matches = html.match(/href="(https:\/\/ssscdn\.io\/getmyfb\/[^"]+)"/gi)
+                         || html.match(/href="(https:\/\/[^"]+\.mp4[^"]*)"/gi)
+            if (!matches?.length) return null
+
+            const downloadUrl = matches[0]
+                .replace(/^href="/, '')
+                .replace(/"$/, '')
+                .replace(/&amp;/g, '&')
+
+            return {
+                downloadUrl,
+                quality: 'HD',
+                title: '',
+                thumbnail: null,
+            }
+        }
+    },
+    {
         name: 'SaveFrom',
         fetch: async (url) => {
             const res = await fetchJson(
