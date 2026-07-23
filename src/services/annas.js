@@ -58,17 +58,18 @@ export class AnnasService {
         })
     }
 
-    async resolveDirectDownloadUrl(md5) {
+    async resolveDirectDownloadUrl(md5, ipfsCids = []) {
         const client = await this.getAxiosInstance()
         const md5Upper = md5.toUpperCase()
         const md5Lower = md5.toLowerCase()
 
-        // 1. Try Libgen Ads-based mirrors (.li, .rocks, .st, .gs)
+        // 1. Try Libgen Ads-based mirrors (.li, .rocks, .st, .gs, .lc)
         const adsDomains = [
             'https://libgen.li',
             'https://libgen.rocks',
             'https://libgen.st',
-            'https://libgen.gs'
+            'https://libgen.gs',
+            'https://libgen.lc'
         ]
 
         for (const domain of adsDomains) {
@@ -86,7 +87,31 @@ export class AnnasService {
             }
         }
 
-        // 2. Try Libgen Index-based mirrors (.is, .rs) -> Library.lol
+        // 2. Try IPFS Gateways if CIDs exist
+        if (ipfsCids && ipfsCids.length > 0) {
+            const ipfsGateways = [
+                'https://dweb.link/ipfs/',
+                'https://ipfs.filebase.io/ipfs/',
+                'https://w3s.link/ipfs/',
+                'https://nftstorage.link/ipfs/',
+                'https://ipfs.io/ipfs/'
+            ]
+            for (const cid of ipfsCids) {
+                for (const gw of ipfsGateways) {
+                    try {
+                        const gwUrl = `${gw}${cid}`
+                        const res = await client.head(gwUrl, { timeout: 4000 })
+                        if (res.status === 200) {
+                            return gwUrl
+                        }
+                    } catch (e) {
+                        continue
+                    }
+                }
+            }
+        }
+
+        // 3. Try Libgen Index-based mirrors (.is, .rs) -> Library.lol
         const indexDomains = [
             'https://libgen.is',
             'https://libgen.rs'
@@ -115,7 +140,7 @@ export class AnnasService {
             }
         }
 
-        // 3. Try direct Library.lol mirrors
+        // 4. Try direct Library.lol mirrors
         const lolDirectUrls = [
             `https://library.lol/main/${md5Upper}`,
             `https://library.lol/fiction/${md5Upper}`
@@ -219,9 +244,6 @@ export class AnnasService {
             }
         }
 
-        // Try direct automated mirror resolver chain (Libgen.li, Libgen.rocks, Libgen.st, Libgen.gs, Libgen.is, Library.lol)
-        let resolvedDirectUrl = await this.resolveDirectDownloadUrl(md5)
-
         // Fetch detail page from Anna's Archive
         let htmlData = null
         let resolvedDomain = this.baseUrl
@@ -283,11 +305,20 @@ export class AnnasService {
         })
         const meta = parseMetaInformation(metaText)
 
-        // Find download links/mirrors on detail page
+        // Find IPFS CIDs & download mirrors on detail page
+        const ipfsCids = []
         const mirrors = []
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || ''
             const text = $(el).text().trim().replace(/\s+/g, ' ')
+
+            if (href.includes('ipfs') || text.includes('ipfs_cid:')) {
+                const cidMatch = href.match(/(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-z0-9]{55,65})/) || text.match(/(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-z0-9]{55,65})/)
+                if (cidMatch && !ipfsCids.includes(cidMatch[1])) {
+                    ipfsCids.push(cidMatch[1])
+                }
+            }
+
             if (
                 href.includes('/slow_download/') ||
                 href.includes('/fast_download/') ||
@@ -315,6 +346,9 @@ export class AnnasService {
                 }
             }
         })
+
+        // Try resolving direct download URL with IPFS CIDs support
+        let resolvedDirectUrl = await this.resolveDirectDownloadUrl(md5, ipfsCids)
 
         return {
             title,
