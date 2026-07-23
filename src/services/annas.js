@@ -54,111 +54,111 @@ export class AnnasService {
                 'Cache-Control': 'no-cache'
             },
             httpsAgent,
-            timeout: 8000
+            timeout: 10000
         })
     }
 
     async resolveDirectDownloadUrl(md5, ipfsCids = []) {
-        const client = await this.getAxiosInstance()
         const md5Upper = md5.toUpperCase()
         const md5Lower = md5.toLowerCase()
+        const tasks = []
 
-        // 1. Try IPFS Gateways FIRST if CIDs exist
+        // 1. Libgen Ads-based mirrors (.li, .rocks, .st, .lc)
+        const adsDomains = ['https://libgen.li', 'https://libgen.rocks', 'https://libgen.st', 'https://libgen.lc']
+        for (const domain of adsDomains) {
+            const adsUrl = `${domain}/ads.php?md5=${md5Lower}`
+            tasks.push(
+                axios.get(adsUrl, {
+                    httpsAgent,
+                    headers: { 'User-Agent': DEFAULT_USER_AGENT, 'Referer': domain },
+                    timeout: 8000
+                }).then(res => {
+                    const $ = cheerio.load(res.data)
+                    const getHref = $('a[href*="get.php"]').attr('href')
+                    if (getHref) {
+                        return getHref.startsWith('http') ? getHref : `${domain}/${getHref}`
+                    }
+                    throw new Error(`No get.php in ${domain}`)
+                }).catch(err => {
+                    console.warn(`[AnnasService] Resolver ${domain} failed: ${err.message}`)
+                    throw err
+                })
+            )
+        }
+
+        // 2. IPFS Gateways Tasks (Parallel)
         if (ipfsCids && ipfsCids.length > 0) {
             const ipfsGateways = [
                 'https://dweb.link/ipfs/',
                 'https://ipfs.filebase.io/ipfs/',
                 'https://w3s.link/ipfs/',
-                'https://nftstorage.link/ipfs/',
                 'https://ipfs.io/ipfs/'
             ]
             for (const cid of ipfsCids) {
                 for (const gw of ipfsGateways) {
                     const gwUrl = `${gw}${cid}`
-                    try {
-                        const res = await client.get(gwUrl, { timeout: 3500, responseType: 'stream' })
-                        if (res.status === 200) {
-                            if (res.data && res.data.destroy) res.data.destroy()
-                            return gwUrl
-                        }
-                    } catch (e) {
-                        console.warn(`[AnnasService] IPFS resolver ${gwUrl} failed: ${e.message}`)
-                    }
+                    tasks.push(
+                        axios.get(gwUrl, {
+                            httpsAgent,
+                            headers: { 'User-Agent': DEFAULT_USER_AGENT },
+                            timeout: 8000,
+                            responseType: 'stream'
+                        }).then(res => {
+                            if (res.status === 200) {
+                                if (res.data && res.data.destroy) res.data.destroy()
+                                return gwUrl
+                            }
+                            throw new Error(`IPFS status ${res.status}`)
+                        }).catch(err => {
+                            console.warn(`[AnnasService] IPFS ${gwUrl} failed: ${err.message}`)
+                            throw err
+                        })
+                    )
                 }
             }
         }
 
-        // 2. Try Libgen Ads-based mirrors (.li, .rocks, .st, .gs, .lc)
-        const adsDomains = [
-            'https://libgen.li',
-            'https://libgen.rocks',
-            'https://libgen.st',
-            'https://libgen.gs',
-            'https://libgen.lc'
-        ]
-
-        for (const domain of adsDomains) {
-            try {
-                const adsUrl = `${domain}/ads.php?md5=${md5Lower}`
-                const res = await client.get(adsUrl, { timeout: 3500 })
-                const $ = cheerio.load(res.data)
-                const getHref = $('a[href*="get.php"]').attr('href')
-                if (getHref) {
-                    const fullUrl = getHref.startsWith('http') ? getHref : `${domain}/${getHref}`
-                    return fullUrl
-                }
-            } catch (err) {
-                console.warn(`[AnnasService] Resolver ${domain} failed: ${err.message}`)
-            }
-        }
-
-        // 3. Try Libgen Index-based mirrors (.is, .rs) -> Library.lol
-        const indexDomains = [
-            'https://libgen.is',
-            'https://libgen.rs'
-        ]
-
+        // 3. Libgen Index & Library.lol Tasks
+        const indexDomains = ['https://libgen.is', 'https://libgen.rs']
         for (const domain of indexDomains) {
-            try {
-                const indexUrl = `${domain}/book/index.php?md5=${md5Upper}`
-                const res = await client.get(indexUrl, { timeout: 3500 })
-                const $ = cheerio.load(res.data)
-                let lolLink = ''
-                $('a[href]').each((_, el) => {
-                    const href = $(el).attr('href') || ''
-                    if (href.includes('library.lol') || href.includes('libgen.rocks')) {
-                        lolLink = href
+            const indexUrl = `${domain}/book/index.php?md5=${md5Upper}`
+            tasks.push(
+                axios.get(indexUrl, {
+                    httpsAgent,
+                    headers: { 'User-Agent': DEFAULT_USER_AGENT },
+                    timeout: 8000
+                }).then(async res => {
+                    const $ = cheerio.load(res.data)
+                    let lolLink = ''
+                    $('a[href]').each((_, el) => {
+                        const href = $(el).attr('href') || ''
+                        if (href.includes('library.lol') || href.includes('libgen.rocks')) {
+                            lolLink = href
+                        }
+                    })
+                    if (lolLink) {
+                        const lolRes = await axios.get(lolLink, { httpsAgent, headers: { 'User-Agent': DEFAULT_USER_AGENT }, timeout: 8000 })
+                        const $lol = cheerio.load(lolRes.data)
+                        const directUrl = $lol('h1 a[href]').first().attr('href') || $lol('a[href*="get.php"]').first().attr('href') || $lol('a[href*="download"]').first().attr('href')
+                        if (directUrl) return directUrl
                     }
+                    throw new Error(`No library.lol link on ${domain}`)
+                }).catch(err => {
+                    console.warn(`[AnnasService] Resolver ${domain} failed: ${err.message}`)
+                    throw err
                 })
-                if (lolLink) {
-                    const lolRes = await client.get(lolLink, { timeout: 3500 })
-                    const $lol = cheerio.load(lolRes.data)
-                    const directUrl = $lol('h1 a[href]').first().attr('href') || $lol('a[href*="get.php"]').first().attr('href') || $lol('a[href*="download"]').first().attr('href')
-                    if (directUrl) return directUrl
-                }
-            } catch (err) {
-                console.warn(`[AnnasService] Resolver ${domain} failed: ${err.message}`)
-            }
+            )
         }
 
-        // 4. Try direct Library.lol mirrors
-        const lolDirectUrls = [
-            `https://library.lol/main/${md5Upper}`,
-            `https://library.lol/fiction/${md5Upper}`
-        ]
-
-        for (const lolUrl of lolDirectUrls) {
-            try {
-                const res = await client.get(lolUrl, { timeout: 3500 })
-                const $ = cheerio.load(res.data)
-                const directUrl = $('h1 a[href]').first().attr('href') || $('a[href*="get.php"]').first().attr('href')
-                if (directUrl) return directUrl
-            } catch (err) {
-                console.warn(`[AnnasService] Resolver ${lolUrl} failed: ${err.message}`)
-            }
+        // Parallel Racing execution: return the fastest successful mirror!
+        try {
+            const winnerUrl = await Promise.any(tasks)
+            console.log(`[AnnasService] 🎉 WINNER RESOLVED PARALLEL DIRECT URL: ${winnerUrl}`)
+            return winnerUrl
+        } catch (err) {
+            console.error(`[AnnasService] All parallel resolvers failed: ${err.message}`)
+            return null
         }
-
-        return null
     }
 
     async searchBooks(query, limit = 5) {
@@ -348,7 +348,7 @@ export class AnnasService {
             }
         })
 
-        // Try resolving direct download URL with IPFS CIDs support
+        // Execute Promise.any Parallel Race across all mirrors & IPFS CIDs
         let resolvedDirectUrl = await this.resolveDirectDownloadUrl(md5, ipfsCids)
 
         return {
