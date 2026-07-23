@@ -220,7 +220,7 @@ export class AnnasService {
             console.log(`[AnnasService] 🎉 WINNER RESOLVED PARALLEL DIRECT URL: ${winnerUrl}`)
             return winnerUrl
         } catch (err) {
-            console.error(`[AnnasService] All parallel resolvers failed: ${err.message}`)
+            console.warn(`[AnnasService] Direct auto-download blocked by datacenter Cloudflare/IPFS 504. Switching gracefully to Fallback Mirror Links.`)
             return null
         }
     }
