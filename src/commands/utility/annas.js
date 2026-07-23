@@ -92,8 +92,8 @@ export default {
                 mirrorMsg += `⚠️ *File tidak dapat diunduh otomatis oleh bot.* Silakan unduh melalui link mirror di bawah ini:\n\n`
 
                 if (bookDetails.mirrors && bookDetails.mirrors.length > 0) {
-                    bookDetails.mirrors.slice(0, 5).forEach((m, idx) => {
-                        mirrorMsg += `${idx + 1}. [${m.label}](${m.url})\n`
+                    bookDetails.mirrors.slice(0, 6).forEach((m, idx) => {
+                        mirrorMsg += `• *${m.label}*:\n${m.url}\n\n`
                     })
                 } else {
                     mirrorMsg += `🔗 *Detail Page:* ${bookDetails.detailUrl}\n`

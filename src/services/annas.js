@@ -2,14 +2,15 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 
 const ANNAS_DOMAINS = [
-    'https://annas-archive.pm',
-    'https://annas-archive.se',
-    'https://annas-archive.org',
+    'https://annas-archive.gl',
     'https://annas-archive.li',
-    'https://annas-archive.gs'
+    'https://annas-archive.gs',
+    'https://annas-archive.org',
+    'https://annas-archive.se',
+    'https://annas-archive.pm'
 ]
 
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 export function extractMd5(input) {
     if (!input) return null
@@ -43,8 +44,9 @@ export class AnnasService {
         return axios.create({
             headers: {
                 'User-Agent': DEFAULT_USER_AGENT,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5'
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Cache-Control': 'no-cache'
             },
             timeout: 25000
         })
@@ -56,7 +58,7 @@ export class AnnasService {
 
         for (const domain of ANNAS_DOMAINS) {
             try {
-                const searchUrl = `${domain}/search?q=${encodeURIComponent(query)}`
+                const searchUrl = `${domain}/search?q=${encodeURIComponent(query)}&content=book_any`
                 const response = await client.get(searchUrl)
                 const $ = cheerio.load(response.data)
                 const bookList = []
@@ -119,7 +121,7 @@ export class AnnasService {
         // Check Fast Download API if Secret Key is provided
         if (secretKey) {
             try {
-                const apiRes = await client.get(`https://annas-archive.pm/dyn/api/fast_download.json`, {
+                const apiRes = await client.get(`https://annas-archive.gl/dyn/api/fast_download.json`, {
                     params: { key: secretKey, md5 }
                 })
                 if (apiRes.data && apiRes.data.download_url) {
@@ -142,7 +144,7 @@ export class AnnasService {
             try {
                 const detailUrl = `${domain}/md5/${md5}`
                 const res = await client.get(detailUrl)
-                if (res.data) {
+                if (res.data && res.data.includes('html')) {
                     htmlData = res.data
                     resolvedDomain = domain
                     break
@@ -155,36 +157,80 @@ export class AnnasService {
         if (!htmlData) throw new Error('Gagal mengambil halaman detail buku dari Anna\'s Archive.')
 
         const $ = cheerio.load(htmlData)
-        const title = $('div.text-3xl, h1, .font-bold.text-2xl').first().text().trim() || 'Book Detail'
-        const author = $('a[href*="/search?q="]').first().text().trim() || 'Unknown'
-        const metaText = $('div.text-md, div.text-sm').text().trim()
+
+        // Title extraction
+        let title = ''
+        $('div.text-3xl, div.text-2xl, div.font-bold.text-xl').each((_, el) => {
+            const text = $(el).text().trim().replace(/\s+/g, ' ')
+            if (
+                !title && text &&
+                !text.includes('Recent downloads') &&
+                !text.includes('Anna’s Archive') &&
+                !text.includes("Anna's Archive") &&
+                !text.includes('Search') &&
+                !text.includes('Donate') &&
+                !text.includes('Downloaded files') &&
+                text.length > 2
+            ) {
+                title = text
+            }
+        })
+        if (!title) title = 'Book Detail'
+
+        // Authors extraction
+        let authors = []
+        $('a[href*="/search?q="]').each((_, el) => {
+            const text = $(el).text().trim()
+            if (text && !text.includes('Search') && !text.includes('Anna') && !text.includes('🔍') && !text.includes('🔑') && !authors.includes(text)) {
+                authors.push(text)
+            }
+        })
+        const authorStr = authors.length > 0 ? authors.join(', ') : 'Unknown'
+
+        // Meta info (Language, Format, Size)
+        let metaText = ''
+        $('div.text-md, div.text-sm, div.text-gray-800, div.text-gray-500').each((_, el) => {
+            const text = $(el).text().trim().replace(/\s+/g, ' ')
+            if (!metaText && text.includes('·') && (text.includes('MB') || text.includes('KB') || text.includes('GB') || text.includes('EPUB') || text.includes('PDF'))) {
+                metaText = text
+            }
+        })
         const meta = parseMetaInformation(metaText)
 
         // Find download links/mirrors on detail page
         const mirrors = []
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || ''
-            const text = $(el).text().trim()
+            const text = $(el).text().trim().replace(/\s+/g, ' ')
             if (
                 href.includes('/slow_download/') ||
                 href.includes('/fast_download/') ||
-                href.includes('libgen') ||
-                href.includes('ipfs') ||
-                href.includes('z-lib') ||
-                href.includes('cloudflare') ||
-                href.includes('partner')
+                href.includes('libgen.is') ||
+                href.includes('libgen.li') ||
+                href.includes('libgen.rs') ||
+                (href.includes('/ipfs/') && !href.startsWith('ipfs://'))
             ) {
-                const fullHref = href.startsWith('http') ? href : `${resolvedDomain}${href}`
-                if (!mirrors.some(m => m.url === fullHref)) {
+                let fullUrl = href
+                if (href.startsWith('/')) {
+                    fullUrl = `${resolvedDomain}${href}`
+                }
+
+                const isUsefulLabel = text && 
+                    !text.includes('open in viewer') && 
+                    !text.includes('no redirect') && 
+                    !text.includes('short filename') &&
+                    !text.includes('ipfs://')
+
+                if (isUsefulLabel && !mirrors.some(m => m.url === fullUrl)) {
                     mirrors.push({
-                        label: text || 'Download Mirror',
-                        url: fullHref
+                        label: text,
+                        url: fullUrl
                     })
                 }
             }
         })
 
-        // Pick top mirror or slow download link
+        // Pick top direct mirror link if available
         let selectedDirectUrl = null
         const slowDownloadLink = mirrors.find(m => m.url.includes('/slow_download/'))
         if (slowDownloadLink) {
@@ -195,7 +241,7 @@ export class AnnasService {
 
         return {
             title,
-            author,
+            author: authorStr,
             language: meta.language,
             format: meta.format,
             size: meta.size,
