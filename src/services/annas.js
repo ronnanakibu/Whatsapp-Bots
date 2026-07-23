@@ -1,5 +1,6 @@
 import axios from 'axios'
 import * as cheerio from 'cheerio'
+import https from 'https'
 
 const ANNAS_DOMAINS = [
     'https://annas-archive.gl',
@@ -10,7 +11,11 @@ const ANNAS_DOMAINS = [
     'https://annas-archive.pm'
 ]
 
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+const httpsAgent = new https.Agent({
+    rejectUnauthorized: false
+})
 
 export function extractMd5(input) {
     if (!input) return null
@@ -44,50 +49,87 @@ export class AnnasService {
         return axios.create({
             headers: {
                 'User-Agent': DEFAULT_USER_AGENT,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Cache-Control': 'no-cache'
             },
-            timeout: 25000
+            httpsAgent,
+            timeout: 10000
         })
     }
 
     async resolveDirectDownloadUrl(md5) {
         const client = await this.getAxiosInstance()
+        const md5Upper = md5.toUpperCase()
+        const md5Lower = md5.toLowerCase()
 
-        // 1. Try Libgen.li resolver
-        try {
-            const libgenLiUrl = `https://libgen.li/ads.php?md5=${md5}`
-            const res = await client.get(libgenLiUrl, { timeout: 12000 })
-            const $ = cheerio.load(res.data)
-            const getHref = $('a[href*="get.php"]').attr('href')
-            if (getHref) {
-                return getHref.startsWith('http') ? getHref : `https://libgen.li/${getHref}`
+        // 1. Try Libgen Ads-based mirrors (.li, .rocks, .st, .gs)
+        const adsDomains = [
+            'https://libgen.li',
+            'https://libgen.rocks',
+            'https://libgen.st',
+            'https://libgen.gs'
+        ]
+
+        for (const domain of adsDomains) {
+            try {
+                const adsUrl = `${domain}/ads.php?md5=${md5Lower}`
+                const res = await client.get(adsUrl, { timeout: 6000 })
+                const $ = cheerio.load(res.data)
+                const getHref = $('a[href*="get.php"]').attr('href')
+                if (getHref) {
+                    const fullUrl = getHref.startsWith('http') ? getHref : `${domain}/${getHref}`
+                    return fullUrl
+                }
+            } catch (err) {
+                console.warn(`[AnnasService] Resolver ${domain} failed: ${err.message}`)
             }
-        } catch (err) {
-            console.warn(`[AnnasService] Libgen.li resolver failed: ${err.message}`)
         }
 
-        // 2. Try Libgen.is / Library.lol resolver
-        try {
-            const libgenUrl = `https://libgen.is/book/index.php?md5=${md5.toUpperCase()}`
-            const res = await client.get(libgenUrl, { timeout: 12000 })
-            const $ = cheerio.load(res.data)
-            let lolLink = ''
-            $('a[href]').each((_, el) => {
-                const href = $(el).attr('href') || ''
-                if (href.includes('library.lol') || href.includes('libgen.rocks')) {
-                    lolLink = href
+        // 2. Try Libgen Index-based mirrors (.is, .rs) -> Library.lol
+        const indexDomains = [
+            'https://libgen.is',
+            'https://libgen.rs'
+        ]
+
+        for (const domain of indexDomains) {
+            try {
+                const indexUrl = `${domain}/book/index.php?md5=${md5Upper}`
+                const res = await client.get(indexUrl, { timeout: 6000 })
+                const $ = cheerio.load(res.data)
+                let lolLink = ''
+                $('a[href]').each((_, el) => {
+                    const href = $(el).attr('href') || ''
+                    if (href.includes('library.lol') || href.includes('libgen.rocks')) {
+                        lolLink = href
+                    }
+                })
+                if (lolLink) {
+                    const lolRes = await client.get(lolLink, { timeout: 6000 })
+                    const $lol = cheerio.load(lolRes.data)
+                    const directUrl = $lol('h1 a[href]').first().attr('href') || $lol('a[href*="get.php"]').first().attr('href') || $lol('a[href*="download"]').first().attr('href')
+                    if (directUrl) return directUrl
                 }
-            })
-            if (lolLink) {
-                const lolRes = await client.get(lolLink, { timeout: 12000 })
-                const $lol = cheerio.load(lolRes.data)
-                const directUrl = $lol('a[href*="get.php"], a[href*="cloud"], a[href*="ipfs"]').first().attr('href')
-                if (directUrl) return directUrl
+            } catch (err) {
+                console.warn(`[AnnasService] Resolver ${domain} failed: ${err.message}`)
             }
-        } catch (err) {
-            console.warn(`[AnnasService] Libgen.is resolver failed: ${err.message}`)
+        }
+
+        // 3. Try direct Library.lol mirrors
+        const lolDirectUrls = [
+            `https://library.lol/main/${md5Upper}`,
+            `https://library.lol/fiction/${md5Upper}`
+        ]
+
+        for (const lolUrl of lolDirectUrls) {
+            try {
+                const res = await client.get(lolUrl, { timeout: 6000 })
+                const $ = cheerio.load(res.data)
+                const directUrl = $('h1 a[href]').first().attr('href') || $('a[href*="get.php"]').first().attr('href')
+                if (directUrl) return directUrl
+            } catch (err) {
+                console.warn(`[AnnasService] Resolver ${lolUrl} failed: ${err.message}`)
+            }
         }
 
         return null
@@ -177,7 +219,7 @@ export class AnnasService {
             }
         }
 
-        // Try direct automated mirror resolver first (Libgen.li / Libgen.is)
+        // Try direct automated mirror resolver chain (Libgen.li, Libgen.rocks, Libgen.st, Libgen.gs, Libgen.is, Library.lol)
         let resolvedDirectUrl = await this.resolveDirectDownloadUrl(md5)
 
         // Fetch detail page from Anna's Archive
@@ -293,7 +335,7 @@ export class AnnasService {
             responseType: 'arraybuffer',
             maxRedirects: 10,
             headers: {
-                'Referer': 'https://libgen.li/',
+                'Referer': new URL(downloadUrl).origin,
                 'User-Agent': DEFAULT_USER_AGENT
             }
         })
