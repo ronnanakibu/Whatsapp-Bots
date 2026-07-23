@@ -54,7 +54,7 @@ export class AnnasService {
                 'Cache-Control': 'no-cache'
             },
             httpsAgent,
-            timeout: 10000
+            timeout: 8000
         })
     }
 
@@ -63,7 +63,32 @@ export class AnnasService {
         const md5Upper = md5.toUpperCase()
         const md5Lower = md5.toLowerCase()
 
-        // 1. Try Libgen Ads-based mirrors (.li, .rocks, .st, .gs, .lc)
+        // 1. Try IPFS Gateways FIRST if CIDs exist
+        if (ipfsCids && ipfsCids.length > 0) {
+            const ipfsGateways = [
+                'https://dweb.link/ipfs/',
+                'https://ipfs.filebase.io/ipfs/',
+                'https://w3s.link/ipfs/',
+                'https://nftstorage.link/ipfs/',
+                'https://ipfs.io/ipfs/'
+            ]
+            for (const cid of ipfsCids) {
+                for (const gw of ipfsGateways) {
+                    const gwUrl = `${gw}${cid}`
+                    try {
+                        const res = await client.get(gwUrl, { timeout: 3500, responseType: 'stream' })
+                        if (res.status === 200) {
+                            if (res.data && res.data.destroy) res.data.destroy()
+                            return gwUrl
+                        }
+                    } catch (e) {
+                        console.warn(`[AnnasService] IPFS resolver ${gwUrl} failed: ${e.message}`)
+                    }
+                }
+            }
+        }
+
+        // 2. Try Libgen Ads-based mirrors (.li, .rocks, .st, .gs, .lc)
         const adsDomains = [
             'https://libgen.li',
             'https://libgen.rocks',
@@ -75,7 +100,7 @@ export class AnnasService {
         for (const domain of adsDomains) {
             try {
                 const adsUrl = `${domain}/ads.php?md5=${md5Lower}`
-                const res = await client.get(adsUrl, { timeout: 6000 })
+                const res = await client.get(adsUrl, { timeout: 3500 })
                 const $ = cheerio.load(res.data)
                 const getHref = $('a[href*="get.php"]').attr('href')
                 if (getHref) {
@@ -84,30 +109,6 @@ export class AnnasService {
                 }
             } catch (err) {
                 console.warn(`[AnnasService] Resolver ${domain} failed: ${err.message}`)
-            }
-        }
-
-        // 2. Try IPFS Gateways if CIDs exist
-        if (ipfsCids && ipfsCids.length > 0) {
-            const ipfsGateways = [
-                'https://dweb.link/ipfs/',
-                'https://ipfs.filebase.io/ipfs/',
-                'https://w3s.link/ipfs/',
-                'https://nftstorage.link/ipfs/',
-                'https://ipfs.io/ipfs/'
-            ]
-            for (const cid of ipfsCids) {
-                for (const gw of ipfsGateways) {
-                    try {
-                        const gwUrl = `${gw}${cid}`
-                        const res = await client.head(gwUrl, { timeout: 4000 })
-                        if (res.status === 200) {
-                            return gwUrl
-                        }
-                    } catch (e) {
-                        continue
-                    }
-                }
             }
         }
 
@@ -120,7 +121,7 @@ export class AnnasService {
         for (const domain of indexDomains) {
             try {
                 const indexUrl = `${domain}/book/index.php?md5=${md5Upper}`
-                const res = await client.get(indexUrl, { timeout: 6000 })
+                const res = await client.get(indexUrl, { timeout: 3500 })
                 const $ = cheerio.load(res.data)
                 let lolLink = ''
                 $('a[href]').each((_, el) => {
@@ -130,7 +131,7 @@ export class AnnasService {
                     }
                 })
                 if (lolLink) {
-                    const lolRes = await client.get(lolLink, { timeout: 6000 })
+                    const lolRes = await client.get(lolLink, { timeout: 3500 })
                     const $lol = cheerio.load(lolRes.data)
                     const directUrl = $lol('h1 a[href]').first().attr('href') || $lol('a[href*="get.php"]').first().attr('href') || $lol('a[href*="download"]').first().attr('href')
                     if (directUrl) return directUrl
@@ -148,7 +149,7 @@ export class AnnasService {
 
         for (const lolUrl of lolDirectUrls) {
             try {
-                const res = await client.get(lolUrl, { timeout: 6000 })
+                const res = await client.get(lolUrl, { timeout: 3500 })
                 const $ = cheerio.load(res.data)
                 const directUrl = $('h1 a[href]').first().attr('href') || $('a[href*="get.php"]').first().attr('href')
                 if (directUrl) return directUrl
