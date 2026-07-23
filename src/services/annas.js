@@ -58,10 +58,51 @@ export class AnnasService {
         })
     }
 
-    async resolveDirectDownloadUrl(md5, ipfsCids = []) {
+    async resolveDirectDownloadUrl(md5, ipfsCids = [], libgenFileUrls = []) {
         const md5Upper = md5.toUpperCase()
         const md5Lower = md5.toLowerCase()
         const tasks = []
+
+        // 0. Libgen file.php session & referer bypass tasks (if file.php links found on detail page)
+        if (libgenFileUrls && libgenFileUrls.length > 0) {
+            for (const fileUrl of libgenFileUrls) {
+                if (fileUrl.includes('file.php?id=')) {
+                    tasks.push(
+                        (async () => {
+                            try {
+                                const res1 = await axios.get(fileUrl, {
+                                    httpsAgent,
+                                    headers: { 'User-Agent': DEFAULT_USER_AGENT, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+                                    timeout: 6000
+                                })
+                                const cookies = res1.headers['set-cookie'] || []
+                                const cookieHeader = cookies.map(c => c.split(';')[0]).join('; ')
+                                const adsUrl = `https://libgen.li/ads.php?md5=${md5Lower}`
+                                const res2 = await axios.get(adsUrl, {
+                                    httpsAgent,
+                                    headers: {
+                                        'User-Agent': DEFAULT_USER_AGENT,
+                                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                                        'Referer': fileUrl,
+                                        'Cookie': cookieHeader
+                                    },
+                                    timeout: 6000
+                                })
+                                const $ = cheerio.load(res2.data)
+                                const getHref = $('a[href*="get.php"]').attr('href')
+                                if (getHref) {
+                                    return getHref.startsWith('http') ? getHref : `https://libgen.li/${getHref}`
+                                }
+                                throw new Error('No get.php link found on Libgen.li ads page')
+                            } catch (e) {
+                                console.warn(`[AnnasService] Libgen file.php bypass failed: ${e.message}`)
+                                throw e
+                            }
+                        })()
+                    )
+                }
+            }
+        }
 
         // 1. Libgen Ads-based mirrors (.li, .rocks, .st, .lc)
         const adsDomains = ['https://libgen.li', 'https://libgen.rocks', 'https://libgen.st', 'https://libgen.lc']
@@ -306,8 +347,9 @@ export class AnnasService {
         })
         const meta = parseMetaInformation(metaText)
 
-        // Find IPFS CIDs & download mirrors on detail page
+        // Find IPFS CIDs & Libgen file URLs & download mirrors on detail page
         const ipfsCids = []
+        const libgenFileUrls = []
         const mirrors = []
         $('a[href]').each((_, el) => {
             const href = $(el).attr('href') || ''
@@ -317,6 +359,13 @@ export class AnnasService {
                 const cidMatch = href.match(/(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-z0-9]{55,65})/) || text.match(/(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-z0-9]{55,65})/)
                 if (cidMatch && !ipfsCids.includes(cidMatch[1])) {
                     ipfsCids.push(cidMatch[1])
+                }
+            }
+
+            if (href.includes('libgen.li/file.php?id=')) {
+                const fullLibgenUrl = href.startsWith('http') ? href : `${resolvedDomain}${href}`
+                if (!libgenFileUrls.includes(fullLibgenUrl)) {
+                    libgenFileUrls.push(fullLibgenUrl)
                 }
             }
 
@@ -348,8 +397,8 @@ export class AnnasService {
             }
         })
 
-        // Execute Promise.any Parallel Race across all mirrors & IPFS CIDs
-        let resolvedDirectUrl = await this.resolveDirectDownloadUrl(md5, ipfsCids)
+        // Execute Promise.any Parallel Race across all mirrors, IPFS CIDs, and file.php session bypass tasks
+        let resolvedDirectUrl = await this.resolveDirectDownloadUrl(md5, ipfsCids, libgenFileUrls)
 
         return {
             title,
