@@ -63,7 +63,30 @@ export class AnnasService {
         const md5Lower = md5.toLowerCase()
         const tasks = []
 
-        // 0. Libgen file.php session & referer bypass tasks (if file.php links found on detail page)
+        // 1. Direct get.php key extraction tasks (Libgen landing page key extraction)
+        const getDomains = ['https://libgen.li', 'https://libgen.rocks', 'https://libgen.st', 'https://libgen.lc']
+        for (const domain of getDomains) {
+            const getLandingUrl = `${domain}/get.php?md5=${md5Lower}`
+            tasks.push(
+                axios.get(getLandingUrl, {
+                    httpsAgent,
+                    headers: { 'User-Agent': DEFAULT_USER_AGENT, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+                    timeout: 8000
+                }).then(res => {
+                    const $ = cheerio.load(res.data)
+                    const getKeyHref = $('a[href*="key="]').attr('href') || $('a:contains("GET")').attr('href')
+                    if (getKeyHref) {
+                        return getKeyHref.startsWith('http') ? getKeyHref : `${domain}/${getKeyHref}`
+                    }
+                    throw new Error(`No key href in get.php on ${domain}`)
+                }).catch(err => {
+                    console.warn(`[AnnasService] Direct get.php key resolver ${domain} failed: ${err.message}`)
+                    throw err
+                })
+            )
+        }
+
+        // 2. Libgen file.php session & referer bypass tasks (if file.php links found on detail page)
         if (libgenFileUrls && libgenFileUrls.length > 0) {
             for (const fileUrl of libgenFileUrls) {
                 if (fileUrl.includes('file.php?id=')) {
@@ -104,7 +127,7 @@ export class AnnasService {
             }
         }
 
-        // 1. Libgen Ads-based mirrors (.li, .rocks, .st, .lc)
+        // 3. Libgen Ads-based mirrors (.li, .rocks, .st, .lc)
         const adsDomains = ['https://libgen.li', 'https://libgen.rocks', 'https://libgen.st', 'https://libgen.lc']
         for (const domain of adsDomains) {
             const adsUrl = `${domain}/ads.php?md5=${md5Lower}`
@@ -127,7 +150,7 @@ export class AnnasService {
             )
         }
 
-        // 2. IPFS Gateways Tasks (Parallel)
+        // 4. IPFS Gateways Tasks (Parallel)
         if (ipfsCids && ipfsCids.length > 0) {
             const ipfsGateways = [
                 'https://dweb.link/ipfs/',
@@ -159,7 +182,7 @@ export class AnnasService {
             }
         }
 
-        // 3. Libgen Index & Library.lol Tasks
+        // 5. Libgen Index & Library.lol Tasks
         const indexDomains = ['https://libgen.is', 'https://libgen.rs']
         for (const domain of indexDomains) {
             const indexUrl = `${domain}/book/index.php?md5=${md5Upper}`
@@ -397,7 +420,7 @@ export class AnnasService {
             }
         })
 
-        // Execute Promise.any Parallel Race across all mirrors, IPFS CIDs, and file.php session bypass tasks
+        // Execute Promise.any Parallel Race across all mirrors, IPFS CIDs, and direct get.php key resolvers
         let resolvedDirectUrl = await this.resolveDirectDownloadUrl(md5, ipfsCids, libgenFileUrls)
 
         return {
