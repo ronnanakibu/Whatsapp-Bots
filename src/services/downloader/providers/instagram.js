@@ -1,6 +1,6 @@
 // src/services/downloader/providers/instagram.js
 // Instagram Downloader — Reels, Posts, Stories, IGTV
-// Strategy: local yt-dlp → Embed scrape → Fallback public APIs (SnapSave, SaveIG, InDown)
+// Strategy: local yt-dlp → Embed scrape → Fallback public APIs (BtchDownloader, SaveIG, SnapSave)
 
 import { fetchBuffer, sanitizeFilename } from '../utils.js'
 import { logger } from '../../../utils/logger.js'
@@ -92,7 +92,6 @@ async function downloadViaEmbed(url) {
                 if (ogVideo) {
                     mediaUrl = ogVideo.replace(/&amp;/g, '&')
                 } else {
-                    // Coba fallback ke display_url / og:image jika foto
                     const ogImage = $('meta[property="og:image"]').attr('content')
                     if (ogImage) {
                         mediaUrl = ogImage.replace(/&amp;/g, '&')
@@ -159,6 +158,23 @@ function deobfuscateJs(jsCode) {
 // ─────────────────────────────────────────────
 
 const IG_APIS = [
+    {
+        name: 'BtchDownloader',
+        fetchMedia: async (url) => {
+            const { igdl } = await import('btch-downloader')
+            const res = await igdl(url)
+            if (!res?.status || !res?.result?.length) return null
+            const valid = res.result.find(i => i.url && i.url.length > 0)
+            if (!valid) return null
+            const isVideo = valid.url.includes('.mp4') || valid.url.includes('v2?') || valid.url.includes('video')
+            return {
+                downloadUrl: valid.url,
+                type: isVideo ? 'video' : 'image',
+                thumbnail: valid.thumbnail || null,
+                multiple: res.result.filter(i => i.url).map(i => i.url),
+            }
+        }
+    },
     {
         name: 'SaveIG',
         fetchMedia: async (url) => {

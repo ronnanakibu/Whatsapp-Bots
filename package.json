@@ -1,6 +1,6 @@
 {
     "name": "wabot2.0",
-    "version": "5.17.2",
+    "version": "5.17.3",
     "description": "WhatsApp Bot Modular Automation based on Baileys.",
     "main": "start.js",
     "type": "module",
@@ -31,6 +31,7 @@
         "@whiskeysockets/baileys": "^7.0.0-rc13",
         "axios": "^1.17.0",
         "better-sqlite3": "^12.10.0",
+        "btch-downloader": "^6.0.38",
         "bullmq": "^5.78.1",
         "cheerio": "^1.2.0",
         "discord.js": "^14.26.4",
@@ -38,6 +39,7 @@
         "express": "^5.2.1",
         "googleapis": "^173.0.0",
         "groq-sdk": "^1.2.0",
+        "instagram-url-direct": "^2.0.7",
         "libsodium-wrappers": "^0.8.4",
         "mammoth": "^1.12.0",
         "multer": "^2.2.0",
