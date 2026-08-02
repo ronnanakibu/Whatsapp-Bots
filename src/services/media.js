@@ -3,13 +3,37 @@ import sharp from 'sharp'
 import fs from 'fs'
 import path from 'path'
 import https from 'https'
-import { exec } from 'child_process'
+import { exec, execSync } from 'child_process'
 import util from 'util'
 import crypto from 'crypto'
 import { logger } from '../utils/logger.js'
 import { addExif } from './exif.js'
 
 const execPromise = util.promisify(exec)
+
+let resolvedFfmpegPath = null
+export function getFfmpegPath() {
+    if (resolvedFfmpegPath) return resolvedFfmpegPath
+    try {
+        execSync('ffmpeg -version', { stdio: 'ignore' })
+        resolvedFfmpegPath = 'ffmpeg'
+        return resolvedFfmpegPath
+    } catch {
+        const installerPaths = [
+            path.resolve('../Sesuatu/node_modules/@ffmpeg-installer/win32-x64/ffmpeg.exe'),
+            path.resolve('./node_modules/@ffmpeg-installer/win32-x64/ffmpeg.exe'),
+            'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe'
+        ]
+        for (const p of installerPaths) {
+            if (fs.existsSync(p)) {
+                resolvedFfmpegPath = `"${p}"`
+                return resolvedFfmpegPath
+            }
+        }
+    }
+    resolvedFfmpegPath = 'ffmpeg'
+    return resolvedFfmpegPath
+}
 
 const EMOJI_CACHE_DIR = path.resolve('./storage/media/emoji-cache')
 const NOTO_BASE = 'https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128'
@@ -801,12 +825,46 @@ export class MediaService {
 
             fs.writeFileSync(inputPath, buffer)
 
+            const ffmpegBin = getFfmpegPath()
             const vcodec = ext === 'mp4' ? '-vcodec copy' : ''
-            await execPromise(`ffmpeg -y -i "${inputPath}" ${vcodec} -af "volume=${volumeMultiplier}" "${outputPath}"`)
+            await execPromise(`${ffmpegBin} -y -i "${inputPath}" ${vcodec} -af "volume=${volumeMultiplier}" "${outputPath}"`)
 
             return fs.readFileSync(outputPath)
         } catch (err) {
             logger.error('❌ [FFmpeg] Boost Volume Error:', err.message)
+            return buffer
+        } finally {
+            try {
+                if (inputPath && fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+                if (outputPath && fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+            } catch (e) { }
+        }
+    }
+
+    async convertToPlayableMp4(buffer) {
+        let inputPath, outputPath
+        try {
+            const tmpDir = path.resolve('./storage/media/tmp')
+            if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+
+            const id = crypto.randomBytes(4).toString('hex')
+            inputPath = path.join(tmpDir, `${id}_raw_in.mp4`)
+            outputPath = path.join(tmpDir, `${id}_playable_out.mp4`)
+
+            fs.writeFileSync(inputPath, buffer)
+
+            const ffmpegBin = getFfmpegPath()
+            // Transcode to H.264 + AAC + yuv420p + faststart for 100% WhatsApp compatibility across Android, iOS & Web
+            const ffmpegCmd = `${ffmpegBin} -y -i "${inputPath}" -c:v libx264 -pix_fmt yuv420p -preset ultrafast -c:a aac -b:a 128k -movflags +faststart "${outputPath}"`
+            await execPromise(ffmpegCmd)
+
+            if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+                logger.info(`✅ [FFmpeg] Transcoding video to playable H.264 MP4 completed (${fs.statSync(outputPath).size} bytes)`)
+                return fs.readFileSync(outputPath)
+            }
+            return buffer
+        } catch (err) {
+            logger.warn(`⚠️ [FFmpeg] Transcode to MP4 failed, returning original buffer: ${err.message}`)
             return buffer
         } finally {
             try {

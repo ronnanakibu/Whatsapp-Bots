@@ -1,5 +1,6 @@
 // src/core/bot.js
 import dns from 'dns'
+process.env.TZ = process.env.BOT_TIMEZONE || 'Asia/Jakarta'
 dns.setDefaultResultOrder('ipv4first')
 
 import makeWASocket, {

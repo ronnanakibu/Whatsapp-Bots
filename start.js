@@ -1,13 +1,14 @@
 /**
  * start.js — Bootstrap script untuk Pterodactyl
  * Urutan eksekusi:
- * 1. Buat folder struktur
- * 2. Download font
- * 3. Cek FFmpeg
- * 4. Download yt-dlp binary (untuk radio)
- * 5. Validasi .env
- * 6. Print summary
- * 7. Launch bot
+ * 1. Set local timezone (Asia/Jakarta)
+ * 2. Buat folder struktur
+ * 3. Download font
+ * 4. Cek FFmpeg
+ * 5. Download yt-dlp binary (untuk radio)
+ * 6. Validasi .env
+ * 7. Print summary
+ * 8. Launch bot
  */
 
 import { execSync, spawn } from 'child_process'
@@ -17,23 +18,15 @@ import https from 'https'
 import dns from 'dns'
 import { pathToFileURL } from 'url'
 
+// Set local timezone to Asia/Jakarta (WIB / GMT+7) for Pterodactyl console & app logs
+process.env.TZ = process.env.BOT_TIMEZONE || 'Asia/Jakarta'
+
 dns.setDefaultResultOrder('ipv4first')
 
 // Prepend local bin folder to PATH so all spawned commands (ffmpeg, yt-dlp, openssl) are found
 const localBinPath = path.resolve('./storage/bin')
 if (!process.env.PATH.split(path.delimiter).includes(localBinPath)) {
     process.env.PATH = localBinPath + path.delimiter + process.env.PATH
-}
-
-try {
-    if (fs.existsSync('./upload-retry.js')) {
-        console.log('=== MENJALANKAN UPLOAD RETRY OTOMATIS (FIX 16:9) ===')
-        execSync('node upload-retry.js', { stdio: 'inherit' })
-        fs.unlinkSync('./upload-retry.js')
-        console.log('=== UPLOAD RETRY SELESAI ===')
-    }
-} catch (e) {
-    console.error('Retry otomatis gagal:', e.message)
 }
 
 // Redirect all temp files and pip caches to the workspace to bypass container /tmp limits
@@ -60,8 +53,14 @@ const err = (msg) => {
 }
 
 function commandExists(cmd) {
-    try { execSync(`which ${cmd}`, { stdio: 'pipe' }); return true }
-    catch { return false }
+    try {
+        const isWindows = process.platform === 'win32'
+        const testCmd = isWindows ? `where ${cmd}` : `which ${cmd}`
+        execSync(testCmd, { stdio: 'pipe' })
+        return true
+    } catch {
+        return false
+    }
 }
 
 function downloadFile(url, destPath) {
@@ -97,7 +96,7 @@ function setupDirectories() {
         './storage/logs',
         './storage/media',
         './storage/media/emoji-cache',
-        './storage/bin',            // ← yt-dlp binary
+        './storage/bin',
         './src/assets/fonts',
     ]
     dirs.forEach(dir => {
@@ -154,54 +153,38 @@ async function setupFonts() {
 
 // ─────────────────────────────────────────────
 // STEP 3: FFMPEG — auto-download static binary
-// Pakai ffmpeg-static build untuk Linux Debian x86_64
-// Tidak butuh apt, tidak butuh root
 // ─────────────────────────────────────────────
 
 const FFMPEG_PATH = path.resolve('./storage/bin/ffmpeg')
-// John Van Sickle ffmpeg static builds — paling reliable untuk Debian/Ubuntu
 const FFMPEG_URL = 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz'
 const FFMPEG_TAR = path.resolve('./storage/bin/ffmpeg.tar.xz')
 
 async function setupFfmpeg() {
-    // Cek apakah sudah ada di PATH sistem dulu
     if (commandExists('ffmpeg')) {
-        const version = execSync('ffmpeg -version', { stdio: 'pipe' }).toString().split('\n')[0]
-        ok(`FFmpeg (system): ${version}`)
+        ok(`FFmpeg (system) available`)
         return
     }
 
-    // Cek apakah binary lokal sudah ada
     if (fs.existsSync(FFMPEG_PATH)) {
         const size = fs.statSync(FFMPEG_PATH).size
-        if (size > 10_000_000) { // > 10MB = valid
+        if (size > 10_000_000) {
             ok(`FFmpeg (local): ${(size / 1024 / 1024).toFixed(1)} MB`)
             try { fs.chmodSync(FFMPEG_PATH, '755') } catch (_) { }
-            // Tambah ke PATH supaya spawn('ffmpeg') bisa ketemu
-            process.env.PATH = path.resolve('./storage/bin') + ':' + process.env.PATH
             return
         }
         wrn('FFmpeg binary corrupt, re-downloading...')
         fs.unlinkSync(FFMPEG_PATH)
     }
 
-    inf('Downloading FFmpeg static binary untuk Debian (~80MB, hanya sekali)...')
-    inf('Ini mungkin butuh 1-2 menit tergantung koneksi server...')
+    inf('Downloading FFmpeg static binary untuk Debian (~80MB)...')
 
     try {
-        // Download tar.xz
         await downloadFile(FFMPEG_URL, FFMPEG_TAR)
-        inf(`Downloaded tar: ${(fs.statSync(FFMPEG_TAR).size / 1024 / 1024).toFixed(1)} MB`)
-
-        // Extract binary ffmpeg dari tar.xz
-        // tar -xJ (xz) → extract file ffmpeg saja ke storage/bin/
         inf('Extracting ffmpeg binary...')
         execSync(
             `tar -xJf "${FFMPEG_TAR}" --wildcards "*/ffmpeg" --strip-components=1 -C "${path.resolve('./storage/bin/')}"`,
             { stdio: 'pipe' }
         )
-
-        // Cleanup tar
         try { fs.unlinkSync(FFMPEG_TAR) } catch (_) { }
 
         if (!fs.existsSync(FFMPEG_PATH)) {
@@ -211,77 +194,42 @@ async function setupFfmpeg() {
         fs.chmodSync(FFMPEG_PATH, '755')
         const size = fs.statSync(FFMPEG_PATH).size
         ok(`FFmpeg downloaded & extracted: ${(size / 1024 / 1024).toFixed(1)} MB`)
-
-        // Tambah ke PATH
-        process.env.PATH = path.resolve('./storage/bin') + ':' + process.env.PATH
-
     } catch (e) {
         wrn(`Gagal setup FFmpeg: ${e.message}`)
-        wrn('Fitur radio tidak akan berfungsi. Coba restart bot untuk download ulang.')
-        // Cleanup kalau gagal
         try { fs.unlinkSync(FFMPEG_TAR) } catch (_) { }
         try { fs.unlinkSync(FFMPEG_PATH) } catch (_) { }
     }
 }
 
 // ─────────────────────────────────────────────
-// STEP 4: YT-DLP & PYTHON STANDALONE
-// Alpine/musl Linux tidak bisa jalankan yt-dlp_linux (glibc ELF).
-// Solusi: Gunakan yt-dlp versi python script + install Python standalone jika perlu.
+// STEP 4: YT-DLP
 // ─────────────────────────────────────────────
 
 const YTDLP_SCRIPT_PATH = path.resolve('./storage/bin/yt-dlp')
 const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp'
 const PYTHON_DIR = path.resolve('./storage/python')
 const PYTHON_BIN = path.resolve('./storage/python/bin/python3')
-const PYTHON_URL = 'https://github.com/indygreg/python-build-standalone/releases/download/20240415/cpython-3.12.3+20240415-x86_64-unknown-linux-musl-install_only.tar.gz'
 const PYTHON_TAR = path.resolve('./storage/bin/python.tar.gz')
 
 async function setupYtDlp() {
-    // 1. Detect libc type (musl vs gnu)
-    let isMusl = false
-    try {
-        const lddOut = execSync('ldd --version', { stdio: 'pipe' }).toString()
-        if (lddOut.includes('musl')) isMusl = true
-    } catch (_) {
-        if (fs.existsSync('/lib/ld-musl-x86_64.so.1') || fs.existsSync('/lib/ld-musl-aarch64.so.1')) {
-            isMusl = true
-        }
-    }
+    let isMusl = fs.existsSync('/lib/ld-musl-x86_64.so.1') || fs.existsSync('/lib/ld-musl-aarch64.so.1')
     const detectedLibc = isMusl ? 'musl' : 'gnu'
     const pythonUrl = `https://github.com/indygreg/python-build-standalone/releases/download/20240415/cpython-3.12.3+20240415-x86_64-unknown-linux-${detectedLibc}-install_only.tar.gz`
 
-    // Check if we need to switch/redownload Python standalone due to libc mismatch
-    const libcMarkerFile = path.join(PYTHON_DIR, 'libc_type.txt')
-    let currentInstalledLibc = null
-    if (fs.existsSync(libcMarkerFile)) {
-        currentInstalledLibc = fs.readFileSync(libcMarkerFile, 'utf8').trim()
-    }
-
-    if (fs.existsSync(PYTHON_BIN) && currentInstalledLibc !== detectedLibc) {
-        inf(`Libc mismatch: detected ${detectedLibc} but installed is ${currentInstalledLibc || 'unknown'}. Re-installing Python standalone...`)
-        try {
-            fs.rmSync(PYTHON_DIR, { recursive: true, force: true })
-        } catch (_) {}
-    }
-
-    // 2. Cek Python di sistem
     let hasPython = false
     try {
-        execSync('python3 --version', { stdio: 'ignore' })
-        hasPython = true
-        ok('Python3 system detected.')
+        if (commandExists('python3') || commandExists('python')) {
+            hasPython = true
+            ok('Python3 system detected.')
+        }
     } catch (_) { }
 
-    // 3. Jika tidak ada Python, download Python standalone
     if (!hasPython && !fs.existsSync(PYTHON_BIN)) {
-        inf(`Python3 tidak ditemukan. Downloading Python standalone (${detectedLibc.toUpperCase()}) (~35MB)...`)
+        inf(`Downloading Python standalone (${detectedLibc.toUpperCase()}) (~35MB)...`)
         try {
             await downloadFile(pythonUrl, PYTHON_TAR)
-            inf('Extracting Python...')
             if (!fs.existsSync(PYTHON_DIR)) fs.mkdirSync(PYTHON_DIR, { recursive: true })
             execSync(`tar -xzf "${PYTHON_TAR}" -C "${PYTHON_DIR}" --strip-components=1`, { stdio: 'pipe' })
-            fs.writeFileSync(libcMarkerFile, detectedLibc, 'utf8')
             fs.unlinkSync(PYTHON_TAR)
             ok(`Python standalone (${detectedLibc}) installed.`)
         } catch (e) {
@@ -289,94 +237,31 @@ async function setupYtDlp() {
             try { fs.unlinkSync(PYTHON_TAR) } catch (_) { }
         }
     } else if (!hasPython && fs.existsSync(PYTHON_BIN)) {
-        ok(`Python standalone (${currentInstalledLibc || detectedLibc}) ready.`)
+        ok(`Python standalone (${detectedLibc}) ready.`)
     }
 
-    // Tambahkan Python standalone ke PATH
     if (fs.existsSync(PYTHON_BIN)) {
         process.env.PATH = path.dirname(PYTHON_BIN) + ':' + process.env.PATH
+        process.env.PYTHON_CMD = PYTHON_BIN
     }
 
-    // 3. Download yt-dlp (Python script version, cuma 3MB)
     if (fs.existsSync(YTDLP_SCRIPT_PATH)) {
         const size = fs.statSync(YTDLP_SCRIPT_PATH).size
-        if (size > 2_000_000 && size < 5_000_000) { // ~3MB
-            ok(`yt-dlp script exists: ${(size / 1024 / 1024).toFixed(1)} MB`)
+        if (size > 100_000) {
+            ok(`yt-dlp script ready.`)
             try { fs.chmodSync(YTDLP_SCRIPT_PATH, '755') } catch (_) { }
             return
         }
         fs.unlinkSync(YTDLP_SCRIPT_PATH)
     }
 
-    // Hapus binary ELF lama yg gagal jalan (30MB)
-    const oldElf = path.resolve('./storage/bin/yt-dlp_linux')
-    if (fs.existsSync(oldElf)) fs.unlinkSync(oldElf)
-
-    inf('Downloading yt-dlp python script (~3MB)...')
+    inf('Downloading yt-dlp script (~3MB)...')
     try {
         await downloadFile(YTDLP_URL, YTDLP_SCRIPT_PATH)
         fs.chmodSync(YTDLP_SCRIPT_PATH, '755')
         ok('yt-dlp script downloaded.')
     } catch (e) {
         wrn(`Gagal download yt-dlp: ${e.message}`)
-    }
-}
-
-// ─────────────────────────────────────────────
-// STEP 4.5: REMBG (PYTHON BACKEND & MODEL SETUP)
-// ─────────────────────────────────────────────
-
-async function setupRembg() {
-    inf('Checking Python rembg module and dependencies...')
-    
-    let workingPython = null
-    for (const cmd of ['python3', 'python', PYTHON_BIN]) {
-        try {
-            if (cmd === PYTHON_BIN && !fs.existsSync(PYTHON_BIN)) continue
-            execSync(`"${cmd}" --version`, { stdio: 'ignore' })
-            workingPython = cmd
-            break
-        } catch (_) {}
-    }
-
-    if (!workingPython) {
-        wrn('Python runtime not found. Skipping rembg dependencies installation.')
-        return
-    }
-
-    // Save the resolved python command to environment for runtime use in media.js
-    process.env.PYTHON_CMD = workingPython
-
-    let rembgInstalled = false
-    try {
-        execSync(`"${workingPython}" -c "import rembg"`, { stdio: 'ignore' })
-        rembgInstalled = true
-        ok('rembg module already installed.')
-    } catch (_) { }
-
-    if (!rembgInstalled) {
-        inf(`Installing rembg[cpu] dependency via ${workingPython}...`)
-        try {
-            const installOut = execSync(`"${workingPython}" -m pip install "rembg[cpu]"`, { encoding: 'utf8', stdio: 'pipe' })
-            fs.writeFileSync('./storage/logs/pip_install.log', installOut || 'Success with no output', 'utf8')
-            ok('rembg dependencies installed successfully.')
-        } catch (e) {
-            const errorLog = `Error: ${e.message}\nSTDOUT:\n${e.stdout?.toString()}\nSTDERR:\n${e.stderr?.toString()}`
-            fs.writeFileSync('./storage/logs/pip_install.log', errorLog, 'utf8')
-            wrn(`Gagal install rembg lokal (compiler/make tools tidak ditemukan). Bot akan otomatis menggunakan Remote API (KenjieDec/RemBG). Detail: ./storage/logs/pip_install.log`)
-            return
-        }
-    }
-
-    inf('Checking/Pre-downloading u2net background removal model...')
-    try {
-        const downloadOut = execSync(`"${workingPython}" -c "from rembg import remove; remove(b'')"`, { encoding: 'utf8', stdio: 'pipe' })
-        fs.writeFileSync('./storage/logs/model_download.log', downloadOut || 'Model ready/downloaded successfully', 'utf8')
-        ok('u2net background removal model ready and cached.')
-    } catch (e) {
-        const errorLog = `Error: ${e.message}\nSTDOUT:\n${e.stdout?.toString()}\nSTDERR:\n${e.stderr?.toString()}`
-        fs.writeFileSync('./storage/logs/model_download.log', errorLog, 'utf8')
-        wrn(`Gagal cache model u2net: ${e.message}. See storage/logs/model_download.log`)
     }
 }
 
@@ -422,35 +307,21 @@ function validateEnv() {
 // ─────────────────────────────────────────────
 
 async function setupOpenssl() {
-    inf('Checking OpenSSL CLI tool...')
     const opensslPath = path.resolve('./storage/bin/openssl')
-    
-    // Check if openssl exists in PATH outside our local storage/bin directory
-    let hasSystemOpenssl = false
-    try {
-        const pathDirs = process.env.PATH.split(path.delimiter)
-        const systemDirs = pathDirs.filter(d => d !== localBinPath)
-        const systemPath = systemDirs.join(path.delimiter)
-        execSync('which openssl', { env: { ...process.env, PATH: systemPath }, stdio: 'pipe' })
-        hasSystemOpenssl = true
-    } catch (_) {}
-
-    if (hasSystemOpenssl) {
-        try {
-            const version = execSync('openssl version', { stdio: 'pipe' }).toString().trim()
-            ok(`OpenSSL (system): ${version}`)
-            // If a mock openssl was previously created, remove it to use the system one
-            if (fs.existsSync(opensslPath)) {
-                fs.unlinkSync(opensslPath)
-            }
-            return
-        } catch (_) {}
+    if (commandExists('openssl')) {
+        ok(`OpenSSL (system) available`)
+        if (fs.existsSync(opensslPath)) {
+            try { fs.unlinkSync(opensslPath) } catch (_) {}
+        }
+        return
     }
 
-    inf('OpenSSL CLI not found on system. Ensuring mock openssl helper exists for Prisma...')
+    inf('Ensuring OpenSSL helper exists for Prisma...')
     try {
-        fs.writeFileSync(opensslPath, '#!/bin/sh\necho "OpenSSL 3.0.0"\n')
-        fs.chmodSync(opensslPath, '755')
+        if (!fs.existsSync(opensslPath)) {
+            fs.writeFileSync(opensslPath, '#!/bin/sh\necho "OpenSSL 3.0.0"\n')
+            fs.chmodSync(opensslPath, '755')
+        }
         ok('OpenSSL helper ready.')
     } catch (e) {
         wrn(`Failed to write OpenSSL helper: ${e.message}`)
@@ -462,11 +333,15 @@ async function setupOpenssl() {
 // ─────────────────────────────────────────────
 
 async function setupPrisma() {
+    const clientPath = path.resolve('./node_modules/@prisma/client')
+    if (fs.existsSync(clientPath)) {
+        ok('Prisma client bindings already present.')
+        return
+    }
+
     inf('Generating Prisma client database bindings...')
     try {
-        console.log('\n--- Prisma Client Generation ---')
-        execSync('npx prisma generate', { stdio: 'inherit' })
-        console.log('--------------------------------')
+        execSync('npx prisma generate', { stdio: 'pipe' })
         ok('Prisma client bindings generated successfully.')
     } catch (e) {
         wrn(`Prisma generate failed: ${e.message}`)
@@ -478,17 +353,12 @@ async function setupPrisma() {
 // ─────────────────────────────────────────────
 
 async function printSummary() {
-    const conflicts = []
-    const problems = []
     const registered = new Map()
+    const problems = []
 
     async function scan(dir) {
         let entries = []
-        try {
-            entries = fs.readdirSync(dir)
-        } catch (_) {
-            return
-        }
+        try { entries = fs.readdirSync(dir) } catch (_) { return }
         for (const entry of entries) {
             const fullPath = path.join(dir, entry)
             if (fs.statSync(fullPath).isDirectory()) {
@@ -502,29 +372,9 @@ async function printSummary() {
                 const fileURL = pathToFileURL(absolutePath).href
                 const mod = await import(fileURL)
                 const cmd = mod.default
-                if (!cmd) {
-                    problems.push(`File ${entry} has no default export`)
-                    continue
-                }
-                if (!cmd.name) {
-                    problems.push(`File ${entry} is missing 'name' property`)
-                    continue
-                }
-
-                if (registered.has(cmd.name)) {
-                    conflicts.push(`Duplicate command '${cmd.name}' in ${entry} and ${registered.get(cmd.name)}`)
-                } else {
-                    registered.set(cmd.name, entry)
-                }
-
-                if (cmd.aliases) {
-                    for (const alias of cmd.aliases) {
-                        if (registered.has(alias)) {
-                            conflicts.push(`Duplicate alias '${alias}' in ${entry} and ${registered.get(alias)}`)
-                        } else {
-                            registered.set(alias, entry)
-                        }
-                    }
+                if (cmd?.name) registered.set(cmd.name, entry)
+                if (cmd?.aliases) {
+                    for (const alias of cmd.aliases) registered.set(alias, entry)
                 }
             } catch (err) {
                 problems.push(`Failed to import ${entry}: ${err.message}`)
@@ -532,41 +382,26 @@ async function printSummary() {
         }
     }
 
-    inf('Scanning command registry for duplicates...')
+    inf('Scanning command registry...')
     await scan('./src/commands')
 
     const fonts = fs.readdirSync(FONT_DIR).filter(f => f.endsWith('.ttf') || f.endsWith('.otf'))
     const hasFfmpeg = commandExists('ffmpeg') || fs.existsSync(FFMPEG_PATH)
     const hasYtdlp = fs.existsSync(YTDLP_SCRIPT_PATH)
+    const tz = process.env.TZ || 'Asia/Jakarta'
 
     console.log('\n' + '─'.repeat(55))
     console.log('  🤖 RonnBot v2.0 — Bootstrap Summary & Health Check')
     console.log('─'.repeat(55))
+    console.log(`  Timezone      : ${tz} (GMT+7)`)
     console.log(`  Fonts         : ${fonts.length > 0 ? fonts.join(', ') : 'none'}`)
     console.log(`  FFmpeg        : ${hasFfmpeg ? '✅ available' : '❌ not found (radio disabled)'}`)
     console.log(`  yt-dlp        : ${hasYtdlp ? '✅ ready' : '❌ not found (radio disabled)'}`)
     console.log(`  Owner         : ${process.env.OWNER_NUMBER ?? 'not set'}`)
     console.log(`  Prefix        : ${process.env.BOT_PREFIX ?? '!'}`)
     console.log(`  Node version  : ${process.version}`)
-    const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
-    const port = process.env.RADIO_PORT || '25637'
-    console.log(`  Dashboard     : ${host}:${port}/dashboard`)
     console.log('─'.repeat(55))
-    console.log('  🔍 COMMAND REGISTRY STATUS:')
-    console.log(`  Total Commands: ${registered.size} registered (including aliases)`)
-
-    if (conflicts.length === 0 && problems.length === 0) {
-        console.log('  ✅ No conflicts or loading problems detected!')
-    } else {
-        if (conflicts.length > 0) {
-            console.log(`  ⚠️  Duplicate Command Conflicts (${conflicts.length}):`)
-            conflicts.forEach(c => console.log(`     - ${c}`))
-        }
-        if (problems.length > 0) {
-            console.log(`  ❌ Command Loading Problems (${problems.length}):`)
-            problems.forEach(p => console.log(`     - ${p}`))
-        }
-    }
+    console.log(`  Commands      : ${registered.size} registered commands & aliases`)
     console.log('─'.repeat(55) + '\n')
 }
 
@@ -597,47 +432,9 @@ async function main() {
     console.log('\n🚀 [Bootstrap] RonnBot v2.0 starting up...\n')
     try {
         setupDirectories()
-        
-        // Dump env for debugging ports
-        try {
-            const envData = Object.entries(process.env)
-                .map(([k, v]) => `${k}=${v}`)
-                .join('\n');
-            fs.writeFileSync('./storage/logs/env_dump.log', envData, 'utf8');
-        } catch (_) {}
-        
-        // Write boot crash placeholder
-        try { fs.unlinkSync('./storage/logs/boot_crash.log') } catch (_) {}
-
         await setupFonts()
         await setupFfmpeg()
         await setupYtDlp()
-        await setupRembg()
-
-        // Diagnostics
-        try {
-            let diag = `--- DIAGNOSTICS ---\nTimestamp: ${new Date().toISOString()}\n`;
-            diag += `PATH: ${process.env.PATH}\n`;
-            diag += `CWD: ${process.cwd()}\n`;
-            const cmds = [
-                'python3 --version',
-                'python --version',
-                'pip --version',
-                'pip3 --version'
-            ];
-            for (const c of cmds) {
-                try {
-                    const out = execSync(c).toString();
-                    diag += `CMD: ${c}\nOUT:\n${out}\n`;
-                } catch (err) {
-                    diag += `CMD: ${c}\nERR:\n${err.message}\nSTDOUT:\n${err.stdout?.toString()}\nSTDERR:\n${err.stderr?.toString()}\n`;
-                }
-            }
-            fs.writeFileSync('./storage/logs/diagnostic.log', diag, 'utf8');
-        } catch (diagErr) {
-            console.error('Failed to run diagnostics:', diagErr);
-        }
-
         await setupOpenssl()
         validateEnv()
         await setupPrisma()
@@ -647,9 +444,6 @@ async function main() {
     } catch (e) {
         err(`Bootstrap fatal error: ${e.message}`)
         console.error(e)
-        try {
-            fs.writeFileSync('./storage/logs/boot_crash.log', `Bootstrap fatal error: ${e.message}\nStack: ${e.stack}`, 'utf8');
-        } catch (_) {}
         process.exit(1)
     }
 }
