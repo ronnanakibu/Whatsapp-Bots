@@ -299,6 +299,13 @@ function validateEnv() {
         if (!process.env[k]) wrn(`${k} tidak di-set — fitur AI tidak aktif.`)
     })
 
+    if (process.env.IG_COOKIES) {
+        try {
+            fs.writeFileSync('./storage/cookies.txt', process.env.IG_COOKIES.replace(/\\n/g, '\n'), 'utf8')
+            ok('Instagram cookies loaded from IG_COOKIES env.')
+        } catch (_) {}
+    }
+
     ok('Environment valid.')
 }
 

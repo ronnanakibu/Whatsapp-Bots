@@ -38,6 +38,13 @@ export async function downloadYtdlp(url, options = {}) {
     // Membatasi ukuran file agar WhatsApp tidak menolak (max 50MB, kita set 100MB di yt-dlp sbg safety)
     args.push('--max-filesize', '100M')
 
+    // Support optional cookies file for Instagram/YouTube authentication
+    const cookiesPath = process.env.YTDLP_COOKIES_PATH || path.resolve('./storage/cookies.txt')
+    if (fs.existsSync(cookiesPath)) {
+        args.push('--cookies', cookiesPath)
+        logger.debug(`[yt-dlp] Using cookies file: ${cookiesPath}`)
+    }
+
     if (format === 'audio') {
         const quality = options.audioQuality === 'normal' ? '128K' : '320K'
         args.push(
