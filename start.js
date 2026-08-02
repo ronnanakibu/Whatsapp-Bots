@@ -307,21 +307,24 @@ function validateEnv() {
 // ─────────────────────────────────────────────
 
 async function setupOpenssl() {
+    inf('Checking OpenSSL CLI tool...')
     const opensslPath = path.resolve('./storage/bin/openssl')
-    if (commandExists('openssl')) {
-        ok(`OpenSSL (system) available`)
-        if (fs.existsSync(opensslPath)) {
-            try { fs.unlinkSync(opensslPath) } catch (_) {}
-        }
-        return
-    }
 
-    inf('Ensuring OpenSSL helper exists for Prisma...')
     try {
-        if (!fs.existsSync(opensslPath)) {
-            fs.writeFileSync(opensslPath, '#!/bin/sh\necho "OpenSSL 3.0.0"\n')
-            fs.chmodSync(opensslPath, '755')
+        const out = execSync('openssl version', { stdio: 'pipe' }).toString()
+        if (out.includes('OpenSSL')) {
+            ok(`OpenSSL (system): ${out.trim()}`)
+            if (fs.existsSync(opensslPath)) {
+                try { fs.unlinkSync(opensslPath) } catch (_) {}
+            }
+            return
         }
+    } catch (_) {}
+
+    inf('Ensuring OpenSSL 3.0 helper exists for Prisma...')
+    try {
+        fs.writeFileSync(opensslPath, '#!/bin/sh\necho "OpenSSL 3.0.0"\n', { mode: 0o755 })
+        try { fs.chmodSync(opensslPath, '755') } catch (_) {}
         ok('OpenSSL helper ready.')
     } catch (e) {
         wrn(`Failed to write OpenSSL helper: ${e.message}`)
@@ -333,12 +336,6 @@ async function setupOpenssl() {
 // ─────────────────────────────────────────────
 
 async function setupPrisma() {
-    const clientPath = path.resolve('./node_modules/@prisma/client')
-    if (fs.existsSync(clientPath)) {
-        ok('Prisma client bindings already present.')
-        return
-    }
-
     inf('Generating Prisma client database bindings...')
     try {
         execSync('npx prisma generate', { stdio: 'pipe' })
