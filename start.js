@@ -269,6 +269,33 @@ async function setupYtDlp() {
 // STEP 5: VALIDASI .env
 // ─────────────────────────────────────────────
 
+function convertJsonToNetscapeCookies(raw) {
+    if (!raw || typeof raw !== 'string') return null
+    let list = null
+    try {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) list = parsed
+    } catch (_) {}
+    if (!list) return null
+
+    let lines = [
+        '# Netscape HTTP Cookie File',
+        '# https://curl.se/docs/http-cookies.html',
+        '# Auto-converted by RonnBot',
+        ''
+    ]
+    for (const c of list) {
+        if (!c.name || c.value === undefined) continue
+        const domain = c.domain || '.instagram.com'
+        const flag = domain.startsWith('.') ? 'TRUE' : 'FALSE'
+        const path = c.path || '/'
+        const secure = c.secure ? 'TRUE' : 'FALSE'
+        const exp = Math.floor(c.expirationDate || 2147483647)
+        lines.push(`${domain}\t${flag}\t${path}\t${secure}\t${exp}\t${c.name}\t${c.value}`)
+    }
+    return lines.join('\n')
+}
+
 function validateEnv() {
     inf('Validating environment variables...')
     const envPath = './.env'
@@ -301,8 +328,19 @@ function validateEnv() {
 
     if (process.env.IG_COOKIES) {
         try {
-            fs.writeFileSync('./storage/cookies.txt', process.env.IG_COOKIES.replace(/\\n/g, '\n'), 'utf8')
-            ok('Instagram cookies loaded from IG_COOKIES env.')
+            const raw = process.env.IG_COOKIES.replace(/\\n/g, '\n')
+            const netscape = convertJsonToNetscapeCookies(raw) || raw
+            fs.writeFileSync('./storage/cookies.txt', netscape, 'utf8')
+            ok('Instagram cookies loaded & formatted from IG_COOKIES env.')
+        } catch (_) {}
+    } else if (fs.existsSync('./storage/cookies.txt')) {
+        try {
+            const existing = fs.readFileSync('./storage/cookies.txt', 'utf8')
+            const converted = convertJsonToNetscapeCookies(existing)
+            if (converted) {
+                fs.writeFileSync('./storage/cookies.txt', converted, 'utf8')
+                ok('Formatted JSON cookies in ./storage/cookies.txt to Netscape format.')
+            }
         } catch (_) {}
     }
 
