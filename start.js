@@ -23,10 +23,11 @@ process.env.TZ = process.env.BOT_TIMEZONE || 'Asia/Jakarta'
 
 dns.setDefaultResultOrder('ipv4first')
 
-// Prepend local bin folder to PATH so all spawned commands (ffmpeg, yt-dlp, openssl) are found
+// Prepend local bin folder and ~/.local/bin to PATH so all spawned commands (ffmpeg, yt-dlp, hermes) are found
 const localBinPath = path.resolve('./storage/bin')
+const userLocalBinPath = path.join(process.env.HOME || process.env.USERPROFILE || '/root', '.local', 'bin')
 if (!process.env.PATH.split(path.delimiter).includes(localBinPath)) {
-    process.env.PATH = localBinPath + path.delimiter + process.env.PATH
+    process.env.PATH = localBinPath + path.delimiter + userLocalBinPath + path.delimiter + process.env.PATH
 }
 
 // Redirect all temp files and pip caches to the workspace to bypass container /tmp limits
@@ -404,14 +405,15 @@ async function setupHermesAgent() {
 
     const pythonCmd = commandExists('python3') ? 'python3' : 'python'
 
-    // Automated install/upgrade hermes-agent via pip
+    // Automated install/upgrade hermes-agent via pip (--user mode for container compatibility)
     if (!commandExists('hermes')) {
         inf('Installing hermes-agent via pip in container background...')
         try {
-            execSync(`${pythonCmd} -m pip install --quiet --no-cache-dir hermes-agent`, { stdio: 'ignore' })
+            execSync(`${pythonCmd} -m pip install --user --no-cache-dir hermes-agent`, { stdio: 'pipe' })
             ok('Hermes Agent package installed successfully in container.')
         } catch (e) {
-            wrn(`Automated pip install hermes-agent skipped (${e.message}). Hermes Agent akan menggunakan Cloud OpenRouter API.`)
+            const detail = e.stderr ? e.stderr.toString().trim() : e.message
+            wrn(`Automated pip install failed (${detail.slice(0, 150)}). Hermes Agent akan menggunakan Cloud OpenRouter API.`)
             return
         }
     }
