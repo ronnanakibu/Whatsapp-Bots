@@ -246,25 +246,76 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         }
     }
 
-    // Normal Text Chat
-    await react('🤔')
+    // Normal Text Chat with Live Searching & Reasoning Timer
+    const { sock, from } = ctx
+
+    // Send initial live status message
+    let placeholderMsg = null
+    try {
+        placeholderMsg = await reply(`🔍 *Searching & Reasoning...* (1s)`)
+    } catch (_) {}
+
+    let seconds = 1
+    const timer = setInterval(async () => {
+        seconds += 2
+        if (placeholderMsg?.key) {
+            try {
+                const statusPhase = seconds < 4 
+                    ? `🌐 *Searching Web & Harvesting Knowledge...* (${seconds}s)`
+                    : `🧠 *Synthesizing & Reasoning with DeepSeek R1...* (${seconds}s)`
+                    
+                await sock.sendMessage(from, {
+                    text: statusPhase,
+                    edit: placeholderMsg.key
+                })
+            } catch (_) {}
+        }
+    }, 2000)
+
     const startMs = Date.now()
     try {
         const isDirectRouted = await tryDirectRoute(promptText, ctx)
         if (isDirectRouted) {
+            clearInterval(timer)
             await react('✅')
             return true
         }
 
         const result = await aiService.chat(chatId, promptText, forcedProvider)
+        clearInterval(timer)
         botLogger.ai(result.provider, result.model, chatId, Date.now() - startMs)
-        const executed = await processAiResponse(ctx, result)
-        if (!executed) await react('✅')
-        return true
+
+        const text = result.text?.trim()
+        if (text && placeholderMsg?.key) {
+            await sock.sendMessage(from, {
+                text,
+                edit: placeholderMsg.key
+            })
+            if (placeholderMsg.key.id) {
+                const { seamlessTracker } = await import('../services/seamless.js')
+                seamlessTracker.track(placeholderMsg.key.id)
+            }
+            await react('✅')
+            return true
+        } else {
+            const executed = await processAiResponse(ctx, result)
+            if (!executed) await react('✅')
+            return true
+        }
     } catch (err) {
+        clearInterval(timer)
         await react('❌')
         botLogger.err('aiChat', err)
-        await reply(`Maaf, AI lagi error:\n${err.message}`)
+        const errText = `Maaf, AI lagi error:\n${err.message}`
+        if (placeholderMsg?.key) {
+            try {
+                await sock.sendMessage(from, { text: errText, edit: placeholderMsg.key })
+            } catch (_) {
+                await reply(errText)
+            }
+        } else {
+            await reply(errText)
+        }
         return false
     }
 }
