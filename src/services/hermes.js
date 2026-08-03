@@ -71,8 +71,13 @@ class HermesService {
         messages.push({ role: 'system', content: systemPrompt })
         messages.push({ role: 'user', content: promptText.trim() })
 
+        let targetModel = this.model
+        if (!targetModel || targetModel === 'hermes-agent' || targetModel === 'default') {
+            targetModel = 'nousresearch/hermes-3-llama-3.1-70b'
+        }
+
         const payload = {
-            model: this.model,
+            model: targetModel,
             messages,
             user: chatId // Passes WhatsApp JID for session tracking
         }
