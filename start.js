@@ -391,6 +391,50 @@ async function setupPrisma() {
 }
 
 // ─────────────────────────────────────────────
+// STEP 6B: HERMES AGENT AUTOMATED INSTALL & DAEMON
+// ─────────────────────────────────────────────
+
+async function setupHermesAgent() {
+    inf('Checking Hermes Agent installation...')
+    const hasPython = commandExists('python3') || commandExists('python')
+    if (!hasPython) {
+        wrn('Python3 tidak ditemukan di container. Hermes Agent akan menggunakan mode Cloud OpenRouter API.')
+        return
+    }
+
+    const pythonCmd = commandExists('python3') ? 'python3' : 'python'
+
+    // Automated install/upgrade hermes-agent via pip
+    if (!commandExists('hermes')) {
+        inf('Installing hermes-agent via pip in container background...')
+        try {
+            execSync(`${pythonCmd} -m pip install --quiet --no-cache-dir hermes-agent`, { stdio: 'ignore' })
+            ok('Hermes Agent package installed successfully in container.')
+        } catch (e) {
+            wrn(`Automated pip install hermes-agent skipped (${e.message}). Hermes Agent akan menggunakan Cloud OpenRouter API.`)
+            return
+        }
+    }
+
+    // Auto-launch hermes gateway daemon if using local gateway URL
+    const hermesUrl = process.env.HERMES_AGENT_URL || 'http://127.0.0.1:8642/v1'
+    if (hermesUrl.includes('127.0.0.1') || hermesUrl.includes('localhost')) {
+        inf('Starting Hermes Agent Gateway daemon...')
+        try {
+            const hermesProcess = spawn('hermes', ['gateway'], {
+                detached: true,
+                stdio: 'ignore',
+                env: { ...process.env, API_SERVER_ENABLED: 'true' }
+            })
+            hermesProcess.unref()
+            ok('Hermes Agent Gateway background daemon started.')
+        } catch (e) {
+            wrn(`Automated hermes gateway start skipped: ${e.message}`)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
 // STEP 7: SUMMARY
 // ─────────────────────────────────────────────
 
@@ -480,6 +524,7 @@ async function main() {
         await setupOpenssl()
         validateEnv()
         await setupPrisma()
+        await setupHermesAgent()
         process.stdout.write('\r\x1b[K✅ [Bootstrap] Pre-launch checks completed successfully!\n')
         await printSummary()
         launchBot()
