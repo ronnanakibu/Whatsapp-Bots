@@ -9,7 +9,7 @@ export default {
     usage: '!hermes [memory|status]',
     cooldown: 3,
     execute: async (ctx) => {
-        const { reply, react, args, chatId } = ctx
+        const { reply, react, args, chatId, pushName, isGroup, sock } = ctx
         await react('🤖')
 
         const subCmd = (args[0] || '').toLowerCase()
@@ -27,12 +27,23 @@ export default {
                     return
                 }
 
+                // Resolve profile/group name instead of raw JID
+                let profileDisplay = pushName || 'User'
+                if (isGroup) {
+                    try {
+                        const groupMeta = await sock.groupMetadata(chatId)
+                        if (groupMeta?.subject) {
+                            profileDisplay = `${groupMeta.subject} (by ${pushName || 'User'})`
+                        }
+                    } catch (_) {}
+                }
+
                 let text = `🧠 *Hermes Agent Memory (${totalMsgs} pesan tersimpan)*\n`
-                text += `👤 *Chat ID:* \`${chatId}\`\n\n`
+                text += `👤 *Profile:* ${profileDisplay}\n\n`
 
                 const recent = history.slice(-6)
                 for (const item of recent) {
-                    const role = item.role === 'user' ? '👤 *User*' : '🤖 *Hermes*'
+                    const role = item.role === 'user' ? '❓ *Question*' : '💡 *Answer*'
                     const content = item.content?.length > 150 ? item.content.slice(0, 150) + '...' : item.content
                     text += `${role}: ${content}\n\n`
                 }
@@ -56,7 +67,7 @@ export default {
                 `✅ *Status:* Online & Connected\n` +
                 `🔗 *Endpoint:* \`${hermesService.baseUrl}\`\n` +
                 `🧠 *Model:* \`${hermesService.model}\`\n\n` +
-                `💡 *Tip:* Ketik \`!hermes memory\` untuk melihat ingatan percakapan Hermes Agent di chat ini.`
+                `💡 *Tip:* Ketik \`.hermes memory\` untuk melihat ingatan percakapan Hermes Agent di chat ini.`
             )
             await react('✅')
         } else {
