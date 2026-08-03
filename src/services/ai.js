@@ -698,78 +698,17 @@ async function nvidiaChatWithModel(chatId, userMessage, model, providerName, ret
 }
 
 async function chat(chatId, userMessage, forcedProvider = null) {
-    // Tentukan provider utama (dari parameter, database memori, atau default 'groq')
-    let provider = forcedProvider || memoryService.getAiProvider(chatId) || 'qwen'
-    let result = null
+    const { hermesService } = await import('./hermes.js')
 
-    if (BRAINS[provider]) {
-        const brain = BRAINS[provider];
-        if (brain.provider === 'nvidia') {
-            if (!nvidiaClient) {
-                logger.warn(`[AI] NVIDIA API key not configured for brain ${provider}, falling back to Groq`)
-                provider = 'groq'
-            } else {
-                try {
-                    result = await nvidiaChatWithModel(chatId, userMessage, brain.model, provider)
-                } catch (err) {
-                    logger.warn(`[AI] NVIDIA brain ${provider} failed (${err.message}), falling back to Groq`)
-                    provider = 'groq'
-                }
-            }
-        } else if (brain.provider === 'groq') {
-            try {
-                result = await groqChat(chatId, userMessage)
-            } catch (err) {
-                logger.warn(`[AI] Groq failed (${err.message}), falling back to Gemini`)
-                provider = 'gemini'
-            }
-        } else if (brain.provider === 'gemini') {
-            try {
-                result = await geminiChat(chatId, userMessage)
-            } catch (err) {
-                logger.error('[AI] Gemini failed:', err.message)
-                throw new Error('Semua AI provider sedang sibuk. Coba lagi sebentar.')
-            }
-        }
-    } else {
-        // Fallback jika provider legacy/tidak terdaftar
-        if (provider === 'nvidia') {
-            if (!nvidiaClient) {
-                logger.warn('[AI] NVIDIA API key not configured, falling back to Groq')
-                provider = 'groq'
-            } else {
-                try {
-                    result = await nvidiaChat(chatId, userMessage)
-                } catch (err) {
-                    logger.warn(`[AI] NVIDIA failed (${err.message}), falling back to Groq`)
-                    provider = 'groq'
-                }
-            }
-        }
+    if (!chatId.startsWith('__')) {
+        memoryService.addMessage(chatId, 'user', userMessage)
     }
 
-    if (provider === 'groq' && !result) {
-        try {
-            result = await groqChat(chatId, userMessage)
-        } catch (err) {
-            logger.warn(`[AI] Groq failed (${err.message}), falling back to Gemini`)
-            provider = 'gemini'
-        }
-    }
-
-    if (provider === 'gemini' && !result) {
-        try {
-            result = await geminiChat(chatId, userMessage)
-        } catch (err) {
-            logger.error('[AI] Gemini failed:', err.message)
-            throw new Error('Semua AI provider sedang sibuk. Coba lagi sebentar.')
-        }
-    }
+    const result = await hermesService.chat(chatId, userMessage)
 
     if (result && result.text) {
         if (!chatId.startsWith('__')) {
             const cleanText = cleanMemoryMessage(result.text)
-            memoryService.addMessage(chatId, 'user', userMessage)
             memoryService.addMessage(chatId, 'assistant', cleanText)
         }
     }

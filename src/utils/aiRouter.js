@@ -120,22 +120,8 @@ function detectCommandFromText(userMessage, ctx) {
  * @param {object} ctx
  */
 export async function tryDirectRoute(userMessage, ctx) {
-    const detected = detectCommandFromText(userMessage, ctx)
-    if (!detected) return false
-
-    const command = commands.get(detected.command)
-    if (!command) return false
-
-    botLogger.info('agent', `[PreRouter] Direct route → "${detected.command}" args: ${JSON.stringify(detected.args)}`)
-
-    const newCtx = {
-        ...ctx,
-        args: detected.args,
-        commandName: detected.command
-    }
-
-    await command.execute(newCtx)
-    return true
+    // Pure Hermes Agent mode: Keyword pre-router disabled so Hermes receives all chat inputs
+    return false
 }
 
 /**
