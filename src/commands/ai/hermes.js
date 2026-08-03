@@ -5,7 +5,7 @@ export default {
     name: 'hermes',
     aliases: ['hermesagent', 'agentmemory', 'hermesmem'],
     category: 'ai',
-    description: 'Mengecek status & memori percakapan Hermes Agent untuk chat ini.',
+    description: 'Mengecek status, arsitektur model & memori percakapan Hermes Agent untuk chat ini.',
     usage: '!hermes [memory|status]',
     cooldown: 3,
     execute: async (ctx) => {
@@ -58,16 +58,19 @@ export default {
             }
         }
 
-        // Default: Status
+        // Default: Status & Rich Architecture Info
         const health = await hermesService.checkHealth()
 
         if (health.ok) {
             await reply(
-                `🤖 *NousResearch Hermes Agent Status*\n\n` +
-                `✅ *Status:* Online & Connected\n` +
-                `🔗 *Endpoint:* \`${hermesService.baseUrl}\`\n` +
-                `🧠 *Model:* \`${hermesService.model}\`\n\n` +
-                `💡 *Tip:* Ketik \`.hermes memory\` untuk melihat ingatan percakapan Hermes Agent di chat ini.`
+                `🤖 *NousResearch Multi-Model Hermes Agent*\n\n` +
+                `✅ *Status:* Online & Active (ZeroGPU Hosted)\n` +
+                `🔗 *Endpoint:* \`${hermesService.baseUrl}\`\n\n` +
+                `🧠 *Reasoning Judge:* \`DeepSeek R1 (Reasoning Engine)\`\n` +
+                `⚡ *Knowledge Workers:* \`Hermes 3 (405B)\` + \`Llama 3.3 (70B)\`\n` +
+                `🌐 *Real-Time Search:* \`Live Google / DDG Web Search\`\n` +
+                `💾 *Session Memory:* \`Active & Isolated\`\n\n` +
+                `💡 *Tip:* Ketik \`.hermes memory\` untuk melihat riwayat memori percakapan di chat ini.`
             )
             await react('✅')
         } else {
