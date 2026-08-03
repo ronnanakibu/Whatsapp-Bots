@@ -19,6 +19,23 @@ class HermesService {
     }
 
     /**
+     * Get Hermes Agent memory/history for specific chatId
+     */
+    async getMemory(chatId) {
+        try {
+            const url = `${this.baseUrl}/memory/${encodeURIComponent(chatId)}`
+            const headers = {}
+            if (this.apiKey) {
+                headers['Authorization'] = `Bearer ${this.apiKey}`
+            }
+            const response = await axios.get(url, { headers, timeout: 5000 })
+            return { ok: true, data: response.data }
+        } catch (err) {
+            return { ok: false, error: err.message }
+        }
+    }
+
+    /**
      * Check connection to Hermes Agent Gateway / Cloud API
      */
     async checkHealth() {

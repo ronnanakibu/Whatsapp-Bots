@@ -3,15 +3,51 @@ import { hermesService } from '../../services/hermes.js'
 
 export default {
     name: 'hermes',
-    aliases: ['hermesagent', 'agentstatus'],
+    aliases: ['hermesagent', 'agentmemory', 'hermesmem'],
     category: 'ai',
-    description: 'Mengecek status koneksi ke NousResearch Hermes Agent API Gateway.',
-    usage: '!hermes',
-    cooldown: 5,
+    description: 'Mengecek status & memori percakapan Hermes Agent untuk chat ini.',
+    usage: '!hermes [memory|status]',
+    cooldown: 3,
     execute: async (ctx) => {
-        const { reply, react } = ctx
+        const { reply, react, args, chatId } = ctx
         await react('🤖')
 
+        const subCmd = (args[0] || '').toLowerCase()
+
+        if (subCmd === 'memory' || subCmd === 'mem' || subCmd === 'history') {
+            const memResult = await hermesService.getMemory(chatId)
+            
+            if (memResult.ok && memResult.data) {
+                const history = memResult.data.history || []
+                const totalMsgs = memResult.data.total_messages || history.length
+
+                if (history.length === 0) {
+                    await reply(`🧠 *Hermes Agent Memory*\n\nBelum ada memori percakapan tersimpan untuk chat ini.`)
+                    await react('ℹ️')
+                    return
+                }
+
+                let text = `🧠 *Hermes Agent Memory (${totalMsgs} pesan tersimpan)*\n`
+                text += `👤 *Chat ID:* \`${chatId}\`\n\n`
+
+                const recent = history.slice(-6)
+                for (const item of recent) {
+                    const role = item.role === 'user' ? '👤 *User*' : '🤖 *Hermes*'
+                    const content = item.content?.length > 150 ? item.content.slice(0, 150) + '...' : item.content
+                    text += `${role}: ${content}\n\n`
+                }
+
+                await reply(text.trim())
+                await react('🧠')
+                return
+            } else {
+                await reply(`🧠 *Hermes Agent Memory*\n\nTidak dapat mengambil memori: ${memResult.error || 'Unknown error'}`)
+                await react('⚠️')
+                return
+            }
+        }
+
+        // Default: Status
         const health = await hermesService.checkHealth()
 
         if (health.ok) {
@@ -20,7 +56,7 @@ export default {
                 `✅ *Status:* Online & Connected\n` +
                 `🔗 *Endpoint:* \`${hermesService.baseUrl}\`\n` +
                 `🧠 *Model:* \`${hermesService.model}\`\n\n` +
-                `*Hermes Agent* aktif melayani percakapan WhatsApp.`
+                `💡 *Tip:* Ketik \`!hermes memory\` untuk melihat ingatan percakapan Hermes Agent di chat ini.`
             )
             await react('✅')
         } else {
@@ -28,8 +64,7 @@ export default {
                 `🤖 *NousResearch Hermes Agent Status*\n\n` +
                 `❌ *Status:* Offline / Cannot Reach Gateway\n` +
                 `🔗 *Endpoint:* \`${hermesService.baseUrl}\`\n` +
-                `⚠️ *Error:* ${health.error}\n\n` +
-                `💡 *Panduan:* Jalankan \`hermes gateway\` di server kamu untuk mengaktifkan API server.`
+                `⚠️ *Error:* ${health.error}`
             )
             await react('⚠️')
         }
