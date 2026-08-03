@@ -58,6 +58,32 @@ export default {
             }
         }
 
+        if (subCmd === 'logs' || subCmd === 'log') {
+            try {
+                const { hfLogsStreamer } = await import('../../services/hfLogsStreamer.js')
+                const recentLogs = hfLogsStreamer.getRecentLogs(8)
+
+                if (recentLogs.length === 0) {
+                    await reply(`📜 *Hugging Face Space Live Logs*\n\nBelum ada log real-time yang tercatat dari HF Space saat ini.`)
+                    await react('ℹ️')
+                    return
+                }
+
+                let text = `📜 *Hugging Face Space Live Logs (Real-Time)*\n\n`
+                for (const item of recentLogs) {
+                    text += `• \`${item.text.slice(0, 120)}\`\n`
+                }
+
+                await reply(text.trim())
+                await react('📜')
+                return
+            } catch (err) {
+                await reply(`📜 *HF Logs Error:* ${err.message}`)
+                await react('⚠️')
+                return
+            }
+        }
+
         // Default: Status & Rich Architecture Info
         const health = await hermesService.checkHealth()
 

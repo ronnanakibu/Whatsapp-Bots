@@ -158,6 +158,14 @@ async function startBot() {
             // Start weekly recap scheduler setelah connected
             initRecapScheduler(sock)
             botLogger.system('Weekly recap scheduler started ✓')
+
+            // Start HF Space real-time log streamer
+            import('../services/hfLogsStreamer.js').then(({ hfLogsStreamer }) => {
+                hfLogsStreamer.startStreaming()
+                botLogger.system('Hugging Face live log streamer started ✓')
+            }).catch(err => {
+                botLogger.warn('hf-logs', `Failed to start HF log streamer: ${err.message}`)
+            })
         }
 
         if (connection === 'close') {
