@@ -1,18 +1,25 @@
 // src/services/hermes.js
-// Dedicated service to interface with NousResearch Hermes Agent API / Gateway
+// Dedicated service to interface with NousResearch Hermes Agent / Cloud API (OpenRouter / Hosted Hermes)
 import axios from 'axios'
 import { logger } from '../utils/logger.js'
 
 class HermesService {
     constructor() {
-        this.baseUrl = (process.env.HERMES_AGENT_URL || 'http://127.0.0.1:8642/v1').replace(/\/+$/, '')
-        this.apiKey = process.env.HERMES_API_KEY || ''
-        this.model = process.env.HERMES_MODEL || 'hermes-agent'
+        this.rawUrl = process.env.HERMES_AGENT_URL || 'http://127.0.0.1:8642/v1'
+        this.baseUrl = this.rawUrl.replace(/\/+$/, '')
+        this.apiKey = process.env.HERMES_API_KEY || process.env.OPENROUTER_API_KEY || ''
+        
+        // Auto-detect model default: If using OpenRouter URL, default to nousresearch/hermes-3-llama-3.1-70b
+        const defaultModel = this.baseUrl.includes('openrouter') 
+            ? 'nousresearch/hermes-3-llama-3.1-70b' 
+            : 'hermes-agent'
+            
+        this.model = process.env.HERMES_MODEL || defaultModel
         this.enabled = process.env.HERMES_ENABLED !== 'false'
     }
 
     /**
-     * Check connection to Hermes Agent Gateway
+     * Check connection to Hermes Agent Gateway / Cloud API
      */
     async checkHealth() {
         try {
@@ -21,7 +28,11 @@ class HermesService {
             if (this.apiKey) {
                 headers['Authorization'] = `Bearer ${this.apiKey}`
             }
-            const response = await axios.get(url, { headers, timeout: 3000 })
+            if (this.baseUrl.includes('openrouter')) {
+                headers['HTTP-Referer'] = 'https://github.com/NousResearch/hermes-agent'
+                headers['X-Title'] = 'WABOT2.0 Hermes Agent'
+            }
+            const response = await axios.get(url, { headers, timeout: 5000 })
             return { ok: true, data: response.data }
         } catch (err) {
             return { ok: false, error: err.message }
@@ -29,7 +40,7 @@ class HermesService {
     }
 
     /**
-     * Send chat prompt to Pure Hermes Agent
+     * Send chat prompt to Pure Hermes Agent / Nous Hermes Model
      * @param {string} chatId - WhatsApp JID / Chat ID (used as session/user identifier)
      * @param {string} promptText - User text prompt
      * @param {object} options - Additional options (e.g. systemPrompt, media context)
@@ -47,24 +58,29 @@ class HermesService {
             headers['Authorization'] = `Bearer ${this.apiKey}`
         }
 
-        const messages = []
-        
-        if (options.systemPrompt) {
-            messages.push({ role: 'system', content: options.systemPrompt })
+        if (this.baseUrl.includes('openrouter')) {
+            headers['HTTP-Referer'] = 'https://github.com/NousResearch/hermes-agent'
+            headers['X-Title'] = 'WABOT2.0 Hermes Agent'
         }
 
+        const messages = []
+        
+        const systemPrompt = options.systemPrompt || process.env.SYSTEM_PROMPT || 
+            'You are RonnBot powered by NousResearch Hermes Agent. You are a helpful, intelligent, natural AI assistant on WhatsApp.'
+
+        messages.push({ role: 'system', content: systemPrompt })
         messages.push({ role: 'user', content: promptText.trim() })
 
         const payload = {
             model: this.model,
             messages,
-            user: chatId // Passes WhatsApp JID so Hermes Agent tracks per-user/group session memory
+            user: chatId // Passes WhatsApp JID for session tracking
         }
 
         try {
             const response = await axios.post(url, payload, {
                 headers,
-                timeout: 120000 // 2 minute timeout for complex agent tasks
+                timeout: 120000 // 2 minute timeout
             })
 
             const choice = response.data?.choices?.[0]
@@ -83,7 +99,7 @@ class HermesService {
             logger.error('[HermesService] Failed to call Hermes Agent API:', err.message)
 
             if (err.code === 'ECONNREFUSED' || err.message.includes('ECONNREFUSED')) {
-                throw new Error(`Gagal terhubung ke Hermes Agent di (${this.baseUrl}). Pastikan Hermes Agent Gateway sudah berjalan (Jalankan: 'hermes gateway' atau pastikan API_SERVER_ENABLED=true).`)
+                throw new Error(`Gagal terhubung ke Hermes Agent di (${this.baseUrl}). Jika tidak ada terminal/pip di panel, kamu bisa menggunakan Cloud OpenRouter URL di .env (HERMES_AGENT_URL=https://openrouter.ai/api/v1 dan HERMES_MODEL=nousresearch/hermes-3-llama-3.1-70b).`)
             }
 
             if (err.response?.data?.error) {
