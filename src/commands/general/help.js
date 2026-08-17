@@ -11,22 +11,23 @@ let lastUserCountFetch = 0
 const USER_COUNT_CACHE_TTL = 5 * 60 * 1000 // 5 menit
 
 /**
- * Kirim pesan menu dengan tombol interaktif WhatsApp Native Flow (List Menu + URL Button + Quick Reply)
+ * Kirim menu utama dengan tombol interaktif WhatsApp Native Flow (List Menu + URL Button + Quick Reply)
  */
 async function sendInteractiveNativeMenu(sock, from, msg, headerTitle, bodyText, footerText, dashboardUrl) {
     try {
-        const interactiveMessage = {
-            header: {
-                title: headerTitle,
-                hasMediaAttachment: false
-            },
-            body: {
+        const interactiveMsg = {
+            body: proto.Message.InteractiveMessage.Body.fromObject({
                 text: bodyText
-            },
-            footer: {
+            }),
+            footer: proto.Message.InteractiveMessage.Footer.fromObject({
                 text: footerText || 'Powered by Ronn Bot'
-            },
-            nativeFlowMessage: {
+            }),
+            header: proto.Message.InteractiveMessage.Header.fromObject({
+                title: headerTitle,
+                subtitle: 'RonnBot Assistant',
+                hasMediaAttachment: false
+            }),
+            nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
                 buttons: [
                     {
                         name: 'single_select',
@@ -34,13 +35,13 @@ async function sendInteractiveNativeMenu(sock, from, msg, headerTitle, bodyText,
                             title: '📋 Buka Kategori Menu',
                             sections: [
                                 {
-                                    title: '🌟 PILIH KATEGORI FITUR BOT',
+                                    title: '🌟 FITUR UTAMA BOT',
                                     highlight_label: 'Populer',
                                     rows: [
                                         {
                                             header: '🤖 Kecerdasan Buatan',
                                             title: 'AI & Assistant Menu',
-                                            description: 'Chatbot, Q&A, Code, DeepSeek R1 & Hermes Swarm',
+                                            description: 'Chatbot, Q&A, Code, DeepSeek, Hermes Swarm',
                                             id: '.aimenu'
                                         },
                                         {
@@ -105,8 +106,11 @@ async function sendInteractiveNativeMenu(sock, from, msg, headerTitle, bodyText,
                             id: '.ping'
                         })
                     }
-                ],
-                messageVersion: 1
+                ]
+            }),
+            contextInfo: {
+                isForwarded: true,
+                forwardingScore: 999
             }
         }
 
@@ -115,7 +119,11 @@ async function sendInteractiveNativeMenu(sock, from, msg, headerTitle, bodyText,
             {
                 viewOnceMessage: {
                     message: {
-                        interactiveMessage: proto.Message.InteractiveMessage.fromObject(interactiveMessage)
+                        messageContextInfo: {
+                            deviceListMetadata: {},
+                            deviceListMetadataVersion: 2
+                        },
+                        interactiveMessage: proto.Message.InteractiveMessage.fromObject(interactiveMsg)
                     }
                 }
             },
@@ -134,18 +142,19 @@ async function sendInteractiveNativeMenu(sock, from, msg, headerTitle, bodyText,
  */
 async function sendInteractiveSubmenu(sock, from, msg, title, bodyText, footerText) {
     try {
-        const interactiveMessage = {
-            header: {
-                title: title,
-                hasMediaAttachment: false
-            },
-            body: {
+        const interactiveMsg = {
+            body: proto.Message.InteractiveMessage.Body.fromObject({
                 text: bodyText
-            },
-            footer: {
+            }),
+            footer: proto.Message.InteractiveMessage.Footer.fromObject({
                 text: footerText || 'Powered by Ronn Bot'
-            },
-            nativeFlowMessage: {
+            }),
+            header: proto.Message.InteractiveMessage.Header.fromObject({
+                title: title,
+                subtitle: 'RonnBot Submenu',
+                hasMediaAttachment: false
+            }),
+            nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
                 buttons: [
                     {
                         name: 'quick_reply',
@@ -161,8 +170,11 @@ async function sendInteractiveSubmenu(sock, from, msg, title, bodyText, footerTe
                             id: '.ping'
                         })
                     }
-                ],
-                messageVersion: 1
+                ]
+            }),
+            contextInfo: {
+                isForwarded: true,
+                forwardingScore: 999
             }
         }
 
@@ -171,7 +183,11 @@ async function sendInteractiveSubmenu(sock, from, msg, title, bodyText, footerTe
             {
                 viewOnceMessage: {
                     message: {
-                        interactiveMessage: proto.Message.InteractiveMessage.fromObject(interactiveMessage)
+                        messageContextInfo: {
+                            deviceListMetadata: {},
+                            deviceListMetadataVersion: 2
+                        },
+                        interactiveMessage: proto.Message.InteractiveMessage.fromObject(interactiveMsg)
                     }
                 }
             },
@@ -423,10 +439,10 @@ export default {
         const runtimeStr = runtimeParts.join(' ')
 
         // Get bot version from package.json
-        let botVersion = '5.18.9'
+        let botVersion = '5.18.10'
         try {
             const pkg = JSON.parse(fs.readFileSync(path.resolve('./package.json'), 'utf-8'))
-            botVersion = pkg.version || '5.18.9'
+            botVersion = pkg.version || '5.18.10'
         } catch (_) { }
 
         const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
@@ -438,9 +454,19 @@ export default {
         bodyText += `👥 *Users   :* ${usersCount} pengguna\n`
         bodyText += `⚡ *Version :* v${botVersion}\n`
         bodyText += `🔗 *Website :* ${dashboardUrl}\n\n`
-        bodyText += `Silakan klik tombol *📋 Buka Kategori Menu* di bawah untuk menjelajahi seluruh fitur bot, atau buka Web Dashboard kami.`
+        bodyText += `┌〔 📋 PILIH KATEGORI MENU 〕\n`
+        bodyText += `│ 1️⃣  🤖 *AI & Assistant Menu*\n`
+        bodyText += `│ 2️⃣  📥 *Downloader Menu*\n`
+        bodyText += `│ 3️⃣  🎨 *Image & Media Menu*\n`
+        bodyText += `│ 4️⃣  🛠️ *Tools & Utility Menu*\n`
+        bodyText += `│ 5️⃣  🎵 *Audio & Radio Menu*\n`
+        bodyText += `│ 6️⃣  🛡️ *Admin & Group Menu*\n`
+        bodyText += `│ 7️⃣  🔧 *General & Info Menu*\n`
+        bodyText += `│ 8️⃣  👑 *Owner Menu*\n`
+        bodyText += `└──────────────────────────\n\n`
+        bodyText += `👉 *Tekan tombol "📋 Buka Kategori Menu"* di bawah atau *balas pesan ini dengan angka (1-8)*!`
 
-        // Kirim Native Interactive Flow Message (Clickable Buttons & List)
+        // Kirim Native Interactive Flow Message (Clickable Buttons & List) dengan messageContextInfo lengkap
         const interactiveResult = await sendInteractiveNativeMenu(
             sock,
             from,
@@ -451,32 +477,10 @@ export default {
             dashboardUrl
         )
 
-        // Jika klien WhatsApp tidak mendukung interactiveMessage, kirim teks standar
-        if (!interactiveResult) {
-            let fallbackText = `╭───〔 RONN BOT 〕───⬣\n`
-            fallbackText += `│ 👋 Hai, *${ctx.pushName || 'User'}*\n`
-            fallbackText += `│\n`
-            fallbackText += `│ 📊 Runtime : *${runtimeStr}*\n`
-            fallbackText += `│ 👥 Users   : *${usersCount}*\n`
-            fallbackText += `│ ⚡ Version : *v${botVersion}*\n`
-            fallbackText += `│ 🔗 *Dashboard:* ${dashboardUrl}\n`
-            fallbackText += `╰──────────────⬣\n\n`
-
-            fallbackText += `┌〔 📋 PILIH KATEGORI MENU 〕\n`
-            fallbackText += `│ 1️⃣  🤖 *AI & Assistant Menu*\n`
-            fallbackText += `│ 2️⃣  📥 *Downloader Menu*\n`
-            fallbackText += `│ 3️⃣  🎨 *Image & Media Menu*\n`
-            fallbackText += `│ 4️⃣  🛠️ *Tools & Utility Menu*\n`
-            fallbackText += `│ 5️⃣  🎵 *Audio & Radio Menu*\n`
-            fallbackText += `│ 6️⃣  🛡️ *Admin & Group Menu*\n`
-            fallbackText += `│ 7️⃣  🔧 *General & Info Menu*\n`
-            fallbackText += `│ 8️⃣  👑 *Owner Menu*\n`
-            fallbackText += `└──────────────────────────\n\n`
-            fallbackText += `👉 *Balas pesan ini dengan angka (1-8)* untuk membuka menu!`
-
-            const sentMenu = await reply(fallbackText.trim())
-
-            interactiveService.createSession(sentMenu.key.id, from, sender, async (menuCtx, answer) => {
+        // Daftarkan sesi interaktif untuk memproses respon klik tombol maupun balasan teks angka 1-8
+        const sessionMsgId = interactiveResult?.key?.id
+        if (sessionMsgId) {
+            interactiveService.createSession(sessionMsgId, from, sender, async (menuCtx, answer) => {
                 const cleanAnswer = (answer || '').toLowerCase().replace(/^[!./#]/, '').trim()
                 const categoryMap = {
                     '1': 'ai', 'ai': 'ai', 'aimenu': 'ai',
