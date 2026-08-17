@@ -2,204 +2,10 @@
 import fs from 'fs'
 import path from 'path'
 import { db } from '../../services/db.js'
-import { interactiveService } from '../../services/interactive.js'
-import { generateWAMessageFromContent, proto } from '@whiskeysockets/baileys'
-import { getCleanQuoted } from '../../utils/message.js'
 
 let cachedTotalUsers = 0
 let lastUserCountFetch = 0
 const USER_COUNT_CACHE_TTL = 5 * 60 * 1000 // 5 menit
-
-/**
- * Kirim menu utama dengan tombol interaktif WhatsApp Native Flow (List Menu + URL Button + Quick Reply)
- */
-async function sendInteractiveNativeMenu(sock, from, msg, headerTitle, bodyText, footerText, dashboardUrl) {
-    try {
-        const interactiveMsg = {
-            body: proto.Message.InteractiveMessage.Body.fromObject({
-                text: bodyText
-            }),
-            footer: proto.Message.InteractiveMessage.Footer.fromObject({
-                text: footerText || 'Powered by Ronn Bot'
-            }),
-            header: proto.Message.InteractiveMessage.Header.fromObject({
-                title: headerTitle,
-                subtitle: 'RonnBot Assistant',
-                hasMediaAttachment: false
-            }),
-            nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
-                buttons: [
-                    {
-                        name: 'single_select',
-                        buttonParamsJson: JSON.stringify({
-                            title: '📋 Buka Kategori Menu',
-                            sections: [
-                                {
-                                    title: '🌟 FITUR UTAMA BOT',
-                                    highlight_label: 'Populer',
-                                    rows: [
-                                        {
-                                            header: '🤖 Kecerdasan Buatan',
-                                            title: 'AI & Assistant Menu',
-                                            description: 'Chatbot, Q&A, Code, DeepSeek, Hermes Swarm',
-                                            id: '.aimenu'
-                                        },
-                                        {
-                                            header: '📥 Media Downloader',
-                                            title: 'Downloader Menu',
-                                            description: 'Download Video & Audio YouTube, TikTok, IG, FB',
-                                            id: '.downloadmenu'
-                                        },
-                                        {
-                                            header: '🎨 Media & Kreativitas',
-                                            title: 'Image & Media Menu',
-                                            description: 'Bikin stiker, video note to sticker, filter',
-                                            id: '.imagemenu'
-                                        },
-                                        {
-                                            header: '🛠️ Alat Serbaguna',
-                                            title: 'Tools & Utility Menu',
-                                            description: 'Cuaca, kalkulator, OCR, QR code, shortlink',
-                                            id: '.toolsmenu'
-                                        },
-                                        {
-                                            header: '🎵 Musik & Radio',
-                                            title: 'Audio & Radio Menu',
-                                            description: 'Radio streaming 24/7, request lagu, antrean',
-                                            id: '.audiomenu'
-                                        },
-                                        {
-                                            header: '🛡️ Manajemen Komunitas',
-                                            title: 'Admin & Group Menu',
-                                            description: 'Kick, promote, demote, mute, grup info',
-                                            id: '.adminmenu'
-                                        },
-                                        {
-                                            header: '🔧 Sistem & Info',
-                                            title: 'General & Info Menu',
-                                            description: 'Ping, runtime, status bot, catatan',
-                                            id: '.generalmenu'
-                                        },
-                                        {
-                                            header: '👑 Pemilik Bot',
-                                            title: 'Owner Menu',
-                                            description: 'Broadcast pesan, evaluasi, setting bot',
-                                            id: '.ownermenu'
-                                        }
-                                    ]
-                                }
-                            ]
-                        })
-                    },
-                    {
-                        name: 'cta_url',
-                        buttonParamsJson: JSON.stringify({
-                            display_text: '📻 Buka Web Dashboard',
-                            url: dashboardUrl,
-                            merchant_url: dashboardUrl
-                        })
-                    },
-                    {
-                        name: 'quick_reply',
-                        buttonParamsJson: JSON.stringify({
-                            display_text: '⚡ Cek Ping Bot',
-                            id: '.ping'
-                        })
-                    }
-                ]
-            }),
-            contextInfo: {
-                isForwarded: true,
-                forwardingScore: 999
-            }
-        }
-
-        const msgObj = generateWAMessageFromContent(
-            from,
-            {
-                viewOnceMessage: {
-                    message: {
-                        messageContextInfo: {
-                            deviceListMetadata: {},
-                            deviceListMetadataVersion: 2
-                        },
-                        interactiveMessage: proto.Message.InteractiveMessage.fromObject(interactiveMsg)
-                    }
-                }
-            },
-            { userJid: sock.user?.id, quoted: getCleanQuoted(msg) }
-        )
-
-        await sock.relayMessage(from, msgObj.message, { messageId: msgObj.key.id })
-        return msgObj
-    } catch (_) {
-        return null
-    }
-}
-
-/**
- * Kirim submenu dengan tombol interaktif kembali ke menu utama
- */
-async function sendInteractiveSubmenu(sock, from, msg, title, bodyText, footerText) {
-    try {
-        const interactiveMsg = {
-            body: proto.Message.InteractiveMessage.Body.fromObject({
-                text: bodyText
-            }),
-            footer: proto.Message.InteractiveMessage.Footer.fromObject({
-                text: footerText || 'Powered by Ronn Bot'
-            }),
-            header: proto.Message.InteractiveMessage.Header.fromObject({
-                title: title,
-                subtitle: 'RonnBot Submenu',
-                hasMediaAttachment: false
-            }),
-            nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
-                buttons: [
-                    {
-                        name: 'quick_reply',
-                        buttonParamsJson: JSON.stringify({
-                            display_text: '🔙 Kembali ke Menu Utama',
-                            id: '.menu'
-                        })
-                    },
-                    {
-                        name: 'quick_reply',
-                        buttonParamsJson: JSON.stringify({
-                            display_text: '⚡ Cek Ping Bot',
-                            id: '.ping'
-                        })
-                    }
-                ]
-            }),
-            contextInfo: {
-                isForwarded: true,
-                forwardingScore: 999
-            }
-        }
-
-        const msgObj = generateWAMessageFromContent(
-            from,
-            {
-                viewOnceMessage: {
-                    message: {
-                        messageContextInfo: {
-                            deviceListMetadata: {},
-                            deviceListMetadataVersion: 2
-                        },
-                        interactiveMessage: proto.Message.InteractiveMessage.fromObject(interactiveMsg)
-                    }
-                }
-            },
-            { userJid: sock.user?.id, quoted: getCleanQuoted(msg) }
-        )
-
-        await sock.relayMessage(from, msgObj.message, { messageId: msgObj.key.id })
-        return msgObj
-    } catch (_) {
-        return null
-    }
-}
 
 export default {
     name: 'help',
@@ -215,26 +21,23 @@ export default {
         'generalmenu'
     ],
     category: 'general',
-    description: 'Tampilkan semua command yang tersedia (Interactive Buttons)',
+    description: 'Tampilkan daftar semua command dan panduan penggunaan bot.',
     usage: '.help [kategori | command]',
     cooldown: 3,
     permissions: ['user'],
 
     async execute(ctx) {
-        const { args, reply, from, sender, msg, sock } = ctx
+        const { args, reply } = ctx
         const { commands } = await import('../../core/loader.js')
         const prefix = process.env.BOT_PREFIX ?? '!'
 
-        // Resolve active category if any
+        // 1. Resolve active category if any
         let activeMenu = null
-
-        // 1. Resolve from commandName (e.g. .aimenu)
         const cmdName = (ctx.commandName || '').toLowerCase()
         if (cmdName.endsWith('menu') && cmdName !== 'menu') {
             activeMenu = cmdName.replace('menu', '')
         }
 
-        // 2. Resolve from args[0] (e.g. .help ai, .help aimenu, .menu 1)
         const numberMap = {
             '1': 'ai',
             '2': 'downloader',
@@ -287,16 +90,16 @@ export default {
             )
         }
 
-        // Group by category
+        // Group commands by category
         const categories = {
-            audio: [],
             ai: [],
-            image: [],
             downloader: [],
+            image: [],
             tools: [],
-            owner: [],
+            audio: [],
             admin: [],
             general: [],
+            owner: [],
             misc: []
         }
 
@@ -333,24 +136,26 @@ export default {
             }
         }
 
-        // Render submenu if targetCategory resolved
-        if (targetCategory) {
-            const categoryMeta = {
-                ai: { title: '🤖 AI & ASSISTANT MENU', emoji: '🤖' },
-                downloader: { title: '📥 DOWNLOADER MENU', emoji: '📥' },
-                image: { title: '🎨 IMAGE & MEDIA MENU', emoji: '🎨' },
-                tools: { title: '🛠️ TOOLS & UTILITY MENU', emoji: '🛠️' },
-                audio: { title: '🎵 AUDIO & RADIO MENU', emoji: '🎵' },
-                admin: { title: '🛡️ ADMIN & GROUP MENU', emoji: '🛡️' },
-                general: { title: '🔧 GENERAL & INFO MENU', emoji: '🔧' },
-                owner: { title: '👑 OWNER MENU', emoji: '👑' },
-                misc: { title: '📦 MISC MENU', emoji: '📦' }
-            }
+        const categoryMeta = {
+            ai: { title: '🤖 AI & ASSISTANT', emoji: '🤖' },
+            downloader: { title: '📥 DOWNLOADER', emoji: '📥' },
+            image: { title: '🎨 IMAGE & MEDIA', emoji: '🎨' },
+            tools: { title: '🛠️ TOOLS & UTILITY', emoji: '🛠️' },
+            audio: { title: '🎵 AUDIO & RADIO', emoji: '🎵' },
+            admin: { title: '🛡️ ADMIN & GROUP', emoji: '🛡️' },
+            general: { title: '🔧 GENERAL & INFO', emoji: '🔧' },
+            owner: { title: '👑 OWNER SUITE', emoji: '👑' },
+            misc: { title: '📦 MISC', emoji: '📦' }
+        }
 
+        // Render specific submenu if requested
+        if (targetCategory) {
             const meta = categoryMeta[targetCategory] || categoryMeta.misc
             const cmdList = categories[targetCategory] || []
 
-            let text = `Berikut daftar perintah yang tersedia:\n\n`
+            let text = `╭───〔 ${meta.title} 〕───⬣\n`
+            text += `│ Berikut daftar perintah dalam kategori ini:\n`
+            text += `╰──────────────⬣\n\n`
 
             if (cmdList.length === 0) {
                 text += `(Tidak ada perintah)\n`
@@ -363,26 +168,10 @@ export default {
                 text += `└──────────────\n\n`
             }
 
-            text += `💡 Ketik *${prefix}help [nama_command]* untuk panduan detail.\n`
-            text += `🔙 Tekan tombol *Kembali ke Menu Utama* di bawah atau balas *0*.`
+            text += `💡 Ketik *${prefix}help [nama_command]* untuk melihat cara pakai detail.\n`
+            text += `🔙 Ketik *${prefix}menu* untuk melihat seluruh daftar menu.`
 
-            // Coba kirim via Native Interactive Submenu
-            const interactiveSent = await sendInteractiveSubmenu(sock, from, msg, meta.title, text, 'Powered by Ronn Bot')
-
-            if (!interactiveSent) {
-                // Fallback ke pesan teks standar
-                const subSent = await reply(`╭───〔 ${meta.title} 〕───⬣\n` + text)
-                interactiveService.createSession(subSent.key.id, from, sender, async (subCtx, answer) => {
-                    const clean = (answer || '').trim().toLowerCase()
-                    if (clean === '0' || clean === 'menu' || clean === 'back' || clean === 'kembali') {
-                        subCtx.commandName = 'menu'
-                        subCtx.args = []
-                        await this.execute(subCtx)
-                    }
-                })
-            }
-
-            return
+            return reply(text.trim())
         }
 
         // Fetch user count with caching
@@ -439,67 +228,45 @@ export default {
         const runtimeStr = runtimeParts.join(' ')
 
         // Get bot version from package.json
-        let botVersion = '5.18.10'
+        let botVersion = '5.18.12'
         try {
             const pkg = JSON.parse(fs.readFileSync(path.resolve('./package.json'), 'utf-8'))
-            botVersion = pkg.version || '5.18.10'
+            botVersion = pkg.version || '5.18.12'
         } catch (_) { }
 
         const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
         const port = process.env.RADIO_PORT || '25637'
         const dashboardUrl = `http://${host}:${port}/dashboard`
 
-        let bodyText = `👋 Hai, *${ctx.pushName || 'User'}*!\n\n`
-        bodyText += `📊 *Runtime :* ${runtimeStr}\n`
-        bodyText += `👥 *Users   :* ${usersCount} pengguna\n`
-        bodyText += `⚡ *Version :* v${botVersion}\n`
-        bodyText += `🔗 *Website :* ${dashboardUrl}\n\n`
-        bodyText += `┌〔 📋 PILIH KATEGORI MENU 〕\n`
-        bodyText += `│ 1️⃣  🤖 *AI & Assistant Menu*\n`
-        bodyText += `│ 2️⃣  📥 *Downloader Menu*\n`
-        bodyText += `│ 3️⃣  🎨 *Image & Media Menu*\n`
-        bodyText += `│ 4️⃣  🛠️ *Tools & Utility Menu*\n`
-        bodyText += `│ 5️⃣  🎵 *Audio & Radio Menu*\n`
-        bodyText += `│ 6️⃣  🛡️ *Admin & Group Menu*\n`
-        bodyText += `│ 7️⃣  🔧 *General & Info Menu*\n`
-        bodyText += `│ 8️⃣  👑 *Owner Menu*\n`
-        bodyText += `└──────────────────────────\n\n`
-        bodyText += `👉 *Tekan tombol "📋 Buka Kategori Menu"* di bawah atau *balas pesan ini dengan angka (1-8)*!`
+        // Full clean Prompt Menu Layout
+        let menuText = `╭───〔 *RONN BOT AUTOMATION* 〕───⬣\n`
+        menuText += `│ 👋 Hai, *${ctx.pushName || 'User'}*!\n`
+        menuText += `│\n`
+        menuText += `│ 📊 Runtime : *${runtimeStr}*\n`
+        menuText += `│ 👥 Users   : *${usersCount} pengguna*\n`
+        menuText += `│ ⚡ Version : *v${botVersion}*\n`
+        menuText += `│ 🔗 *Dashboard:* ${dashboardUrl}\n`
+        menuText += `╰───────────────────────────────⬣\n\n`
 
-        // Kirim Native Interactive Flow Message (Clickable Buttons & List) dengan messageContextInfo lengkap
-        const interactiveResult = await sendInteractiveNativeMenu(
-            sock,
-            from,
-            msg,
-            '🤖 RONN BOT AUTOMATION SUITE 🤖',
-            bodyText,
-            'Powered by Ronn Bot',
-            dashboardUrl
-        )
+        const displayGroups = ['ai', 'downloader', 'image', 'tools', 'audio', 'admin', 'general', 'owner']
 
-        // Daftarkan sesi interaktif untuk memproses respon klik tombol maupun balasan teks angka 1-8
-        const sessionMsgId = interactiveResult?.key?.id
-        if (sessionMsgId) {
-            interactiveService.createSession(sessionMsgId, from, sender, async (menuCtx, answer) => {
-                const cleanAnswer = (answer || '').toLowerCase().replace(/^[!./#]/, '').trim()
-                const categoryMap = {
-                    '1': 'ai', 'ai': 'ai', 'aimenu': 'ai',
-                    '2': 'downloader', 'download': 'downloader', 'dl': 'downloader', 'downloadmenu': 'downloader',
-                    '3': 'image', 'media': 'image', 'imagemenu': 'image', 'mediamenu': 'image', 'stiker': 'image', 'sticker': 'image',
-                    '4': 'tools', 'tool': 'tools', 'utility': 'tools', 'toolsmenu': 'tools', 'util': 'tools',
-                    '5': 'audio', 'radio': 'audio', 'music': 'audio', 'audiomenu': 'audio', 'lagu': 'audio',
-                    '6': 'admin', 'group': 'admin', 'adminmenu': 'admin', 'grup': 'admin',
-                    '7': 'general', 'info': 'general', 'generalmenu': 'general',
-                    '8': 'owner', 'ownermenu': 'owner'
-                }
+        for (const catKey of displayGroups) {
+            const meta = categoryMeta[catKey]
+            const list = categories[catKey] || []
+            if (list.length === 0) continue
 
-                const target = categoryMap[cleanAnswer]
-                if (target) {
-                    menuCtx.commandName = `${target}menu`
-                    menuCtx.args = [target]
-                    await this.execute(menuCtx)
-                }
-            })
+            menuText += `┌〔 ${meta.title} 〕\n`
+            for (const cmd of list) {
+                menuText += `│ ▫️ *${prefix}${cmd.name}* — ${cmd.description}\n`
+            }
+            menuText += `└──────────────────────────────\n\n`
         }
+
+        menuText += `💡 *Tips Penggunaan:*\n`
+        menuText += `• Ketik *${prefix}help [command]* untuk melihat panduan spesifik.\n`
+        menuText += `• Contoh: *${prefix}help ai* atau *${prefix}help sticker*\n\n`
+        menuText += `_Powered by Ronn Bot Automation_`
+
+        return reply(menuText.trim())
     }
 }
