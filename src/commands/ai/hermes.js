@@ -5,14 +5,42 @@ export default {
     name: 'hermes',
     aliases: ['hermesagent', 'agentmemory', 'hermesmem'],
     category: 'ai',
-    description: 'Mengecek status, arsitektur model & memori percakapan Hermes Agent untuk chat ini.',
-    usage: '!hermes [memory|status]',
+    description: 'Mengecek status, arsitektur model, memori & pengaturan reasoning Hermes Agent untuk chat ini.',
+    usage: '!hermes [memory|reasoning|status]',
     cooldown: 3,
     execute: async (ctx) => {
         const { reply, react, args, chatId, pushName, isGroup, sock } = ctx
         await react('🤖')
 
         const subCmd = (args[0] || '').toLowerCase()
+
+        if (subCmd === 'reasoning' || subCmd === 'think' || subCmd === 'reason') {
+            const val = (args[1] || '').toLowerCase()
+
+            if (val === 'true' || val === 'on' || val === '1' || val === 'enable') {
+                await hermesService.setReasoning(chatId, true)
+                await reply(`⏱️ *Hermes Agent Reasoning Mode*\n\nReasoning header & proses berpikir DeepSeek R1 *AKTIF* (True) untuk chat ini.`)
+                await react('🧠')
+                return
+            } else if (val === 'false' || val === 'off' || val === '0' || val === 'disable') {
+                await hermesService.setReasoning(chatId, false)
+                await reply(`⏱️ *Hermes Agent Reasoning Mode*\n\nReasoning header & proses berpikir *NONAKTIF* (False) untuk chat ini. Respon akan langsung dikirim tanpa header 'Thought for...'.`)
+                await react('⚡')
+                return
+            } else {
+                const statusRes = await hermesService.getReasoning(chatId)
+                const isEnabled = statusRes.reasoning
+                await reply(
+                    `⏱️ *Hermes Agent Reasoning Mode*\n\n` +
+                    `Status saat ini: *${isEnabled ? 'AKTIF (True)' : 'NONAKTIF (False)'}*\n\n` +
+                    `Gunakan command:\n` +
+                    `• \`.hermes reasoning true\` (Aktifkan header & proses berpikir)\n` +
+                    `• \`.hermes reasoning false\` (Nonaktifkan header reasoning)`
+                )
+                await react('ℹ️')
+                return
+            }
+        }
 
         if (subCmd === 'memory' || subCmd === 'mem' || subCmd === 'history') {
             const memResult = await hermesService.getMemory(chatId)
@@ -86,17 +114,19 @@ export default {
 
         // Default: Status & Rich Architecture Info
         const health = await hermesService.checkHealth()
+        const reasoningStatus = await hermesService.getReasoning(chatId)
+        const reasoningLabel = reasoningStatus.reasoning ? 'Aktif (True)' : 'Nonaktif (False)'
 
         if (health.ok) {
             await reply(
                 `🤖 *NousResearch Multi-Model Hermes Agent*\n\n` +
                 `✅ *Status:* Online & Active (ZeroGPU Hosted)\n` +
                 `🔗 *Endpoint:* \`${hermesService.baseUrl}\`\n\n` +
-                `🧠 *Reasoning Judge:* \`DeepSeek R1 (Reasoning Engine)\`\n` +
+                `🧠 *Reasoning Judge:* \`DeepSeek R1 (Reasoning Engine)\` (*${reasoningLabel}*)\n` +
                 `⚡ *Knowledge Workers:* \`Hermes 3 (405B)\` + \`Llama 3.3 (70B)\`\n` +
                 `🌐 *Real-Time Search:* \`Live Google / DDG Web Search\`\n` +
                 `💾 *Session Memory:* \`Active & Isolated\`\n\n` +
-                `💡 *Tip:* Ketik \`.hermes memory\` untuk melihat riwayat memori percakapan di chat ini.`
+                `💡 *Tip:* Ketik \`.hermes reasoning true / false\` untuk mengatur mode reasoning.`
             )
             await react('✅')
         } else {
@@ -110,3 +140,4 @@ export default {
         }
     }
 }
+

@@ -6,7 +6,8 @@ dns.setDefaultResultOrder('ipv4first')
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
-    fetchLatestBaileysVersion
+    fetchLatestBaileysVersion,
+    Browsers
 } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import pino from 'pino'
@@ -97,6 +98,7 @@ async function startBot() {
         auth: state,
         logger: pinoLogger.child({ level: 'fatal' }), // Sembunyikan log internal Baileys yang nyepam
         printQRInTerminal: false, // kita handle manual
+        browser: Browsers.ubuntu('Chrome'),
     })
 
     // Daftarkan socket instance ke logger untuk WhatsApp channel logging
@@ -107,7 +109,8 @@ async function startBot() {
     botLogger.system('Store bonded ✓')
 
     // 5. Pairing code (kalau ada BOT_NUMBER)
-    const phoneNumber = process.env.BOT_NUMBER?.replace(/[^0-9]/g, '') ?? null
+    const rawBotNumber = (process.env.BOT_NUMBER ?? '').split(',')[0] ?? ''
+    const phoneNumber = rawBotNumber.replace(/[^0-9]/g, '') || null
     if (phoneNumber && !state.creds?.registered) {
         botLogger.system(`Requesting pairing code for +${phoneNumber}...`)
         setTimeout(async () => {

@@ -1,5 +1,5 @@
 // src/services/hermes.js
-// Dedicated service to interface with NousResearch Hermes Agent / Cloud API (OpenRouter / Hosted Hermes)
+// Dedicated service to interface with NousResearch Hermes Agent / Cloud API (HF Space / OpenRouter / Hosted Hermes)
 import axios from 'axios'
 import { logger } from '../utils/logger.js'
 
@@ -16,6 +16,7 @@ class HermesService {
             
         this.model = process.env.HERMES_MODEL || defaultModel
         this.enabled = process.env.HERMES_ENABLED !== 'false'
+        this.reasoningMap = new Map()
     }
 
     /**
@@ -36,11 +37,57 @@ class HermesService {
     }
 
     /**
+     * Enable or disable reasoning mode for a specific chatId
+     */
+    async setReasoning(chatId, enabled) {
+        try {
+            const rootUrl = this.baseUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '')
+            const url = `${rootUrl}/v1/reasoning`
+            const headers = { 'Content-Type': 'application/json' }
+            if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`
+
+            const response = await axios.post(url, {
+                user: chatId,
+                chat_id: chatId,
+                reasoning: Boolean(enabled)
+            }, { headers, timeout: 5000 })
+
+            this.reasoningMap.set(chatId, Boolean(enabled))
+            return { ok: true, data: response.data }
+        } catch (err) {
+            this.reasoningMap.set(chatId, Boolean(enabled))
+            return { ok: true, localOnly: true, error: err.message }
+        }
+    }
+
+    /**
+     * Get reasoning mode status for specific chatId
+     */
+    async getReasoning(chatId) {
+        try {
+            const rootUrl = this.baseUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '')
+            const url = `${rootUrl}/v1/reasoning?user=${encodeURIComponent(chatId)}`
+            const headers = {}
+            if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`
+
+            const response = await axios.get(url, { headers, timeout: 5000 })
+            const isEnabled = response.data?.reasoning !== undefined ? Boolean(response.data.reasoning) : true
+            this.reasoningMap.set(chatId, isEnabled)
+            return { ok: true, reasoning: isEnabled }
+        } catch (err) {
+            const cached = this.reasoningMap.has(chatId) ? this.reasoningMap.get(chatId) : true
+            return { ok: true, reasoning: cached, cached: true }
+        }
+    }
+
+    /**
      * Check connection to Hermes Agent Gateway / Cloud API
      */
     async checkHealth() {
         try {
-            const url = `${this.baseUrl}/models`
+            const healthUrl = this.baseUrl.includes('hf.space')
+                ? `${this.baseUrl.replace(/\/v1\/?$/, '')}/api/status`
+                : `${this.baseUrl}/models`
             const headers = {}
             if (this.apiKey) {
                 headers['Authorization'] = `Bearer ${this.apiKey}`
@@ -49,7 +96,7 @@ class HermesService {
                 headers['HTTP-Referer'] = 'https://github.com/NousResearch/hermes-agent'
                 headers['X-Title'] = 'WABOT2.0 Hermes Agent'
             }
-            const response = await axios.get(url, { headers, timeout: 5000 })
+            const response = await axios.get(healthUrl, { headers, timeout: 5000 })
             return { ok: true, data: response.data }
         } catch (err) {
             return { ok: false, error: err.message }
@@ -60,28 +107,23 @@ class HermesService {
      * Send chat prompt to Pure Hermes Agent / Nous Hermes Model
      * @param {string} chatId - WhatsApp JID / Chat ID (used as session/user identifier)
      * @param {string} promptText - User text prompt
-     * @param {object} options - Additional options (e.g. systemPrompt, media context)
+     * @param {object} options - Additional options (e.g. systemPrompt, reasoning, media context)
      */
     async chat(chatId, promptText, options = {}) {
         if (!promptText || !promptText.trim()) {
             throw new Error('Prompt tidak boleh kosong.')
         }
 
-        const url = `${this.baseUrl}/chat/completions`
-        const headers = {
-            'Content-Type': 'application/json'
-        }
-        if (this.apiKey) {
-            headers['Authorization'] = `Bearer ${this.apiKey}`
-        }
+        const headers = { 'Content-Type': 'application/json' }
+        if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`
 
+        const url = `${this.baseUrl}/chat/completions`
         if (this.baseUrl.includes('openrouter')) {
             headers['HTTP-Referer'] = 'https://github.com/NousResearch/hermes-agent'
             headers['X-Title'] = 'WABOT2.0 Hermes Agent'
         }
 
         const messages = []
-        
         const systemPrompt = options.systemPrompt || process.env.SYSTEM_PROMPT || 
             'You are RonnBot powered by NousResearch Hermes Agent. You are a helpful, intelligent, natural AI assistant on WhatsApp.'
 
@@ -93,35 +135,36 @@ class HermesService {
             targetModel = 'nousresearch/hermes-3-llama-3.1-70b'
         }
 
+        const reasoningPref = options.reasoning !== undefined 
+            ? Boolean(options.reasoning) 
+            : (this.reasoningMap.has(chatId) ? this.reasoningMap.get(chatId) : undefined)
+
         const payload = {
             model: targetModel,
             messages,
-            user: chatId // Passes WhatsApp JID for session tracking
+            user: chatId,
+            groq_api_key: process.env.GROQ_API_KEY || '',
+            gemini_api_key: process.env.GEMINI_API_KEY || ''
+        }
+
+        if (reasoningPref !== undefined) {
+            payload.reasoning = reasoningPref
         }
 
         try {
-            const response = await axios.post(url, payload, {
-                headers,
-                timeout: 120000 // 2 minute timeout
-            })
+            const response = await axios.post(url, payload, { headers, timeout: 120000 })
 
             const choice = response.data?.choices?.[0]
             const text = choice?.message?.content || choice?.text || ''
 
-            if (!text) {
-                throw new Error('Hermes Agent memberikan respon kosong.')
-            }
+            if (!text) throw new Error('Hermes Agent memberikan respon kosong.')
 
-            return {
-                text: text.trim(),
-                provider: 'hermes-agent',
-                model: response.data?.model || this.model
-            }
+            return { text: text.trim(), provider: 'hermes-agent', model: response.data?.model || this.model }
         } catch (err) {
             logger.error('[HermesService] Failed to call Hermes Agent API:', err.message)
 
             if (err.code === 'ECONNREFUSED' || err.message.includes('ECONNREFUSED')) {
-                throw new Error(`Gagal terhubung ke Hermes Agent di (${this.baseUrl}). Jika tidak ada terminal/pip di panel, kamu bisa menggunakan Cloud OpenRouter URL di .env (HERMES_AGENT_URL=https://openrouter.ai/api/v1 dan HERMES_MODEL=nousresearch/hermes-3-llama-3.1-70b).`)
+                throw new Error(`Gagal terhubung ke Hermes Agent di (${this.baseUrl}).`)
             }
 
             if (err.response?.data?.error) {

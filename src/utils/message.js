@@ -5,12 +5,32 @@
  */
 export function unwrapMessage(m) {
     if (!m) return null
-    const wrappers = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']
+    const wrappers = [
+        'ephemeralMessage',
+        'viewOnceMessage',
+        'viewOnceMessageV2',
+        'viewOnceMessageV2Extension',
+        'documentWithCaptionMessage',
+        'botInvokeMessage'
+    ]
     const mType = Object.keys(m)[0]
     if (wrappers.includes(mType)) {
-        return unwrapMessage(m[mType].message)
+        return unwrapMessage(m[mType].message || m[mType])
     }
     return m
+}
+
+/**
+ * Check if the original message contains any View-Once wrapper
+ */
+export function isViewOnceMessage(msg) {
+    if (!msg?.message) return false
+    const m = msg.message
+    return Boolean(
+        m.viewOnceMessage ||
+        m.viewOnceMessageV2 ||
+        m.viewOnceMessageV2Extension
+    )
 }
 
 /**

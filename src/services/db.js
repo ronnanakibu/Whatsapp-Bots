@@ -156,6 +156,21 @@ db.exec(`
         FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
         FOREIGN KEY(song_id) REFERENCES songs(song_id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS message_store (
+        id TEXT PRIMARY KEY,
+        chat_jid TEXT NOT NULL,
+        sender_jid TEXT NOT NULL,
+        push_name TEXT,
+        message_type TEXT NOT NULL,
+        body TEXT,
+        raw_message TEXT NOT NULL,
+        media_path TEXT,
+        is_view_once INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_msg_store_lookup ON message_store(chat_jid, id);
+    CREATE INDEX IF NOT EXISTS idx_msg_store_created ON message_store(created_at);
 `)
 
 // 2. Safe Migration untuk database lama
@@ -208,6 +223,58 @@ export class DBService {
             INSERT INTO users (jid, name, experience_points) VALUES (?, ?, ?)
             ON CONFLICT(jid) DO UPDATE SET name=excluded.name, experience_points=excluded.experience_points, last_seen_at=unixepoch()
         `).run(jid, name, xp)
+    }
+
+    // ── MESSAGE STORE (ANTI-SNITCH / PERSISTENCE) ──
+
+    saveMessage({ id, chatJid, senderJid, pushName, messageType, body, rawMessage, mediaPath = null, isViewOnce = 0 }) {
+        try {
+            return db.prepare(`
+                INSERT INTO message_store (id, chat_jid, sender_jid, push_name, message_type, body, raw_message, media_path, is_view_once)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    body = excluded.body,
+                    raw_message = excluded.raw_message,
+                    media_path = COALESCE(excluded.media_path, message_store.media_path),
+                    is_view_once = excluded.is_view_once
+            `).run(id, chatJid, senderJid, pushName, messageType, body, rawMessage, mediaPath, isViewOnce ? 1 : 0)
+        } catch (err) {
+            logger.error(`[DB] Failed to save message ${id}:`, err.message)
+            return null
+        }
+    }
+
+    getMessage(chatJid, id) {
+        try {
+            if (chatJid) {
+                return db.prepare('SELECT * FROM message_store WHERE chat_jid = ? AND id = ?').get(chatJid, id)
+            }
+            return db.prepare('SELECT * FROM message_store WHERE id = ?').get(id)
+        } catch (err) {
+            logger.error(`[DB] Failed to get message ${id}:`, err.message)
+            return null
+        }
+    }
+
+    updateMessageMediaPath(id, mediaPath) {
+        try {
+            return db.prepare('UPDATE message_store SET media_path = ? WHERE id = ?').run(mediaPath, id)
+        } catch (err) {
+            logger.error(`[DB] Failed to update media_path for ${id}:`, err.message)
+            return null
+        }
+    }
+
+    pruneMessages(days = 14) {
+        try {
+            const cutoff = Math.floor(Date.now() / 1000) - (days * 86400)
+            const result = db.prepare('DELETE FROM message_store WHERE created_at < ?').run(cutoff)
+            logger.info(`[DB] Pruned ${result.changes} old messages from message_store (> ${days} days).`)
+            return result.changes
+        } catch (err) {
+            logger.error('[DB] Failed to prune messages:', err.message)
+            return 0
+        }
     }
 }
 

@@ -2,6 +2,7 @@
 import fs from 'fs'
 import path from 'path'
 import { db } from '../../services/db.js'
+import { interactiveService } from '../../services/interactive.js'
 
 let cachedTotalUsers = 0
 let lastUserCountFetch = 0
@@ -21,13 +22,13 @@ export default {
         'generalmenu'
     ],
     category: 'general',
-    description: 'Tampilkan semua command yang tersedia',
-    usage: '.help [command]',
+    description: 'Tampilkan semua command yang tersedia (Interaktif)',
+    usage: '.help [kategori | command]',
     cooldown: 3,
     permissions: ['user'],
 
     async execute(ctx) {
-        const { args, reply } = ctx
+        const { args, reply, from, sender } = ctx
         const { commands } = await import('../../core/loader.js')
         const prefix = process.env.BOT_PREFIX ?? '!'
 
@@ -35,15 +36,28 @@ export default {
         let activeMenu = null
 
         // 1. Resolve from commandName (e.g. .aimenu)
-        const cmdName = ctx.commandName.toLowerCase()
-        if (cmdName.endsWith('menu')) {
+        const cmdName = (ctx.commandName || '').toLowerCase()
+        if (cmdName.endsWith('menu') && cmdName !== 'menu') {
             activeMenu = cmdName.replace('menu', '')
         }
 
-        // 2. Resolve from args[0] (e.g. .help ai, .help aimenu)
+        // 2. Resolve from args[0] (e.g. .help ai, .help aimenu, .menu 1)
+        const numberMap = {
+            '1': 'ai',
+            '2': 'downloader',
+            '3': 'image',
+            '4': 'tools',
+            '5': 'audio',
+            '6': 'admin',
+            '7': 'general',
+            '8': 'owner'
+        }
+
         if (!activeMenu && args.length) {
             const arg = args[0].toLowerCase()
-            if (arg.endsWith('menu')) {
+            if (numberMap[arg]) {
+                activeMenu = numberMap[arg]
+            } else if (arg.endsWith('menu') && arg !== 'menu') {
                 activeMenu = arg.replace('menu', '')
             } else {
                 activeMenu = arg
@@ -53,13 +67,13 @@ export default {
         let targetCategory = null
         if (activeMenu) {
             if (activeMenu === 'ai') targetCategory = 'ai'
-            else if (activeMenu === 'audio' || activeMenu === 'radio') targetCategory = 'audio'
-            else if (activeMenu === 'downloader' || activeMenu === 'download') targetCategory = 'downloader'
-            else if (activeMenu === 'image' || activeMenu === 'media') targetCategory = 'image'
-            else if (activeMenu === 'tools' || activeMenu === 'utility') targetCategory = 'tools'
+            else if (activeMenu === 'audio' || activeMenu === 'radio' || activeMenu === 'music') targetCategory = 'audio'
+            else if (activeMenu === 'downloader' || activeMenu === 'download' || activeMenu === 'dl') targetCategory = 'downloader'
+            else if (activeMenu === 'image' || activeMenu === 'media' || activeMenu === 'stiker' || activeMenu === 'sticker') targetCategory = 'image'
+            else if (activeMenu === 'tools' || activeMenu === 'utility' || activeMenu === 'util') targetCategory = 'tools'
             else if (activeMenu === 'owner') targetCategory = 'owner'
             else if (activeMenu === 'admin' || activeMenu === 'group') targetCategory = 'admin'
-            else if (activeMenu === 'general') targetCategory = 'general'
+            else if (activeMenu === 'general' || activeMenu === 'info') targetCategory = 'general'
         }
 
         // !help [nama command] — detail satu command
@@ -129,14 +143,14 @@ export default {
         // Render submenu if targetCategory resolved
         if (targetCategory) {
             const categoryMeta = {
-                audio: { title: '🎵 AUDIO MENU', emoji: '🎵' },
-                ai: { title: '🤖 AI MENU', emoji: '🤖' },
-                image: { title: '🎨 IMAGE MENU', emoji: '🎨' },
+                ai: { title: '🤖 AI & ASSISTANT MENU', emoji: '🤖' },
                 downloader: { title: '📥 DOWNLOADER MENU', emoji: '📥' },
-                tools: { title: '🛠️ TOOLS MENU', emoji: '🛠️' },
-                owner: { title: '👤 OWNER MENU', emoji: '👑' },
-                admin: { title: '🛡️ ADMIN MENU', emoji: '🛡️' },
-                general: { title: '🔧 GENERAL MENU', emoji: '🔧' },
+                image: { title: '🎨 IMAGE & MEDIA MENU', emoji: '🎨' },
+                tools: { title: '🛠️ TOOLS & UTILITY MENU', emoji: '🛠️' },
+                audio: { title: '🎵 AUDIO & RADIO MENU', emoji: '🎵' },
+                admin: { title: '🛡️ ADMIN & GROUP MENU', emoji: '🛡️' },
+                general: { title: '🔧 GENERAL & INFO MENU', emoji: '🔧' },
+                owner: { title: '👑 OWNER MENU', emoji: '👑' },
                 misc: { title: '📦 MISC MENU', emoji: '📦' }
             }
 
@@ -150,7 +164,7 @@ export default {
             if (cmdList.length === 0) {
                 text += `(Tidak ada perintah)\n`
             } else {
-                text += `┌〔 COMMANDS 〕\n`
+                text += `┌〔 DAFTAR PERINTAH 〕\n`
                 for (const cmd of cmdList) {
                     text += `│ ${meta.emoji} *${prefix}${cmd.name}*\n`
                     text += `│   └─ ${cmd.description}\n`
@@ -158,10 +172,27 @@ export default {
                 text += `└──────────────\n\n`
             }
 
-            text += `💡 Ketik *${prefix}help [nama_command]* untuk panduan detail.\n\n`
-            text += `Powered by Ronn Bot Radio`
+            text += `💡 Ketik *${prefix}help [nama_command]* untuk detail opsi.\n`
+            text += `🔙 Balas *0* atau *menu* untuk kembali ke Menu Utama.\n\n`
+            text += `Powered by Ronn Bot`
 
-            return reply(text.trim())
+            const subSent = await reply(text.trim())
+
+            // Sesi interaktif untuk kembali ke menu utama
+            interactiveService.createSession(subSent.key.id, from, sender, async (subCtx, answer) => {
+                const clean = (answer || '').trim().toLowerCase()
+                if (clean === '0' || clean === 'menu' || clean === 'back' || clean === 'kembali') {
+                    subCtx.commandName = 'menu'
+                    subCtx.args = []
+                    await this.execute(subCtx)
+                } else if (numberMap[clean] || Object.keys(categoryMeta).includes(clean)) {
+                    subCtx.commandName = `${clean}menu`
+                    subCtx.args = [clean]
+                    await this.execute(subCtx)
+                }
+            })
+
+            return
         }
 
         // Fetch user count with caching
@@ -218,10 +249,10 @@ export default {
         const runtimeStr = runtimeParts.join(' ')
 
         // Get bot version from package.json
-        let botVersion = '5.3.0'
+        let botVersion = '5.18.8'
         try {
             const pkg = JSON.parse(fs.readFileSync(path.resolve('./package.json'), 'utf-8'))
-            botVersion = pkg.version || '5.3.0'
+            botVersion = pkg.version || '5.18.8'
         } catch (_) { }
 
         const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
@@ -229,37 +260,50 @@ export default {
         const dashboardUrl = `http://${host}:${port}/dashboard`
 
         let text = `╭───〔 RONN BOT 〕───⬣\n`
-        text += `│ 👋 Hai, ${ctx.pushName || 'User'}\n`
+        text += `│ 👋 Hai, *${ctx.pushName || 'User'}*\n`
         text += `│\n`
-        text += `│ 📊 Runtime : ${runtimeStr}\n`
-        text += `│ 👥 Users   : ${usersCount}\n`
-        text += `│ ⚡ Version : v${botVersion}\n`
-        text += `│ 🔗 ${dashboardUrl}\n`
+        text += `│ 📊 Runtime : *${runtimeStr}*\n`
+        text += `│ 👥 Users   : *${usersCount}*\n`
+        text += `│ ⚡ Version : *v${botVersion}*\n`
+        text += `│ 🔗 *Dashboard:* ${dashboardUrl}\n`
         text += `╰──────────────⬣\n\n`
 
-        text += `┌〔 MAIN MENU 〕\n`
-        text += `│ 🎵 Audio\n`
-        text += `│ 🤖 AI\n`
-        text += `│ 🎨 Image\n`
-        text += `│ 📥 Downloader\n`
-        text += `│ 🛠️ Tools\n`
-        text += `│ 👤 Owner\n`
-        text += `│ 🛡️ Admin\n`
-        text += `│ 🔧 General\n`
-        text += `└──────────────\n\n`
+        text += `┌〔 📋 PILIH KATEGORI MENU 〕\n`
+        text += `│ 1️⃣  🤖 *AI & Assistant Menu*\n`
+        text += `│ 2️⃣  📥 *Downloader Menu*\n`
+        text += `│ 3️⃣  🎨 *Image & Media Menu*\n`
+        text += `│ 4️⃣  🛠️ *Tools & Utility Menu*\n`
+        text += `│ 5️⃣  🎵 *Audio & Radio Menu*\n`
+        text += `│ 6️⃣  🛡️ *Admin & Group Menu*\n`
+        text += `│ 7️⃣  🔧 *General & Info Menu*\n`
+        text += `│ 8️⃣  👑 *Owner Menu*\n`
+        text += `└──────────────────────────\n\n`
 
-        text += `Ketik:\n`
-        text += `${prefix}aimenu\n`
-        text += `${prefix}downloadmenu\n`
-        text += `${prefix}toolsmenu\n`
-        text += `${prefix}ownermenu\n`
-        text += `${prefix}audiomenu\n`
-        text += `${prefix}imagemenu\n`
-        text += `${prefix}adminmenu\n`
-        text += `${prefix}generalmenu\n\n`
-
+        text += `👉 *Balas pesan ini dengan angka (1-8)* atau ketik nama kategori untuk membuka menu yang diinginkan secara instan!\n\n`
         text += `Powered by Ronn Bot`
 
-        await reply(text.trim())
+        const sentMenu = await reply(text.trim())
+
+        // Daftarkan sesi interaktif untuk menu utama
+        interactiveService.createSession(sentMenu.key.id, from, sender, async (menuCtx, answer) => {
+            const cleanAnswer = (answer || '').toLowerCase().replace(/^[!./#]/, '').trim()
+            const categoryMap = {
+                '1': 'ai', 'ai': 'ai', 'aimenu': 'ai',
+                '2': 'downloader', 'download': 'downloader', 'dl': 'downloader', 'downloadmenu': 'downloader',
+                '3': 'image', 'media': 'image', 'imagemenu': 'image', 'mediamenu': 'image', 'stiker': 'image', 'sticker': 'image',
+                '4': 'tools', 'tool': 'tools', 'utility': 'tools', 'toolsmenu': 'tools', 'util': 'tools',
+                '5': 'audio', 'radio': 'audio', 'music': 'audio', 'audiomenu': 'audio', 'lagu': 'audio',
+                '6': 'admin', 'group': 'admin', 'adminmenu': 'admin', 'grup': 'admin',
+                '7': 'general', 'info': 'general', 'generalmenu': 'general',
+                '8': 'owner', 'ownermenu': 'owner'
+            }
+
+            const target = categoryMap[cleanAnswer]
+            if (target) {
+                menuCtx.commandName = `${target}menu`
+                menuCtx.args = [target]
+                await this.execute(menuCtx)
+            }
+        })
     }
 }

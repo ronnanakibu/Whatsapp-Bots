@@ -10,8 +10,8 @@ dotenvConfig();
 const config = {
     host: process.env.SFTP_HOST || process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id',
     port: parseInt(process.env.SFTP_PORT || '2022'),
-    username: process.env.SFTP_USERNAME || 'ronnlbtrn_11484.dfbf800f',
-    password: process.env.SFTP_PASSWORD || 'Shbng2007'
+    username: process.env.SFTP_USERNAME || '',
+    password: process.env.SFTP_PASSWORD || ''
 };
 
 // Daftar file/folder yang dilarang ikut ke server
@@ -27,11 +27,12 @@ const ignoreList = [
     'CLAUDE.md',
     'memory',
     'scratch',
-    'hf-bakcend',
+    'hf-backend',
     'test_hoax.js',
     'test_nvidia.js',
     'test_routing.js',
     'upload-retry.js',
+    '.env',
     '.next'
 ];
 
@@ -226,32 +227,32 @@ async function main() {
             // Jangan return di sini, biar bisa lanjut nge-restart Pterodactyl!
         } else {
             const sftp = new Client();
-        try {
-            console.log(`\n⏳ Menyambungkan ke PTERODACTYL SFTP (Mengirim ${filesToUpload.length} file)...`);
-            await sftp.connect(config);
-            console.log('✅ Terhubung! Memulai proses sinkronisasi struktur berkas...');
+            try {
+                console.log(`\n⏳ Menyambungkan ke PTERODACTYL SFTP (Mengirim ${filesToUpload.length} file)...`);
+                await sftp.connect(config);
+                console.log('✅ Terhubung! Memulai proses sinkronisasi struktur berkas...');
 
-            for (const localFile of filesToUpload) {
-                const remoteFile = '/' + localFile.replace(/\\/g, '/');
-                const remoteDir = path.dirname(remoteFile).replace(/\\/g, '/');
+                for (const localFile of filesToUpload) {
+                    const remoteFile = '/' + localFile.replace(/\\/g, '/');
+                    const remoteDir = path.dirname(remoteFile).replace(/\\/g, '/');
 
-                if (remoteDir !== '/') {
-                    const exists = await sftp.exists(remoteDir);
-                    if (!exists) {
-                        await sftp.mkdir(remoteDir, true);
+                    if (remoteDir !== '/') {
+                        const exists = await sftp.exists(remoteDir);
+                        if (!exists) {
+                            await sftp.mkdir(remoteDir, true);
+                        }
                     }
+
+                    console.log(`🚀 [Pushing] ${localFile} -> ${remoteFile}`);
+                    await sftp.put(localFile, remoteFile);
                 }
 
-                console.log(`🚀 [Pushing] ${localFile} -> ${remoteFile}`);
-                await sftp.put(localFile, remoteFile);
+                console.log('\n🎉 [SFTP] Hore! Semua file sukses disinkronisasikan seutuhnya ke Pterodactyl.');
+            } catch (err) {
+                console.error('\n❌ [SFTP] Proses upload gagal:', err.message);
+            } finally {
+                await sftp.end();
             }
-
-            console.log('\n🎉 [SFTP] Hore! Semua file sukses disinkronisasikan seutuhnya ke Pterodactyl.');
-        } catch (err) {
-            console.error('\n❌ [SFTP] Proses upload gagal:', err.message);
-        } finally {
-            await sftp.end();
-        }
         } // Penutup blok else (jika filesToUpload > 0)
     } else {
         console.log('⏩ [SFTP] Dilewati (Flag --sftp tidak dipanggil).');

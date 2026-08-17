@@ -21,7 +21,7 @@ export default {
         const isMediaMsg = (m) => {
             if (!m) return false
             const mType = Object.keys(m)[0]
-            if (mType === 'imageMessage' || mType === 'videoMessage' || mType === 'stickerMessage') return true
+            if (mType === 'imageMessage' || mType === 'videoMessage' || mType === 'ptvMessage' || mType === 'stickerMessage') return true
             if (mType === 'documentMessage') {
                 const mime = m.documentMessage?.mimetype || ''
                 return mime.startsWith('image/') || mime.startsWith('video/')
@@ -29,11 +29,11 @@ export default {
             return false
         }
 
-        // Helper to check if media is animated (video, gif, animated sticker)
+        // Helper to check if media is animated (video, gif, animated sticker, ptv)
         const checkAnimated = (m) => {
             if (!m) return false
             const mType = Object.keys(m)[0]
-            if (mType === 'videoMessage') return true
+            if (mType === 'videoMessage' || mType === 'ptvMessage') return true
             if (mType === 'stickerMessage' && m.stickerMessage?.isAnimated) return true
             if (mType === 'documentMessage') {
                 const mime = m.documentMessage?.mimetype || ''

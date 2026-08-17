@@ -16,6 +16,7 @@ import { metricsService } from '../services/metrics.js'
 import { interactiveService } from '../services/interactive.js'
 import { processAiResponse, tryDirectRoute } from '../utils/aiRouter.js'
 import { unwrapMessage, getCleanQuoted } from '../utils/message.js'
+import { mediaCache } from '../services/mediaCache.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
     try {
@@ -41,14 +42,23 @@ export async function handleIncomingMessage(sock, { messages }) {
             || messageContent?.documentMessage?.caption
             || ''
 
-        // Hook Anti-Delete
+        // Hook Anti-Delete & Anti-Edit
         if (type === 'protocolMessage') {
             const { checkRevokeUpsert } = await import('./revoke.js')
             await checkRevokeUpsert(sock, msg)
+            return
         }
 
         // Filter: abaikan pesan dari bot sendiri
         if (msg.key.fromMe) return
+
+        // ── PRE-CACHE MEDIA IN BACKGROUND (ANTI-SNITCH PROTECTION) ──
+        mediaCache.cacheIncomingMedia(sock, msg).catch(() => {})
+
+        // ── AUTO READ (BLUE TICK) ──
+        if (process.env.AUTO_READ !== 'false') {
+            await sock.readMessages([msg.key]).catch(() => {})
+        }
 
         // ── ANTI-SPAM MIDDLEWARE ──
         if (isSpamming(sender)) {
@@ -75,7 +85,7 @@ export async function handleIncomingMessage(sock, { messages }) {
         const botNumbers = new Set([
             normalizeNumber(rawBotId),
             normalizeNumber(sock.user?.lid ?? ''),
-            normalizeNumber(process.env.BOT_NUMBER ?? '')
+            ...(process.env.BOT_NUMBER ?? '').split(',').map(normalizeNumber)
         ].filter(Boolean))
 
         const isMentionedInGroup = isGroup && mentionedJids.some(jid => {
@@ -267,17 +277,51 @@ export async function handleIncomingMessage(sock, { messages }) {
             return
         }
 
+/**
+ * Smart Reply Intent Filter for AI Routing
+ * Checks whether a quoted reply to a bot message is a genuine follow-up query/instruction
+ * or just trivial casual chat/banter (e.g. "wkwk", "tq", "ok") that should be ignored.
+ */
+function isSmartReplyFollowup(body, isGroup, isMentioned, type) {
+    if (type === 'imageMessage' || type === 'videoMessage') return true
+    if (isMentioned) return true
+
+    const text = (body || '').trim()
+    if (!text) return false
+
+    // Trivial casual banter regex
+    const BANTER_PATTERN = /^(wkwk+|haha+|hwhw+|xixi+|lol|kwkw+|woght|sip|siap|mantap|oke|ok|tq|thanks|thx|makasih|terima\s+kasih|ntap|gokil|anjir|bjir|jir|asli|ya|gak|nggak|yo|yop|bro|cuy|👍|❤️|😂|💀|😭|🔥)+$/i
+    if (BANTER_PATTERN.test(text.replace(/[\s.,!?]+/g, ''))) return false
+
+    // Follow-up intent signals (question marks, question words, follow-up connectors)
+    const HAS_QUESTION = text.includes('?') || /\b(apa|kenapa|mengapa|bagaimana|gimana|siapa|dimana|kapan|berapa|yang\s+mana)\b/i.test(text)
+    const HAS_INSTRUCTION = /\b(jelaskan|maksud|tapi|tolong|buatkan|bikin|carikan|ubah|perbaiki|lanjut|tambah|rekam|minta|berikan|apa\s+bedanya|bedanya|contoh)\b/i.test(text)
+
+    if (HAS_QUESTION || HAS_INSTRUCTION) return true
+
+    // In group chat, require explicit intent or length >= 7 chars with non-trivial text
+    if (isGroup) {
+        return text.length >= 7 && !BANTER_PATTERN.test(text)
+    }
+
+    // In Private DM, allow text unless it's pure short banter
+    return text.length >= 3
+}
+
         // ─────────────────────────────────────────────
-        // ROUTE 2: ROUTE TO CENTRAL AI FLOW
+        // ROUTE 2: ROUTE TO CENTRAL AI FLOW (SMART REPLY FILTERED)
         // ─────────────────────────────────────────────
 
         if (isReplyToBot && (body.trim() || type === 'imageMessage')) {
             if (!memoryService.isAiEnabled(from)) return
 
-            botLogger.aiTrigger('seamless', body)
-            const { executeAiFlow } = await import('../utils/aiRouter.js')
-            await executeAiFlow(ctx, body)
-            return
+            const isFollowup = isSmartReplyFollowup(body, isGroup, isMentionedInGroup, type)
+            if (isFollowup) {
+                botLogger.aiTrigger('seamless', body)
+                const { executeAiFlow } = await import('../utils/aiRouter.js')
+                await executeAiFlow(ctx, body)
+                return
+            }
         }
 
         // ─────────────────────────────────────────────
@@ -297,7 +341,7 @@ export async function handleIncomingMessage(sock, { messages }) {
         // ROUTE 5: INTERACTIVE SESSIONS
         // ─────────────────────────────────────────────
 
-        if (quotedMsgId && !isCommand) {
+        if (!isCommand) {
             const isInteractive = await interactiveService.handleReply(ctx)
             if (isInteractive) return
         }
