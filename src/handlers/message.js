@@ -34,13 +34,30 @@ export async function handleIncomingMessage(sock, { messages }) {
         if (!messageContent) return
 
         const type = Object.keys(messageContent)[0]
-        const body =
+        let body =
             messageContent?.conversation
             || messageContent?.extendedTextMessage?.text
             || messageContent?.imageMessage?.caption
             || messageContent?.videoMessage?.caption
             || messageContent?.documentMessage?.caption
             || ''
+
+        // Parse Interactive Button / Native Flow / List click responses
+        if (!body && messageContent?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) {
+            try {
+                const params = JSON.parse(messageContent.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson)
+                body = params.id || ''
+            } catch (_) {}
+        }
+        if (!body && messageContent?.buttonsResponseMessage?.selectedButtonId) {
+            body = messageContent.buttonsResponseMessage.selectedButtonId
+        }
+        if (!body && messageContent?.templateButtonReplyMessage?.selectedId) {
+            body = messageContent.templateButtonReplyMessage.selectedId
+        }
+        if (!body && messageContent?.listResponseMessage?.singleSelectReply?.selectedRowId) {
+            body = messageContent.listResponseMessage.singleSelectReply.selectedRowId
+        }
 
         // Hook Anti-Delete & Anti-Edit
         if (type === 'protocolMessage') {
