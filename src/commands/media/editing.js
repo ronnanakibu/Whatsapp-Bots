@@ -32,7 +32,7 @@ const MEME_SOUNDS = {
 
 export default {
     name: 'editing',
-    aliases: ['edit', 'combine', 'mix'],
+    aliases: ['combine', 'mix', 'mediamix', 'videoedit'],
     category: 'media',
     description: 'Menyatukan video atau foto dengan audio menjadi 1 video lengkap HD',
     usage: '.editing <keyword sound atau reply VN>',

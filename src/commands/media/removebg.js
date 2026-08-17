@@ -3,7 +3,7 @@
 
 import { hfPredict, downloadHFResult, extractResultUrl } from '../../services/hf.js'
 import { getImageBuffer } from './enhance.js'
-import { writeExifImg } from '../../services/exif.js'
+import { addExif } from '../../services/exif.js'
 import sharp from 'sharp'
 import { logger } from '../../utils/logger.js'
 
@@ -94,10 +94,7 @@ export default {
                     .webp({ quality: 85 })
                     .toBuffer()
 
-                const stickerWithExif = await writeExifImg(webpBuffer, {
-                    packname: 'RonnBot Transparent',
-                    author: 'AI Background Remover'
-                })
+                const stickerWithExif = await addExif(webpBuffer, 'RonnBot Transparent', 'AI Background Remover')
 
                 await react('✅')
                 await sock.sendMessage(from, { sticker: stickerWithExif })

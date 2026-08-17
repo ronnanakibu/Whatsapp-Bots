@@ -74,7 +74,7 @@ async function getAudioBuffer(ctx) {
 
 export default {
     name: 'transcribe',
-    aliases: ['vntotext', 'vn', 'stt', 'transkrip', 'suara'],
+    aliases: ['vntotext', 'stt', 'transkrip', 'suara', 'audiototext'],
     category: 'ai',
     description: 'Transkripsikan Voice Note atau Audio menjadi teks & ringkasan AI',
     usage: '.transcribe (balas voice note / audio)',

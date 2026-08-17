@@ -108,7 +108,7 @@ async function extractDocumentData(ctx) {
 
 export default {
     name: 'baca',
-    aliases: ['tldr', 'bacaweb', 'readweb', 'ringkasweb', 'summaryweb'],
+    aliases: ['bacaweb', 'readweb', 'ringkasweb', 'summaryweb', 'bacalink'],
     category: 'utility',
     description: 'Baca isi web artikel/berita atau dokumen PDF dan buat ringkasan eksekutif AI',
     usage: '.baca <link web> atau balas dokumen dengan .baca',
