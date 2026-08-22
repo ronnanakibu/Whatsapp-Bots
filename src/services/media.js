@@ -20,6 +20,8 @@ export function getFfmpegPath() {
         return resolvedFfmpegPath
     } catch {
         const installerPaths = [
+            path.resolve('./storage/bin/ffmpeg'),
+            path.resolve('./storage/bin/ffmpeg.exe'),
             path.resolve('../Sesuatu/node_modules/@ffmpeg-installer/win32-x64/ffmpeg.exe'),
             path.resolve('./node_modules/@ffmpeg-installer/win32-x64/ffmpeg.exe'),
             'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe'
@@ -34,6 +36,7 @@ export function getFfmpegPath() {
     resolvedFfmpegPath = 'ffmpeg'
     return resolvedFfmpegPath
 }
+
 
 const EMOJI_CACHE_DIR = path.resolve('./storage/media/emoji-cache')
 const NOTO_BASE = 'https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128'
@@ -151,8 +154,7 @@ export class MediaService {
     }
 
     #wrapText(text, maxCharsPerLine = 11) {
-        const spaced = text.replace(EMOJI_REGEX, (m) => ` ${m} `)
-        const tokens = spaced.trim().split(/\s+/).filter(Boolean)
+        const words = text.trim().split(/\s+/).filter(Boolean)
         const visualLen = str => {
             const noEmoji = str.replace(EMOJI_REGEX, 'XX')
             return [...noEmoji].reduce((n, ch) => n + (ch.codePointAt(0) > 0x2000 ? 2 : 1), 0)
@@ -161,41 +163,58 @@ export class MediaService {
         let lines = []
         let currentLine = ''
 
-        tokens.forEach(word => {
+        for (const word of words) {
             const wLen = visualLen(word)
             const lineLen = visualLen(currentLine)
 
-            if (wLen > maxCharsPerLine) {
-                if (currentLine.trim()) {
-                    lines.push(currentLine.trim())
-                    currentLine = ''
-                }
-                let tempWord = word
-                while (visualLen(tempWord) > maxCharsPerLine) {
-                    let cutIndex = 0
-                    let currentCutLen = 0
-                    for (let i = 0; i < tempWord.length; i++) {
-                        const cp = tempWord.codePointAt(i)
-                        const charLen = cp > 0x2000 ? 2 : 1
-                        if (currentCutLen + charLen > maxCharsPerLine) break
-                        currentCutLen += charLen
-                        cutIndex = i + 1
+            if (!currentLine) {
+                if (wLen <= maxCharsPerLine) {
+                    currentLine = word
+                } else {
+                    let temp = word
+                    while (visualLen(temp) > maxCharsPerLine) {
+                        let cutIndex = 0
+                        let cutLen = 0
+                        for (let i = 0; i < temp.length; i++) {
+                            const cp = temp.codePointAt(i)
+                            const cl = cp > 0x2000 ? 2 : 1
+                            if (cutLen + cl > maxCharsPerLine) break
+                            cutLen += cl
+                            cutIndex = i + 1
+                        }
+                        if (cutIndex === 0) cutIndex = 1
+                        lines.push(temp.substring(0, cutIndex))
+                        temp = temp.substring(cutIndex)
                     }
-                    if (cutIndex === 0) cutIndex = 1
-                    lines.push(tempWord.substring(0, cutIndex))
-                    tempWord = tempWord.substring(cutIndex)
+                    if (temp) currentLine = temp
                 }
-                if (tempWord) currentLine = tempWord + ' '
-                return
-            }
-            if (lineLen + wLen > maxCharsPerLine) {
-                if (currentLine.trim()) lines.push(currentLine.trim())
-                currentLine = word + ' '
+            } else if (lineLen + 1 + wLen <= maxCharsPerLine) {
+                currentLine += ' ' + word
             } else {
-                currentLine += word + ' '
+                lines.push(currentLine)
+                if (wLen <= maxCharsPerLine) {
+                    currentLine = word
+                } else {
+                    let temp = word
+                    while (visualLen(temp) > maxCharsPerLine) {
+                        let cutIndex = 0
+                        let cutLen = 0
+                        for (let i = 0; i < temp.length; i++) {
+                            const cp = temp.codePointAt(i)
+                            const cl = cp > 0x2000 ? 2 : 1
+                            if (cutLen + cl > maxCharsPerLine) break
+                            cutLen += cl
+                            cutIndex = i + 1
+                        }
+                        if (cutIndex === 0) cutIndex = 1
+                        lines.push(temp.substring(0, cutIndex))
+                        temp = temp.substring(cutIndex)
+                    }
+                    currentLine = temp
+                }
             }
-        })
-        if (currentLine.trim()) lines.push(currentLine.trim())
+        }
+        if (currentLine) lines.push(currentLine)
         return lines
     }
 
@@ -209,121 +228,144 @@ export class MediaService {
     }
 
     #processTextAdaptive(text, isBottom = false) {
-        if (!text) return { lines: [], fontSize: 80, startY: 0, lineSpacing: 0 }
+        if (!text) return { lines: [], fontSize: 60, startY: 0, lineSpacing: 0 }
 
-        const words = text.trim().split(/\s+/)
+        const clean = text.trim().toUpperCase()
+        const words = clean.split(/\s+/).filter(Boolean)
+        if (words.length === 0) return { lines: [], fontSize: 60, startY: 0, lineSpacing: 0 }
+
+        // Adaptive target chars per line based on total text length
+        let targetChars = 14
+        if (clean.length > 35) targetChars = 20
+        else if (clean.length > 18) targetChars = 16
+
         let lines = []
+        let current = ''
+        for (const w of words) {
+            if (!current) {
+                current = w
+            } else if ((current + ' ' + w).length <= targetChars) {
+                current += ' ' + w
+            } else {
+                lines.push(current)
+                current = w
+            }
+        }
+        if (current) lines.push(current)
 
-        if (text.length > 15 && words.length > 1) {
-            const mid = Math.ceil(words.length / 2)
-            lines.push(words.slice(0, mid).join(' '))
-            lines.push(words.slice(mid).join(' '))
-        } else {
-            lines.push(text)
+        // Limit to max 3 lines to maintain aesthetic meme proportion
+        if (lines.length > 3) {
+            const avgPerLine = Math.ceil(clean.length / 3)
+            lines = []
+            current = ''
+            for (const w of words) {
+                if (!current) {
+                    current = w
+                } else if ((current + ' ' + w).length <= avgPerLine) {
+                    current += ' ' + w
+                } else {
+                    lines.push(current)
+                    current = w
+                }
+            }
+            if (current) lines.push(current)
         }
 
-        const maxLineLength = Math.max(...lines.map(l => l.length))
-        let fontSize = Math.floor(490 / (maxLineLength * 0.55))
-        fontSize = Math.max(35, Math.min(85, fontSize))
+        // Balance 2 lines if very uneven
+        if (lines.length === 2 && Math.abs(lines[0].length - lines[1].length) > 8 && words.length >= 3) {
+            const mid = Math.ceil(words.length / 2)
+            lines = [words.slice(0, mid).join(' '), words.slice(mid).join(' ')]
+        }
 
-        const lineSpacing = fontSize * 1.05
-        const startY = isBottom
-            ? 485 - ((lines.length - 1) * lineSpacing)
-            : fontSize + 20
+        const maxLineLen = Math.max(...lines.map(l => l.length))
+        let fontSize = Math.floor(480 / (maxLineLen * 0.52))
+        fontSize = Math.max(30, Math.min(75, fontSize))
+
+        const lineSpacing = fontSize * 1.12
+        let startY
+        if (isBottom) {
+            startY = 512 - 25 - ((lines.length - 1) * lineSpacing)
+        } else {
+            startY = 25 + fontSize
+        }
 
         return { lines, fontSize, startY, lineSpacing }
     }
 
     #renderLine(line, y, fontSize, opts) {
         const {
-            x = 25,
-            textAnchor = 'start',
-            fontFamily = "'Arial Narrow', Arial, sans-serif",
-            fontWeight = 'normal',
-            fill = '#000000',
+            x = 256,
+            textAnchor = 'middle',
+            fontFamily = "Impact, 'Arial Narrow', sans-serif",
+            fontWeight = 'bold',
+            fill = 'white',
             stroke = null,
             strokeWidth = '0',
             emojiMap = new Map(),
-            letterSpacing = '-2px'
+            letterSpacing = '0px'
         } = opts
 
-        const spaced = line.replace(EMOJI_REGEX, (m) => ` ${m} `)
-        const tokens = spaced.trim().split(/\s+/).filter(Boolean)
+        if (!line || !line.trim()) return ''
 
-        if (tokens.length === 0) return ''
-
-        let elements = ''
         const strokeAttr = stroke ? `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill"` : ''
+        const emojis = detectEmojis(line)
+
+        // Native SVG text rendering (100% natural typography & kerning) when no emojis
+        if (emojis.length === 0) {
+            return `<text x="${x}" y="${y}" text-anchor="${textAnchor}" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}" ${strokeAttr}>${this.#escapeXml(line)}</text>\n`
+        }
+
+        // Line contains emojis: layout segments cleanly
         const emojiSize = fontSize * 1.05
-
-        // Estimate character/space widths based on font family
         const isImpact = fontFamily.toLowerCase().includes('impact')
-        const charWidth = isImpact ? fontSize * 0.50 : fontSize * 0.44
-        const spaceWidth = isImpact ? fontSize * 0.25 : fontSize * 0.22
+        const charWidth = isImpact ? fontSize * 0.48 : fontSize * 0.42
+        const spaceWidth = isImpact ? fontSize * 0.28 : fontSize * 0.22
 
-        const tokenWidths = tokens.map(t => {
-            if (detectEmojis(t).length > 0) return emojiSize
-            return [...t].length * charWidth
+        const parts = []
+        let lastIdx = 0
+        for (const match of line.matchAll(EMOJI_REGEX)) {
+            const emoji = match[0]
+            const matchIdx = match.index
+            if (matchIdx > lastIdx) {
+                const textPart = line.substring(lastIdx, matchIdx)
+                if (textPart) parts.push({ type: 'text', val: textPart })
+            }
+            parts.push({ type: 'emoji', val: emoji })
+            lastIdx = matchIdx + emoji.length
+        }
+        if (lastIdx < line.length) {
+            const remaining = line.substring(lastIdx)
+            if (remaining) parts.push({ type: 'text', val: remaining })
+        }
+
+        const partWidths = parts.map(p => {
+            if (p.type === 'emoji') return emojiSize
+            const trimmed = p.val.trim()
+            const leadingSpace = p.val.startsWith(' ') ? spaceWidth : 0
+            const trailingSpace = p.val.endsWith(' ') ? spaceWidth : 0
+            return leadingSpace + ([...trimmed].length * charWidth) + trailingSpace
         })
 
-        if (textAnchor === 'middle') {
-            const totalContentWidth = tokenWidths.reduce((a, b) => a + b, 0)
-            const totalWidth = totalContentWidth + (tokens.length - 1) * spaceWidth
-            let currentX = x - totalWidth / 2
+        const totalWidth = partWidths.reduce((a, b) => a + b, 0)
+        let currentX = textAnchor === 'middle' ? (x - totalWidth / 2) : x
 
-            tokens.forEach((token, index) => {
-                const isEmoji = detectEmojis(token).length > 0
-                if (isEmoji) {
-                    const dataUri = emojiMap.get(token.trim()) ?? emojiMap.get(detectEmojis(token)[0])
-                    if (dataUri) {
-                        elements += `<image href="${dataUri}" x="${currentX}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
-                    }
-                } else {
-                    elements += `<text x="${currentX}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}" ${strokeAttr}>${this.#escapeXml(token)}</text>\n`
-                }
-                currentX += tokenWidths[index] + spaceWidth
-            })
-            return elements
-        }
-
-        // textAnchor !== 'middle' (e.g. 'start')
-        const justifyWidth = 462
-        if (tokens.length === 1) {
-            const token = tokens[0]
-            const isEmoji = detectEmojis(token).length > 0
-            if (isEmoji) {
-                const dataUri = emojiMap.get(token.trim()) ?? emojiMap.get(detectEmojis(token)[0])
+        let elements = ''
+        parts.forEach((p, i) => {
+            const pWidth = partWidths[i]
+            if (p.type === 'emoji') {
+                const dataUri = emojiMap.get(p.val) ?? emojiMap.get(p.val.trim())
                 if (dataUri) {
-                    elements += `<image href="${dataUri}" x="${x}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
+                    elements += `<image href="${dataUri}" x="${currentX}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
                 }
             } else {
-                elements += `<text x="${x}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}" ${strokeAttr}>${this.#escapeXml(token)}</text>\n`
+                elements += `<text x="${currentX}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}" ${strokeAttr}>${this.#escapeXml(p.val)}</text>\n`
             }
-        } else {
-            const totalContentWidth = tokenWidths.reduce((a, b) => a + b, 0)
-            let gap = (justifyWidth - totalContentWidth) / (tokens.length - 1)
-
-            const maxGap = fontSize * 0.22
-            if (gap > maxGap) gap = maxGap
-            if (gap < 0) gap = fontSize * 0.15
-
-            let currentX = x
-            tokens.forEach((token, index) => {
-                const isEmoji = detectEmojis(token).length > 0
-                if (isEmoji) {
-                    const dataUri = emojiMap.get(token.trim()) ?? emojiMap.get(detectEmojis(token)[0])
-                    if (dataUri) {
-                        elements += `<image href="${dataUri}" x="${currentX}" y="${y - emojiSize * 0.84}" width="${emojiSize}" height="${emojiSize}"/>\n`
-                    }
-                } else {
-                    elements += `<text x="${currentX}" y="${y}" text-anchor="start" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}px" fill="${fill}" letter-spacing="${letterSpacing}" ${strokeAttr}>${this.#escapeXml(token)}</text>\n`
-                }
-                currentX += tokenWidths[index] + gap
-            })
-        }
+            currentX += pWidth
+        })
 
         return elements
     }
+
 
     async #executeRembg(buffer) {
         const tmpDir = path.resolve('./storage/media/tmp')
@@ -465,14 +507,14 @@ export class MediaService {
                 return [...l].reduce((n, ch) => n + (ch.codePointAt(0) > 0x2000 ? 2 : 1), 0)
             }))
 
-            let fontSize = Math.floor(462 / (maxVisualLen * 0.43))
-            const maxVerticalFontSize = Math.floor(400 / (lines.length * 1.05))
+            let fontSize = Math.floor(460 / (maxVisualLen * 0.44))
+            const maxVerticalFontSize = Math.floor(390 / (lines.length * 1.10))
             fontSize = Math.min(fontSize, maxVerticalFontSize)
-            fontSize = Math.max(46, Math.min(180, fontSize))
+            fontSize = Math.max(42, Math.min(160, fontSize))
 
-            const lineSpacing = fontSize * 1.05
+            const lineSpacing = fontSize * 1.10
             const totalTextHeight = lines.length * lineSpacing
-            const startY = (512 - totalTextHeight) / 2 + (fontSize * 0.75)
+            const startY = (512 - totalTextHeight) / 2 + (fontSize * 0.82)
 
             const emojiMap = await prepareEmojiMap(cleanText)
             let svgContent = ''
@@ -480,13 +522,13 @@ export class MediaService {
             lines.forEach((line, i) => {
                 const y = startY + (i * lineSpacing)
                 svgContent += this.#renderLine(line, y, fontSize, {
-                    x: 25,
+                    x: 28,
                     textAnchor: 'start',
                     fontFamily: "'Arial Narrow', Arial, sans-serif",
                     fontWeight: 'normal',
                     fill: '#000000',
                     emojiMap,
-                    letterSpacing: '-2.5px'
+                    letterSpacing: '-2px'
                 })
             })
 
@@ -562,8 +604,9 @@ export class MediaService {
         // Scale down at high % values — pixelate effect
         const scaleSize = Math.max(64, Math.round(512 * (1 - (pct / 100) * 0.875)))
         const vfScale = `scale=${scaleSize}:${scaleSize}:flags=neighbor,scale=512:512:flags=neighbor`
+        const ffmpegBin = getFfmpegPath()
         await execPromise(
-            `ffmpeg -y -i "${inputPath}" -vf "${vfScale}" -crf ${crf} -preset ultrafast -an "${outputPath}"`
+            `${ffmpegBin} -y -i "${inputPath}" -vf "${vfScale}" -crf ${crf} -preset ultrafast -an "${outputPath}"`
         )
     }
 
@@ -653,9 +696,7 @@ export class MediaService {
         let extension = 'mp4'
 
         if (isWebp) {
-            logger.info('⏳ Converting Animated WebP to GIF for FFmpeg processing...')
-            finalBufferVideo = await sharp(bufferVideo, { animated: true }).gif().toBuffer()
-            extension = 'gif'
+            extension = 'webp'
         }
 
         const inputPath = path.join(tmpDir, `${id}_in.${extension}`)
@@ -664,6 +705,8 @@ export class MediaService {
 
         const framesInDir = path.join(tmpDir, `${id}_frames_in`)
         const framesOutDir = path.join(tmpDir, `${id}_frames_out`)
+
+        const ffmpegBin = getFfmpegPath()
 
         try {
             const cleanTop = topText.trim().toUpperCase()
@@ -728,7 +771,7 @@ export class MediaService {
                 fs.mkdirSync(framesOutDir, { recursive: true })
 
                 // Pecah video asal menjadi sequence gambar PNG stabil di rate 25 FPS
-                await execPromise(`ffmpeg -i "${inputPath}" -vf "fps=25" "${path.join(framesInDir, '%04d.png')}"`)
+                await execPromise(`${ffmpegBin} -i "${inputPath}" -vf "fps=25" "${path.join(framesInDir, '%04d.png')}"`)
 
                 logger.info('🔥 [Siksa CPU] Menembak modul "rembg p" untuk memproses massal seluruh frame...')
                 try {
@@ -781,7 +824,6 @@ export class MediaService {
                 ffmpegInputArgs = `-framerate 25 -i "${path.join(framesOutDir, '%04d.png')}"`
             }
 
-            // FIX: Di sini gua bersihkan seutuhnya dari string ${rembgFilter} agar FFmpeg berjalan normal murni!
             const videoFilter = noCrop
                 ? `scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=25,format=rgba`
                 : `scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba`
@@ -795,14 +837,14 @@ export class MediaService {
             }
             const lqQv = lqPercent > 0 ? Math.round(15 + (80 * (lqPercent / 100))) : 15 // q:v 15=good → 95=worst
 
-            await execPromise(`ffmpeg ${ffmpegInputArgs} -i "${overlayPath}" -filter_complex "[0:v]${videoFilter}${lqFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v ${lqQv} -loop 0 -preset default -an -vsync 0 -t 00:00:05 "${outputPath}"`)
+            await execPromise(`${ffmpegBin} ${ffmpegInputArgs} -i "${overlayPath}" -filter_complex "[0:v]${videoFilter}${lqFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v ${lqQv} -loop 0 -preset default -an -vsync 0 -t 00:00:05 "${outputPath}"`)
 
             const finalWebpBuffer = fs.readFileSync(outputPath)
             return await addExif(finalWebpBuffer)
 
         } catch (e) {
             logger.error(e, '❌ toAnimatedMemeSticker error')
-            throw new Error('Gagal mengeksekusi siksaan rembg animasi.')
+            throw new Error('Gagal mengeksekusi animasi stiker meme.')
         } finally {
             if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
             if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath)
@@ -812,6 +854,7 @@ export class MediaService {
             if (fs.existsSync(framesOutDir)) fs.rmSync(framesOutDir, { recursive: true, force: true })
         }
     }
+
 
     async boostMediaVolume(buffer, ext = 'mp4', volumeMultiplier = 2.0) {
         let inputPath, outputPath
