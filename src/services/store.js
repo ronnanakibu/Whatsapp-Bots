@@ -1,5 +1,7 @@
 import { dbService } from './db.js'
 import { logger } from '../utils/logger.js'
+import { isViewOnceMessage } from '../utils/message.js'
+
 
 const MAX_IN_MEMORY_PER_CHAT = 200
 
@@ -42,11 +44,8 @@ class DatabaseBackedStore {
                         || msg.message?.documentMessage?.caption
                         || ''
 
-                    const isViewOnce = Boolean(
-                        msg.message?.viewOnceMessage ||
-                        msg.message?.viewOnceMessageV2 ||
-                        msg.message?.viewOnceMessageV2Extension
-                    )
+                    const isViewOnce = isViewOnceMessage(msg)
+
 
                     dbService.saveMessage({
                         id,

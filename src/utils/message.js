@@ -21,17 +21,34 @@ export function unwrapMessage(m) {
 }
 
 /**
- * Check if the original message contains any View-Once wrapper or viewOnce flag
+ * Check if the original message contains any View-Once wrapper or viewOnce flag (deep recursive check)
  */
 export function isViewOnceMessage(msg) {
-    if (!msg?.message) return false
-    const m = msg.message
-    if (m.viewOnceMessage || m.viewOnceMessageV2 || m.viewOnceMessageV2Extension) return true
-    const unwrapped = unwrapMessage(m)
-    if (!unwrapped) return false
-    const mType = Object.keys(unwrapped)[0]
-    return Boolean(unwrapped[mType]?.viewOnce)
+    if (!msg) return false
+    const raw = msg.message || msg
+    if (!raw || typeof raw !== 'object') return false
+
+    function checkNode(node, depth = 0) {
+        if (!node || typeof node !== 'object' || depth > 8) return false
+
+        for (const key of Object.keys(node)) {
+            const lower = key.toLowerCase()
+            if (lower === 'viewoncemessage' || lower === 'viewoncemessagev2' || lower === 'viewoncemessagev2extension') {
+                return true
+            }
+            if (lower === 'viewonce' && Boolean(node[key])) {
+                return true
+            }
+            if (node[key] && typeof node[key] === 'object') {
+                if (checkNode(node[key], depth + 1)) return true
+            }
+        }
+        return false
+    }
+
+    return checkNode(raw)
 }
+
 
 
 /**

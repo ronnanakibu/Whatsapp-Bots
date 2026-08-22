@@ -75,7 +75,10 @@ export async function handleIncomingMessage(sock, { messages }) {
         mediaCache.cacheIncomingMedia(sock, msg).catch(() => {})
 
         // ── INTERCEPT VIEW ONCE (ONE-TIME MEDIA NOTIFICATION TO OWNER) ──
-        handleIncomingViewOnce(sock, msg).catch(() => {})
+        handleIncomingViewOnce(sock, msg).catch((err) => {
+            console.error('[Handler] Error in handleIncomingViewOnce:', err)
+        })
+
 
         // ── AUTO READ (BLUE TICK) ──
         if (process.env.AUTO_READ !== 'false') {

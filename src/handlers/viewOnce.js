@@ -78,32 +78,65 @@ export async function handleIncomingViewOnce(sock, msg) {
         const mime = mediaContent.mimetype || ''
         const ptt = Boolean(mediaContent.ptt)
 
-        botLogger.info('viewonce', `Detected View-Once ${mType} from ${pushName} in ${from}`)
+        botLogger.info('viewonce', `[INTERCEPT] Detected View-Once ${mType} from ${pushName} (@${senderNumber}) in ${from}`)
 
-        // 1. Download buffer media langsung
-        const buffer = await downloadMediaMessage(
-            { key: msg.key, message: unwrapped },
-            'buffer',
-            {},
-            { logger: console, reconnectCount: 3, reuploadRequest: sock?.updateMediaMessage }
-        )
+        // 1. Download buffer media dengan fallback multi-strategi
+        let buffer = null
+        try {
+            buffer = await downloadMediaMessage(
+                msg,
+                'buffer',
+                {},
+                { logger: console, reconnectCount: 3, reuploadRequest: sock?.updateMediaMessage }
+            )
+        } catch (e1) {
+            botLogger.debug?.('viewonce', `Raw msg download fallback: ${e1.message}`)
+        }
 
         if (!buffer || buffer.length === 0) {
-            botLogger.warn('viewonce', `Failed to download view-once media buffer for ${msgId}`)
+            try {
+                buffer = await downloadMediaMessage(
+                    { key: msg.key, message: unwrapped },
+                    'buffer',
+                    {},
+                    { logger: console, reconnectCount: 3, reuploadRequest: sock?.updateMediaMessage }
+                )
+            } catch (e2) {
+                botLogger.debug?.('viewonce', `Unwrapped msg download fallback: ${e2.message}`)
+            }
+        }
+
+        if (!buffer || buffer.length === 0) {
+            try {
+                buffer = await mediaCache.getMediaBuffer(sock, msg)
+            } catch (e3) {
+                botLogger.debug?.('viewonce', `MediaCache fallback: ${e3.message}`)
+            }
+        }
+
+        // 2. Arsipkan buffer ke storage/media/viewonce jika berhasil diunduh
+        const ext = mediaCache.getExtension(mType, mime)
+        let savedPath = null
+        if (buffer && buffer.length > 0) {
+            savedPath = await mediaCache.archiveViewOnceMedia(msgId, buffer, ext)
+        }
+
+        // 3. Siapkan tujuan Owner
+        const ownerRaw = (process.env.OWNER_NUMBER || '').split(',').map(n => n.trim()).filter(Boolean)
+        if (ownerRaw.length === 0) {
+            botLogger.warn('viewonce', 'No OWNER_NUMBER configured in .env')
             return
         }
 
-        // 2. Arsipkan buffer secara permanen ke storage/media/viewonce
-        const ext = mediaCache.getExtension(mType, mime)
-        const savedPath = await mediaCache.archiveViewOnceMedia(msgId, buffer, ext)
+        const targetOwner = ownerRaw.find(n => !n.includes('@lid')) || ownerRaw[0]
+        const devNumber = targetOwner.replace(/[^0-9]/g, '')
+        if (!devNumber) {
+            botLogger.warn('viewonce', `Could not extract valid phone number from ${targetOwner}`)
+            return
+        }
 
-        // 3. Siapkan tujuan Owner
-        const ownerNumbers = (process.env.OWNER_NUMBER || '').split(',').map(n => n.trim())
-        if (!ownerNumbers[0]) return
-
-        const devNumber = ownerNumbers[0].replace(/[^0-9]/g, '')
-        const devJid = devNumber + '@s.whatsapp.net'
-        const allowedJids = ownerNumbers.map(n => n.includes('@') ? n : n.replace(/[^0-9]/g, '') + '@s.whatsapp.net')
+        const devJid = `${devNumber}@s.whatsapp.net`
+        const allowedJids = ownerRaw.map(n => n.includes('@') ? n : `${n.replace(/[^0-9]/g, '')}@s.whatsapp.net`)
 
         let groupName = 'Grup'
         if (isGroup) {
@@ -113,23 +146,25 @@ export async function handleIncomingViewOnce(sock, msg) {
             } catch (_) {}
         }
 
-        // 4. Kirim Preview Media ke Owner
         let mTypeDesc = 'Foto'
         if (mType === 'videoMessage') mTypeDesc = 'Video'
         else if (mType === 'ptvMessage') mTypeDesc = 'Video Note'
         else if (mType === 'audioMessage') mTypeDesc = ptt ? 'Voice Note (VN)' : 'Audio'
 
-        try {
-            const previewCaption = `[PREVIEW ${mTypeDesc.toUpperCase()} SEKALI LIHAT]\nDari: ${pushName} (@${senderNumber})\n${caption ? `Caption: "${caption}"` : ''}`.trim()
-            if (mType === 'imageMessage') {
-                await sock.sendMessage(devJid, { image: buffer, caption: previewCaption })
-            } else if (mType === 'videoMessage' || mType === 'ptvMessage') {
-                await sock.sendMessage(devJid, { video: buffer, caption: previewCaption })
-            } else if (mType === 'audioMessage') {
-                await sock.sendMessage(devJid, { audio: buffer, mimetype: mime, ptt: ptt })
+        // 4. Kirim Preview Media ke Owner jika buffer tersedia
+        if (buffer && buffer.length > 0) {
+            try {
+                const previewCaption = `[PREVIEW ${mTypeDesc.toUpperCase()} SEKALI LIHAT]\nDari: ${pushName} (@${senderNumber})\n${caption ? `Caption: "${caption}"` : ''}`.trim()
+                if (mType === 'imageMessage') {
+                    await sock.sendMessage(devJid, { image: buffer, caption: previewCaption })
+                } else if (mType === 'videoMessage' || mType === 'ptvMessage') {
+                    await sock.sendMessage(devJid, { video: buffer, caption: previewCaption })
+                } else if (mType === 'audioMessage') {
+                    await sock.sendMessage(devJid, { audio: buffer, mimetype: mime, ptt: ptt })
+                }
+            } catch (e) {
+                botLogger.warn('viewonce', `Failed to send media preview to owner: ${e.message}`)
             }
-        } catch (e) {
-            botLogger.warn('viewonce', `Failed to send preview to owner: ${e.message}`)
         }
 
         // 5. Kirim Prompt Interaktif ke Owner
@@ -138,6 +173,9 @@ export async function handleIncomingViewOnce(sock, msg) {
         promptText += `Lokasi: ${isGroup ? `Grup *${groupName}*` : 'Private Chat'}\n`
         promptText += `Tipe Media: *${mTypeDesc}*\n`
         if (caption) promptText += `Caption: "${caption}"\n`
+        if (!buffer || buffer.length === 0) {
+            promptText += `⚠️ _(Catatan: Pratinjau media sedang diunduh di latar belakang)_\n`
+        }
         promptText += `━━━━━━━━━━━━━━━━━━━━\n`
         promptText += `Balas pesan ini (tanpa batas waktu):\n`
         promptText += `👉 Ketik *1* / *ya* / *teruskan* (Kirim ke chat asal tanpa proteksi sekali lihat)\n`
@@ -164,8 +202,11 @@ export async function handleIncomingViewOnce(sock, msg) {
         }
 
         interactiveService.createSession(promptMsg.key.id, devJid, allowedJids, 'view_once', payload, null)
+        botLogger.info('viewonce', `Successfully created persistent view_once session for ${msgId}`)
 
     } catch (err) {
         botLogger.err('viewonce', err, 'handleIncomingViewOnce')
+        console.error('[ViewOnce] Error handling incoming view-once message:', err)
     }
 }
+
