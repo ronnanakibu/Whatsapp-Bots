@@ -6,10 +6,12 @@ import fs from 'fs'
 import path from 'path'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { unwrapMessage, isViewOnceMessage } from '../utils/message.js'
+import { normalizeNumber } from '../utils/permissions.js'
 import { mediaCache } from '../services/mediaCache.js'
 import { interactiveService } from '../services/interactive.js'
 import { botLogger } from '../utils/logger.js'
 import { logToChannel } from '../utils/channelLogger.js'
+
 
 // Register type runner untuk sesi 'view_once'
 interactiveService.registerTypeRunner('view_once', async (ctx, answer, payload) => {
@@ -54,14 +56,29 @@ interactiveService.registerTypeRunner('view_once', async (ctx, answer, payload) 
  */
 export async function handleIncomingViewOnce(sock, msg) {
     try {
-        if (!msg?.message || msg.key?.fromMe) return
-        if (!isViewOnceMessage(msg)) return
+        if (!msg?.message) return
 
         const from = msg.key.remoteJid
         const isGroup = from.endsWith('@g.us')
         const sender = isGroup ? (msg.key.participant || from) : from
         const senderNumber = sender.split('@')[0].split(':')[0]
+        const senderNorm = normalizeNumber(sender)
+
+        const botNumbers = new Set([
+            normalizeNumber(sock.user?.id || ''),
+            normalizeNumber(sock.user?.lid || ''),
+            ...(process.env.BOT_NUMBER || '').split(',').map(normalizeNumber)
+        ].filter(Boolean))
+
+        // Eksklusi HANYA jika pesan berasal dari nomor bot itu sendiri
+        if (botNumbers.has(senderNorm) || (msg.key.fromMe && botNumbers.has(normalizeNumber(sock.user?.id || '')))) {
+            return
+        }
+
+        if (!isViewOnceMessage(msg)) return
+
         const pushName = msg.pushName || senderNumber
+
 
         const unwrapped = unwrapMessage(msg.message)
         if (!unwrapped) return

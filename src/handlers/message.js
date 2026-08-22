@@ -68,9 +68,6 @@ export async function handleIncomingMessage(sock, { messages }) {
             return
         }
 
-        // Filter: abaikan pesan dari bot sendiri
-        if (msg.key.fromMe) return
-
         // ── PRE-CACHE MEDIA IN BACKGROUND (ANTI-SNITCH PROTECTION) ──
         mediaCache.cacheIncomingMedia(sock, msg).catch(() => {})
 
@@ -79,11 +76,14 @@ export async function handleIncomingMessage(sock, { messages }) {
             console.error('[Handler] Error in handleIncomingViewOnce:', err)
         })
 
+        // Filter: abaikan respon command / AI untuk pesan dari bot sendiri
+        if (msg.key.fromMe) return
 
         // ── AUTO READ (BLUE TICK) ──
         if (process.env.AUTO_READ !== 'false') {
             await sock.readMessages([msg.key]).catch(() => {})
         }
+
 
 
         // ── ANTI-SPAM MIDDLEWARE ──
