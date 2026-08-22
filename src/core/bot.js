@@ -99,7 +99,12 @@ async function startBot() {
         logger: pinoLogger.child({ level: 'fatal' }), // Sembunyikan log internal Baileys yang nyepam
         printQRInTerminal: false, // kita handle manual
         browser: Browsers.ubuntu('Chrome'),
+        getMessage: async (key) => {
+            const msg = await store.loadMessage(key.remoteJid, key.id)
+            return msg?.message || undefined
+        }
     })
+
 
     // Daftarkan socket instance ke logger untuk WhatsApp channel logging
     setSocket(sock)

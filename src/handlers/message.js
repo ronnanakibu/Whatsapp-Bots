@@ -32,11 +32,12 @@ async function processSingleMessage(sock, msg) {
         if (!msg?.message) return
 
 
-        const from = msg.key.remoteJid
+        const from = msg.key.remoteJid || ''
         const isGroup = from.endsWith('@g.us')
-        const isDM = !isGroup && from.endsWith('@s.whatsapp.net')
+        const isDM = !isGroup && (from.endsWith('@s.whatsapp.net') || from.endsWith('@lid'))
         const sender = isGroup ? (msg.key.participant || from) : from
         const pushName = msg.pushName || (sender ? sender.split(':')[0].split('@')[0] : 'System')
+
 
         // Unwrap nested wrappers recursively (ephemeral, viewonce, documentWithCaption)
         const messageContent = unwrapMessage(msg.message)
