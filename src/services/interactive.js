@@ -2,7 +2,7 @@
 // Menyimpan sesi interaktif yang menunggu balasan user (Teks & Tombol Interaktif) dengan persistensi SQLite
 
 import { dbService } from './db.js'
-import { logger } from '../utils/logger.js'
+import { logger, botLogger } from '../utils/logger.js'
 
 class InteractiveService {
     constructor() {
@@ -52,6 +52,8 @@ class InteractiveService {
                 payload: payload || {}
             })
         }
+
+        botLogger.info('interactive', `✨ [SESSION REGISTERED] Prompt ${msgId} (Type: ${sessionType}) for ${Array.isArray(sender) ? sender.join(', ') : sender}`)
 
         // 3. Optional Auto-cleanup jika ttlMs ditentukan (> 0)
         if (ttlMs && ttlMs > 0) {
@@ -177,6 +179,7 @@ class InteractiveService {
 
         if (matchChat(session.chatId) && matchSender(session.sender)) {
             const answer = this.extractAnswer(ctx)
+            botLogger.info('interactive', `🎯 [INTERACTIVE TRIGGER] User answered "${answer}" to prompt ${targetMsgId} (Type: ${session.sessionType})`)
 
             // Eksekusi handler
             if (typeof session.handler === 'function') {
@@ -189,7 +192,7 @@ class InteractiveService {
                 await runner(ctx, answer, session.payload)
                 return true
             } else {
-                logger.warn(`[Interactive] Session ${targetMsgId} matched but no runner found for type "${session.sessionType}"`)
+                botLogger.warn('interactive', `Session ${targetMsgId} matched but no runner found for type "${session.sessionType}"`)
             }
         }
 
@@ -198,4 +201,3 @@ class InteractiveService {
 }
 
 export const interactiveService = new InteractiveService()
-

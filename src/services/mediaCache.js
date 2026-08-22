@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { dbService } from './db.js'
-import { logger } from '../utils/logger.js'
+import { logger, botLogger } from '../utils/logger.js'
 import { unwrapMessage } from '../utils/message.js'
 
 const CACHE_DIR = path.resolve('./storage/media/cache')
@@ -23,11 +23,12 @@ class MediaCacheService {
      */
     getExtension(mType, mimetype = '') {
         if (mimetype.includes('image/png')) return 'png'
+        if (mimetype.includes('image/jpeg') || mimetype.includes('image/jpg')) return 'jpg'
         if (mimetype.includes('image/webp')) return 'webp'
-        if (mimetype.includes('image/')) return 'jpg'
-        if (mimetype.includes('video/')) return 'mp4'
-        if (mimetype.includes('audio/ogg')) return 'ogg'
-        if (mimetype.includes('audio/')) return 'mp3'
+        if (mimetype.includes('video/mp4')) return 'mp4'
+        if (mimetype.includes('audio/ogg') || mimetype.includes('audio/opus')) return 'ogg'
+        if (mimetype.includes('audio/mp4') || mimetype.includes('audio/aac')) return 'm4a'
+        if (mimetype.includes('audio/mpeg') || mimetype.includes('audio/mp3')) return 'mp3'
         if (mType === 'imageMessage') return 'jpg'
         if (mType === 'videoMessage' || mType === 'ptvMessage') return 'mp4'
         if (mType === 'audioMessage') return 'ogg'
@@ -36,13 +37,11 @@ class MediaCacheService {
     }
 
     /**
-     * Auto-cache media saat pesan masuk (asynchronous di background)
+     * Otomatis mengunduh & menyimpan media pesan masuk di latar belakang
      */
     async cacheIncomingMedia(sock, msg) {
         try {
-            if (!msg?.message || msg.key?.fromMe) return
-            const msgId = msg.key.id
-            if (!msgId) return
+            if (!msg?.message) return
 
             const unwrapped = unwrapMessage(msg.message)
             if (!unwrapped) return
@@ -54,14 +53,14 @@ class MediaCacheService {
             const mediaContent = unwrapped[mType]
             if (!mediaContent) return
 
-            // Cek file length jika ada
+            // Batasi ukuran media besar agar hemat bandwidth
             const fileLength = Number(mediaContent.fileLength || 0)
-            if (fileLength > MAX_PRECACHE_SIZE) {
-                logger.debug?.(`[MediaCache] Skipped large media (${(fileLength / 1024 / 1024).toFixed(1)}MB) for ${msgId}`)
-                return
-            }
+            if (fileLength > MAX_PRECACHE_SIZE) return
 
-            const ext = this.getExtension(mType, mediaContent.mimetype || '')
+            const msgId = msg.key?.id
+            if (!msgId) return
+
+            const ext = this.getExtension(mType, mediaContent.mimetype)
             const filePath = path.join(CACHE_DIR, `${msgId}.${ext}`)
 
             // Jika sudah ada di disk, lewati
@@ -78,11 +77,11 @@ class MediaCacheService {
             if (buffer && buffer.length > 0) {
                 await fs.promises.writeFile(filePath, buffer)
                 dbService.updateMessageMediaPath(msgId, filePath)
-                logger.debug?.(`[MediaCache] Cached media ${msgId} (${(buffer.length / 1024).toFixed(1)} KB) -> ${filePath}`)
+                botLogger.info('mediacache', `💾 [PRE-CACHE] Saved ${mType} (${(buffer.length / 1024).toFixed(1)} KB) -> ${filePath}`)
             }
         } catch (err) {
             // Silently ignore background caching errors (e.g. timeout)
-            logger.debug?.(`[MediaCache] Failed to pre-cache media for ${msg?.key?.id}: ${err.message}`)
+            botLogger.debug?.('mediacache', `Failed to pre-cache media for ${msg?.key?.id}: ${err.message}`)
         }
     }
 
@@ -109,50 +108,51 @@ class MediaCacheService {
                 }
             }
 
-            // 3. Fallback: Download via Baileys
-            const unwrapped = unwrapMessage(originalMsg.message)
-            return await downloadMediaMessage(
+            // 3. Fallback: Download langsung dari Baileys
+            const unwrapped = unwrapMessage(originalMsg?.message)
+            if (!unwrapped) return null
+
+            const buffer = await downloadMediaMessage(
                 { key: originalMsg.key, message: unwrapped },
                 'buffer',
                 {},
                 { logger: console, reconnectCount: 3, reuploadRequest: sock?.updateMediaMessage }
             )
+            return buffer
         } catch (err) {
-            logger.warn(`[MediaCache] getMediaBuffer failed: ${err.message}`)
+            logger.warn?.(`[MediaCache] getMediaBuffer failed: ${err.message}`)
             return null
         }
     }
 
     /**
-     * Arsipkan media terhapus ke folder permanen (storage/media/revoked)
+     * Arsipkan media yang di-revoke secara permanen ke storage/media/revoked/
      */
     async archiveRevokedMedia(msgId, buffer, ext = 'bin') {
         try {
-            const filePath = path.join(REVOKED_DIR, `${Date.now()}_${msgId}.${ext}`)
-            if (buffer) {
-                await fs.promises.writeFile(filePath, buffer)
-                return filePath
-            }
+            const targetPath = path.join(REVOKED_DIR, `${msgId}.${ext}`)
+            await fs.promises.writeFile(targetPath, buffer)
+            botLogger.info('mediacache', `🗄️ [REVOKED MEDIA] Archived ${(buffer.length / 1024).toFixed(1)} KB -> ${targetPath}`)
+            return targetPath
         } catch (err) {
-            logger.error(`[MediaCache] Failed to archive revoked media ${msgId}:`, err.message)
+            botLogger.warn('mediacache', `Gagal arsip revoked media ${msgId}: ${err.message}`)
+            return null
         }
-        return null
     }
 
     /**
-     * Arsipkan media sekali lihat (View Once) ke folder permanen (storage/media/viewonce)
+     * Arsipkan media View Once secara permanen ke storage/media/viewonce/
      */
     async archiveViewOnceMedia(msgId, buffer, ext = 'bin') {
         try {
-            const filePath = path.join(VIEWONCE_DIR, `${Date.now()}_${msgId}.${ext}`)
-            if (buffer) {
-                await fs.promises.writeFile(filePath, buffer)
-                return filePath
-            }
+            const targetPath = path.join(VIEWONCE_DIR, `${msgId}.${ext}`)
+            await fs.promises.writeFile(targetPath, buffer)
+            botLogger.info('mediacache', `👁️ [VIEWONCE MEDIA] Archived ${(buffer.length / 1024).toFixed(1)} KB -> ${targetPath}`)
+            return targetPath
         } catch (err) {
-            logger.error(`[MediaCache] Failed to archive view-once media ${msgId}:`, err.message)
+            botLogger.warn('mediacache', `Gagal arsip view once media ${msgId}: ${err.message}`)
+            return null
         }
-        return null
     }
 
     /**

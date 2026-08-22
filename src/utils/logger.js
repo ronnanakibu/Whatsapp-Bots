@@ -78,11 +78,18 @@ const MODULE_COLORS = {
     'ai': C.magenta,
     'memory': C.cyan,
     'media': C.blue,
+    'mediacache': C.blue,
+    'viewonce': C.magenta,
+    'revoke': C.red,
+    'edit': C.yellow,
+    'interactive': C.cyan,
+    'store': C.gray,
     'reminder': C.yellow,
     'admin': C.red,
     'seamless': C.gray,
     'scheduler': C.yellow,
 }
+
 
 function getModuleColor(module) {
     return MODULE_COLORS[module?.toLowerCase()] ?? C.white
@@ -352,11 +359,11 @@ export const botLogger = {
         const from = isGroup
             ? `[GROUP] ${chatId}`
             : `[DM] ${sender}`
-        const bodyPreview = body || ''
-        // Disabled by user request to keep console log focused on commands only
-        // process.stdout.write(
-        //     `${C.gray}${ts()}${C.reset} 📩 ${C.bold}MSG${C.reset}   ${isGroup ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId}${C.reset}` : `${C.green}[DM]${C.reset}   ${C.dim}${sender}${C.reset}`} ${C.dim}type=${type}${C.reset} ${C.white}"${bodyPreview}"${C.reset}\n`
-        // )
+        const bodyPreview = body ? (body.length > 60 ? body.slice(0, 60) + '...' : body) : ''
+        
+        process.stdout.write(
+            `${C.gray}${ts()}${C.reset} 📩 ${C.bold}${C.white}MSG${C.reset}   ${isGroup ? `${C.yellow}[GROUP]${C.reset} ${C.dim}${chatId}${C.reset}` : `${C.green}[DM]${C.reset}   ${C.dim}${sender}${C.reset}`} ${C.cyan}type=${type}${C.reset} ${bodyPreview ? `${C.white}"${bodyPreview}"${C.reset}` : ''}\n`
+        )
         
         // Broadcast to listeners for Message Observatory
         for (const listener of messageListeners) {
@@ -364,11 +371,10 @@ export const botLogger = {
                 listener({ sender, type, body: bodyPreview, isGroup, chatId })
             } catch (err) {}
         }
-        // Jangan kirim log percakapan biasa ke WhatsApp channel log
-        // sendWhatsAppLog(`📩 *[MSG]* ${from} | *type=*${type} | "${bodyPreview}"`)
     },
 
     /** Command execution */
+
     command: (name, sender, args = []) => {
         const argsStr = args.length ? `[${args.join(', ')}]` : ''
         process.stdout.write(

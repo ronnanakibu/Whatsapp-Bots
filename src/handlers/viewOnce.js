@@ -95,9 +95,10 @@ export async function handleIncomingViewOnce(sock, msg) {
         const mime = mediaContent.mimetype || ''
         const ptt = Boolean(mediaContent.ptt)
 
-        botLogger.info('viewonce', `[INTERCEPT] Detected View-Once ${mType} from ${pushName} (@${senderNumber}) in ${from}`)
+        botLogger.info('viewonce', `👁️ [DETECTED] View-Once ${mType} from ${pushName} (@${senderNumber}) in ${from} (ID: ${msgId})`)
 
         // 1. Download buffer media dengan fallback multi-strategi
+        botLogger.info('viewonce', `⏳ [DOWNLOADING] Fetching media buffer for ${msgId} (${mType})...`)
         let buffer = null
         try {
             buffer = await downloadMediaMessage(
@@ -136,19 +137,22 @@ export async function handleIncomingViewOnce(sock, msg) {
         let savedPath = null
         if (buffer && buffer.length > 0) {
             savedPath = await mediaCache.archiveViewOnceMedia(msgId, buffer, ext)
+            botLogger.info('viewonce', `💾 [SAVED] ${(buffer.length / 1024).toFixed(1)} KB archived -> ${savedPath}`)
+        } else {
+            botLogger.warn('viewonce', `⚠️ [MEDIA MISSING] Buffer not downloaded immediately for ${msgId}`)
         }
 
         // 3. Siapkan tujuan Owner
         const ownerRaw = (process.env.OWNER_NUMBER || '').split(',').map(n => n.trim()).filter(Boolean)
         if (ownerRaw.length === 0) {
-            botLogger.warn('viewonce', 'No OWNER_NUMBER configured in .env')
+            botLogger.warn('viewonce', '❌ No OWNER_NUMBER configured in .env')
             return
         }
 
         const targetOwner = ownerRaw.find(n => !n.includes('@lid')) || ownerRaw[0]
         const devNumber = targetOwner.replace(/[^0-9]/g, '')
         if (!devNumber) {
-            botLogger.warn('viewonce', `Could not extract valid phone number from ${targetOwner}`)
+            botLogger.warn('viewonce', `❌ Could not extract valid phone number from ${targetOwner}`)
             return
         }
 
@@ -171,6 +175,7 @@ export async function handleIncomingViewOnce(sock, msg) {
         // 4. Kirim Preview Media ke Owner jika buffer tersedia
         if (buffer && buffer.length > 0) {
             try {
+                botLogger.info('viewonce', `📤 [PREVIEW] Sending ${mTypeDesc} preview to Owner (${devJid})...`)
                 const previewCaption = `[PREVIEW ${mTypeDesc.toUpperCase()} SEKALI LIHAT]\nDari: ${pushName} (@${senderNumber})\n${caption ? `Caption: "${caption}"` : ''}`.trim()
                 if (mType === 'imageMessage') {
                     await sock.sendMessage(devJid, { image: buffer, caption: previewCaption })
@@ -198,6 +203,7 @@ export async function handleIncomingViewOnce(sock, msg) {
         promptText += `👉 Ketik *1* / *ya* / *teruskan* (Kirim ke chat asal tanpa proteksi sekali lihat)\n`
         promptText += `👉 Ketik *0* / *ga* / *simpan* (Simpan saja di arsip lokal owner)`
 
+        botLogger.info('viewonce', `📤 [PROMPT] Sending interactive decision prompt to Owner (${devJid})...`)
         const promptMsg = await sock.sendMessage(devJid, { text: promptText })
 
         // Log ke Channel
@@ -219,7 +225,8 @@ export async function handleIncomingViewOnce(sock, msg) {
         }
 
         interactiveService.createSession(promptMsg.key.id, devJid, allowedJids, 'view_once', payload, null)
-        botLogger.info('viewonce', `Successfully created persistent view_once session for ${msgId}`)
+        botLogger.info('viewonce', `✅ [SESSION CREATED] Persistent session registered for prompt ${promptMsg.key.id}`)
+
 
     } catch (err) {
         botLogger.err('viewonce', err, 'handleIncomingViewOnce')

@@ -68,6 +68,9 @@ async function processSingleMessage(sock, msg) {
             body = messageContent.listResponseMessage.singleSelectReply.selectedRowId
         }
 
+        // Log setiap incoming message ke konsol terminal
+        botLogger.message({ sender, type, body, isGroup, chatId: from })
+
         // Hook Anti-Delete & Anti-Edit
         if (type === 'protocolMessage') {
             const { checkRevokeUpsert } = await import('./revoke.js')
@@ -91,16 +94,12 @@ async function processSingleMessage(sock, msg) {
             await sock.readMessages([msg.key]).catch(() => {})
         }
 
-
-
         // ── ANTI-SPAM MIDDLEWARE ──
         if (isSpamming(sender)) {
             botLogger.warn('handler', `Anti-spam: blocked message from ${sender}`)
             return
         }
 
-        // Log setiap incoming message
-        botLogger.message({ sender, type, body, isGroup, chatId: from })
 
         // ─────────────────────────────────────────────
         // CONTEXT BUILDER
