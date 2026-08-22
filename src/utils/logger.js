@@ -267,6 +267,8 @@ export function removeMessageListener(cb) {
 const stripAnsi = (str) => str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '')
 
 // Hook process.stdout.write
+const consoleLogPath = './storage/logs/console.log'
+const consoleLogStream = fs.createWriteStream(consoleLogPath, { flags: 'a' })
 const originalWrite = process.stdout.write.bind(process.stdout)
 process.stdout.write = (chunk, encoding, callback) => {
     const str = chunk ? chunk.toString() : ''
@@ -279,9 +281,13 @@ process.stdout.write = (chunk, encoding, callback) => {
         for (const listener of logListeners) {
             try { listener(plainText) } catch (err) {}
         }
+        try {
+            consoleLogStream.write(plainText + '\n')
+        } catch (_) {}
     }
     return originalWrite(chunk, encoding, callback)
 }
+
 
 // ─────────────────────────────────────────────
 // CORE RAW LOGGER — langsung ke stdout, tanpa pino

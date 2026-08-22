@@ -1,10 +1,12 @@
 // src/utils/message.js
 
 /**
- * Recursively unwrap nested wrappers (ephemeral, view-once, documentWithCaption) from a message object.
+ * Recursively unwrap nested wrappers (ephemeral, view-once, documentWithCaption, etc.) from a message object.
+ * Robustly ignores metadata keys such as messageContextInfo and deviceListMetadata.
  */
 export function unwrapMessage(m) {
-    if (!m) return null
+    if (!m || typeof m !== 'object') return null
+
     const wrappers = [
         'ephemeralMessage',
         'viewOnceMessage',
@@ -16,12 +18,32 @@ export function unwrapMessage(m) {
         'associatedChildMessage',
         'groupMentionedMessage'
     ]
-    const mType = Object.keys(m)[0]
-    if (wrappers.includes(mType)) {
-        return unwrapMessage(m[mType].message || m[mType])
+
+    const ignoredKeys = new Set([
+        'messageContextInfo',
+        'senderKeyDistributionMessage',
+        'deviceListMetadata',
+        'deviceListMetadataVersion'
+    ])
+
+    const keys = Object.keys(m)
+    
+    // 1. Cek apakah ada key wrapper di dalam object m
+    const wrapperKey = keys.find(k => wrappers.includes(k))
+    if (wrapperKey) {
+        const inner = m[wrapperKey]?.message || m[wrapperKey]
+        return unwrapMessage(inner)
     }
+
+    // 2. Jika tidak ada wrapper, cari content key yang bukan ignoredKeys
+    const contentKey = keys.find(k => !ignoredKeys.has(k))
+    if (contentKey) {
+        return { [contentKey]: m[contentKey] }
+    }
+
     return m
 }
+
 
 
 /**
