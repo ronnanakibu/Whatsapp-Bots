@@ -4,6 +4,8 @@ import { botLogger } from '../utils/logger.js'
 import { interactiveService } from '../services/interactive.js'
 import { mediaCache } from '../services/mediaCache.js'
 import { unwrapMessage } from '../utils/message.js'
+import { normalizeNumber } from '../utils/permissions.js'
+
 
 // Cache untuk mencegah duplicate trigger revoke
 const processedRevokes = new Set()
@@ -58,17 +60,24 @@ async function processRevokedKey(sock, key) {
 
         const isGroup = key.remoteJid.endsWith('@g.us')
         const sender = isGroup ? (originalMsg.key.participant || key.remoteJid) : key.remoteJid
-        const botNumber = (sock.user?.id || '').split(':')[0].split('@')[0]
-        const senderNumber = sender.split('@')[0].split(':')[0]
+        const botNumbers = new Set([
+            normalizeNumber(sock.user?.id || ''),
+            normalizeNumber(sock.user?.lid || ''),
+            ...(process.env.BOT_NUMBER || '').split(',').map(normalizeNumber)
+        ].filter(Boolean))
+
+        const senderNorm = normalizeNumber(sender)
 
         // Abaikan jika pesan yang dihapus berasal dari bot sendiri
-        if (key.fromMe || originalMsg.key.fromMe || senderNumber === botNumber) {
+        if (key.fromMe || originalMsg.key.fromMe || botNumbers.has(senderNorm)) {
             botLogger.info('revoke', 'Ignored revoked message from self/bot.')
             return
         }
 
+        const senderNumber = sender.split('@')[0].split(':')[0]
         const pushName = originalMsg.pushName || senderNumber
         const unwrapped = unwrapMessage(originalMsg.message)
+
         if (!unwrapped) return
 
         const mType = Object.keys(unwrapped)[0]
@@ -138,6 +147,53 @@ function enqueueRevokedItem(sock, item) {
     }
 }
 
+import fs from 'fs'
+
+// Register type runner untuk sesi 'anti_snitch'
+interactiveService.registerTypeRunner('anti_snitch', async (ctx, answer, payload) => {
+    const { sock } = ctx
+    const { items, chatJid, sender, senderNumber, pushName, isGroup, groupName, hasViewOnce } = payload
+
+    if (interactiveService.isAffirmative(answer)) {
+        const headline = `🕵️‍♂️ *[ANTI-DELETE]* 🕵️‍♂️\nAda yang hapus pesan nih: *@${senderNumber}* (*${pushName}*)${hasViewOnce ? '\n👁️ *[ASLINYA PESAN SEKALI LIHAT]*' : ''}\n━━━━━━━━━━━━━━━━━━━━`
+
+        for (let i = 0; i < items.length; i++) {
+            const it = items[i]
+            const prefixHeader = i === 0 ? `${headline}\n\n` : ''
+
+            try {
+                let buffer = null
+                if (it.mediaPath && fs.existsSync(it.mediaPath)) {
+                    buffer = fs.readFileSync(it.mediaPath)
+                }
+
+                if (buffer) {
+                    if (it.mType === 'imageMessage') {
+                        await sock.sendMessage(chatJid, { image: buffer, caption: `${prefixHeader}${it.body || ''}`.trim(), mentions: [sender] })
+                    } else if (it.mType === 'videoMessage' || it.mType === 'ptvMessage') {
+                        await sock.sendMessage(chatJid, { video: buffer, caption: `${prefixHeader}${it.body || ''}`.trim(), mentions: [sender] })
+                    } else if (it.mType === 'audioMessage') {
+                        if (prefixHeader) await sock.sendMessage(chatJid, { text: prefixHeader, mentions: [sender] })
+                        await sock.sendMessage(chatJid, { audio: buffer, mimetype: it.mime, ptt: it.ptt })
+                    } else if (it.mType === 'stickerMessage') {
+                        if (prefixHeader) await sock.sendMessage(chatJid, { text: prefixHeader, mentions: [sender] })
+                        await sock.sendMessage(chatJid, { sticker: buffer })
+                    } else if (it.mType === 'documentMessage') {
+                        await sock.sendMessage(chatJid, { document: buffer, mimetype: it.mime, caption: `${prefixHeader}${it.body || ''}`.trim(), mentions: [sender] })
+                    }
+                } else if (it.body) {
+                    await sock.sendMessage(chatJid, { text: `${prefixHeader}"${it.body}"`, mentions: [sender] })
+                }
+            } catch (err) {
+                botLogger.err('revoke', err, `Failed to forward item ${i + 1}`)
+            }
+        }
+        await ctx.reply(`✅ Berhasil meneruskan ${items.length} pesan terhapus ke ${isGroup ? groupName : 'chat asal'}.`)
+    } else if (interactiveService.isNegative(answer)) {
+        await ctx.reply('🔒 Pesan diabaikan. Seluruh media tetap tersimpan aman di arsip lokal bot.')
+    }
+})
+
 /**
  * Dispatch bundled revoked messages to Owner
  */
@@ -170,10 +226,14 @@ async function dispatchBatchRevoke(sock, queueKey) {
 
         botLogger.info('revoke', `Dispatching ${items.length} revoked item(s) from ${pushName} in ${groupName}`)
 
-        // 1. Kirim preview media terlebih dahulu ke Owner
+        // 1. Simpan media ke disk permanen dan kirim preview ke Owner
         for (const it of items) {
             if (it.buffer) {
                 try {
+                    const ext = mediaCache.getExtension(it.mType, it.mime)
+                    const savedPath = await mediaCache.archiveRevokedMedia(it.key.id, it.buffer, ext)
+                    it.mediaPath = savedPath
+
                     const tag = it.isViewOnce ? ' 👁️ [VIEW ONCE]' : ''
                     if (it.mType === 'imageMessage') {
                         await sock.sendMessage(devJid, { image: it.buffer, caption: `[PREVIEW FOTO${tag}]\n${it.body || ''}`.trim() })
@@ -219,7 +279,7 @@ async function dispatchBatchRevoke(sock, queueKey) {
         })
 
         promptText += `━━━━━━━━━━━━━━━━━━━━\n`
-        promptText += `Balas pesan ini:\n`
+        promptText += `Balas pesan ini (tanpa batas waktu):\n`
         promptText += `👉 Ketik *1* / *ya* / *spill* (Kirim ke grup asal)\n`
         promptText += `👉 Ketik *0* / *ga* / *batal* (Abaikan demi privasi)`
 
@@ -229,55 +289,42 @@ async function dispatchBatchRevoke(sock, queueKey) {
         // Log ke Channel
         await logToChannel(sock, { text: `[LOG ANTI-SNITCH]\nPengirim: ${pushName} (@${senderNumber})\nChat: ${isGroup ? groupName : 'Private'}\nTotal: ${items.length} pesan dihapus.` })
 
-        // Daftarkan sesi interaktif
-        interactiveService.createSession(promptMsg.key.id, devJid, allowedJids, async (ctx, answer) => {
-            if (interactiveService.isAffirmative(answer)) {
-                // Owner setuju spill ke grup!
-                const headline = `🕵️‍♂️ *[ANTI-DELETE]* 🕵️‍♂️\nAda yang hapus pesan nih: *@${senderNumber}* (*${pushName}*)${hasViewOnce ? '\n👁️ *[ASLINYA PESAN SEKALI LIHAT]*' : ''}\n━━━━━━━━━━━━━━━━━━━━`
+        // 3. Bersihkan buffer RAM dari items sebelum serialisasi ke database
+        const serializableItems = items.map(it => ({
+            key: it.key,
+            sender: it.sender,
+            senderNumber: it.senderNumber,
+            pushName: it.pushName,
+            isGroup: it.isGroup,
+            chatJid: it.chatJid,
+            mType: it.mType,
+            body: it.body,
+            mediaPath: it.mediaPath || null,
+            mime: it.mime,
+            isViewOnce: it.isViewOnce,
+            ptt: it.ptt,
+            deletedAt: it.deletedAt
+        }))
 
-                for (let i = 0; i < items.length; i++) {
-                    const it = items[i]
-                    const prefixHeader = i === 0 ? `${headline}\n\n` : ''
+        const payload = {
+            items: serializableItems,
+            chatJid,
+            sender,
+            senderNumber,
+            pushName,
+            isGroup,
+            groupName,
+            hasViewOnce
+        }
 
-                    try {
-                        if (it.buffer) {
-                            if (it.mType === 'imageMessage') {
-                                await sock.sendMessage(chatJid, { image: it.buffer, caption: `${prefixHeader}${it.body || ''}`.trim(), mentions: [sender] })
-                            } else if (it.mType === 'videoMessage' || it.mType === 'ptvMessage') {
-                                await sock.sendMessage(chatJid, { video: it.buffer, caption: `${prefixHeader}${it.body || ''}`.trim(), mentions: [sender] })
-                            } else if (it.mType === 'audioMessage') {
-                                if (prefixHeader) await sock.sendMessage(chatJid, { text: prefixHeader, mentions: [sender] })
-                                await sock.sendMessage(chatJid, { audio: it.buffer, mimetype: it.mime, ptt: it.ptt })
-                            } else if (it.mType === 'stickerMessage') {
-                                if (prefixHeader) await sock.sendMessage(chatJid, { text: prefixHeader, mentions: [sender] })
-                                await sock.sendMessage(chatJid, { sticker: it.buffer })
-                            } else if (it.mType === 'documentMessage') {
-                                await sock.sendMessage(chatJid, { document: it.buffer, mimetype: it.mime, caption: `${prefixHeader}${it.body || ''}`.trim(), mentions: [sender] })
-                            }
-                        } else if (it.body) {
-                            await sock.sendMessage(chatJid, { text: `${prefixHeader}"${it.body}"`, mentions: [sender] })
-                        }
-                    } catch (err) {
-                        botLogger.err('revoke', err, `Failed to forward item ${i + 1}`)
-                    }
-                }
-                await ctx.reply(`✅ Berhasil meneruskan ${items.length} pesan terhapus ke ${isGroup ? groupName : 'chat asal'}.`)
-            } else if (interactiveService.isNegative(answer)) {
-                // Owner tolak / abaikan
-                // Arsipkan media ke storage lokal
-                for (const it of items) {
-                    if (it.buffer) {
-                        const ext = mediaCache.getExtension(it.mType, it.mime)
-                        await mediaCache.archiveRevokedMedia(it.key.id, it.buffer, ext)
-                    }
-                }
-                await ctx.reply('🔒 Pesan diabaikan. Seluruh media tetap tersimpan aman di arsip lokal bot.')
-            }
-        })
+        // Daftarkan sesi interaktif permanen di SQLite (ttlMs = null)
+        interactiveService.createSession(promptMsg.key.id, devJid, allowedJids, 'anti_snitch', payload, null)
+
     } catch (err) {
         botLogger.err('revoke', err, 'dispatchBatchRevoke')
     }
 }
+
 
 /**
  * Handle WhatsApp Edit Message (protocolMessage.type === 14)
@@ -290,6 +337,22 @@ async function handleEditMessage(sock, msg) {
         const targetKey = proto.key
         if (!targetKey?.id) return
 
+        const isGroup = targetKey.remoteJid.endsWith('@g.us')
+        const sender = isGroup ? (targetKey.participant || targetKey.remoteJid) : targetKey.remoteJid
+        const botNumbers = new Set([
+            normalizeNumber(sock.user?.id || ''),
+            normalizeNumber(sock.user?.lid || ''),
+            ...(process.env.BOT_NUMBER || '').split(',').map(normalizeNumber)
+        ].filter(Boolean))
+
+        const senderNorm = normalizeNumber(sender)
+
+        // Abaikan jika pesan yang diedit berasal dari bot sendiri
+        if (msg.key?.fromMe || targetKey.fromMe || botNumbers.has(senderNorm)) {
+            botLogger.info('revoke', 'Ignored edited message from self/bot.')
+            return
+        }
+
         const editedProto = proto.editedMessage
         const newUnwrapped = unwrapMessage(editedProto)
         if (!newUnwrapped) return
@@ -299,16 +362,22 @@ async function handleEditMessage(sock, msg) {
 
         // Ambil pesan versi sebelumnya dari SQLite store
         const oldMsg = await store.loadMessage(targetKey.remoteJid, targetKey.id)
+
+        // Cek apakah pesan lama tercatat dari bot sendiri
+        if (oldMsg?.key?.fromMe || botNumbers.has(normalizeNumber(oldMsg?.key?.participant || oldMsg?.key?.remoteJid || ''))) {
+            botLogger.info('revoke', 'Ignored edited message from self/bot (oldMsg check).')
+            return
+        }
+
         const oldUnwrapped = oldMsg ? unwrapMessage(oldMsg.message) : null
         const oldText = oldUnwrapped ? (oldUnwrapped.conversation || oldUnwrapped.extendedTextMessage?.text || '') : '(Pesan lama tidak tersimpan)'
 
         // Jika teks tidak berubah, abaikan
         if (oldText === newText) return
 
-        const isGroup = targetKey.remoteJid.endsWith('@g.us')
-        const sender = isGroup ? (targetKey.participant || targetKey.remoteJid) : targetKey.remoteJid
         const senderNumber = sender.split('@')[0].split(':')[0]
         const pushName = msg.pushName || oldMsg?.pushName || senderNumber
+
 
         let groupName = 'Grup'
         if (isGroup) {

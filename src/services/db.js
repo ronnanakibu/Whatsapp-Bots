@@ -171,6 +171,16 @@ db.exec(`
     );
     CREATE INDEX IF NOT EXISTS idx_msg_store_lookup ON message_store(chat_jid, id);
     CREATE INDEX IF NOT EXISTS idx_msg_store_created ON message_store(created_at);
+
+    CREATE TABLE IF NOT EXISTS interactive_sessions (
+        id TEXT PRIMARY KEY,
+        chat_id TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        session_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_interactive_lookup ON interactive_sessions(id);
 `)
 
 // 2. Safe Migration untuk database lama
@@ -182,6 +192,19 @@ try { db.exec('ALTER TABLE songs ADD COLUMN genre TEXT DEFAULT "General"') } cat
 try { db.exec('ALTER TABLE play_history ADD COLUMN completed INTEGER DEFAULT 1') } catch (_) {}
 try { db.exec('ALTER TABLE play_history ADD COLUMN skipped_at_second INTEGER DEFAULT 0') } catch (_) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_users_last_seen_at ON users(last_seen_at)') } catch (_) {}
+try {
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS interactive_sessions (
+            id TEXT PRIMARY KEY,
+            chat_id TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            session_type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+        CREATE INDEX IF NOT EXISTS idx_interactive_lookup ON interactive_sessions(id);
+    `)
+} catch (_) {}
 
 // 3. Seeding Default Achievements
 try {
@@ -265,7 +288,7 @@ export class DBService {
         }
     }
 
-    pruneMessages(days = 14) {
+    pruneMessages(days = 30) {
         try {
             const cutoff = Math.floor(Date.now() / 1000) - (days * 86400)
             const result = db.prepare('DELETE FROM message_store WHERE created_at < ?').run(cutoff)
@@ -274,6 +297,67 @@ export class DBService {
         } catch (err) {
             logger.error('[DB] Failed to prune messages:', err.message)
             return 0
+        }
+    }
+
+    // ── INTERACTIVE SESSIONS (PERSISTENT / INFINITE LIFETIME) ──
+
+    saveInteractiveSession({ id, chatId, sender, sessionType, payload }) {
+        try {
+            const chatIdStr = Array.isArray(chatId) ? JSON.stringify(chatId) : String(chatId)
+            const senderStr = Array.isArray(sender) ? JSON.stringify(sender) : String(sender)
+            const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload)
+
+            return db.prepare(`
+                INSERT INTO interactive_sessions (id, chat_id, sender, session_type, payload)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    chat_id = excluded.chat_id,
+                    sender = excluded.sender,
+                    session_type = excluded.session_type,
+                    payload = excluded.payload,
+                    created_at = unixepoch()
+            `).run(id, chatIdStr, senderStr, sessionType, payloadStr)
+        } catch (err) {
+            logger.error(`[DB] Failed to save interactive session ${id}:`, err.message)
+            return null
+        }
+    }
+
+    getInteractiveSession(id) {
+        try {
+            const row = db.prepare('SELECT * FROM interactive_sessions WHERE id = ?').get(id)
+            if (!row) return null
+
+            let chatId = row.chat_id
+            try { if (chatId.startsWith('[')) chatId = JSON.parse(chatId) } catch (_) {}
+
+            let sender = row.sender
+            try { if (sender.startsWith('[')) sender = JSON.parse(sender) } catch (_) {}
+
+            let payload = row.payload
+            try { payload = JSON.parse(row.payload) } catch (_) {}
+
+            return {
+                id: row.id,
+                chatId,
+                sender,
+                sessionType: row.session_type,
+                payload,
+                createdAt: row.created_at
+            }
+        } catch (err) {
+            logger.error(`[DB] Failed to get interactive session ${id}:`, err.message)
+            return null
+        }
+    }
+
+    deleteInteractiveSession(id) {
+        try {
+            return db.prepare('DELETE FROM interactive_sessions WHERE id = ?').run(id)
+        } catch (err) {
+            logger.error(`[DB] Failed to delete interactive session ${id}:`, err.message)
+            return null
         }
     }
 }

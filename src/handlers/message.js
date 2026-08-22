@@ -17,8 +17,10 @@ import { interactiveService } from '../services/interactive.js'
 import { processAiResponse, tryDirectRoute } from '../utils/aiRouter.js'
 import { unwrapMessage, getCleanQuoted } from '../utils/message.js'
 import { mediaCache } from '../services/mediaCache.js'
+import { handleIncomingViewOnce } from './viewOnce.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
+
     try {
         const msg = messages[0]
         if (!msg.message) return
@@ -72,10 +74,14 @@ export async function handleIncomingMessage(sock, { messages }) {
         // ── PRE-CACHE MEDIA IN BACKGROUND (ANTI-SNITCH PROTECTION) ──
         mediaCache.cacheIncomingMedia(sock, msg).catch(() => {})
 
+        // ── INTERCEPT VIEW ONCE (ONE-TIME MEDIA NOTIFICATION TO OWNER) ──
+        handleIncomingViewOnce(sock, msg).catch(() => {})
+
         // ── AUTO READ (BLUE TICK) ──
         if (process.env.AUTO_READ !== 'false') {
             await sock.readMessages([msg.key]).catch(() => {})
         }
+
 
         // ── ANTI-SPAM MIDDLEWARE ──
         if (isSpamming(sender)) {
@@ -326,7 +332,16 @@ function isSmartReplyFollowup(body, isGroup, isMentioned, type) {
 }
 
         // ─────────────────────────────────────────────
-        // ROUTE 2: ROUTE TO CENTRAL AI FLOW (SMART REPLY FILTERED)
+        // ROUTE 2: INTERACTIVE SESSIONS (ANTI-SNITCH & VIEW-ONCE PROMPTS)
+        // ─────────────────────────────────────────────
+
+        if (!isCommand) {
+            const isInteractive = await interactiveService.handleReply(ctx)
+            if (isInteractive) return
+        }
+
+        // ─────────────────────────────────────────────
+        // ROUTE 3: ROUTE TO CENTRAL AI FLOW (SMART REPLY FILTERED)
         // ─────────────────────────────────────────────
 
         if (isReplyToBot && (body.trim() || type === 'imageMessage')) {
@@ -342,7 +357,7 @@ function isSmartReplyFollowup(body, isGroup, isMentioned, type) {
         }
 
         // ─────────────────────────────────────────────
-        // ROUTE 3: MENTION DI GRUP
+        // ROUTE 4: MENTION DI GRUP
         // ─────────────────────────────────────────────
 
         if (isMentionedInGroup && (bodyWithoutMention || type === 'imageMessage')) {
@@ -355,16 +370,7 @@ function isSmartReplyFollowup(body, isGroup, isMentioned, type) {
         }
 
         // ─────────────────────────────────────────────
-        // ROUTE 5: INTERACTIVE SESSIONS
-        // ─────────────────────────────────────────────
-
-        if (!isCommand) {
-            const isInteractive = await interactiveService.handleReply(ctx)
-            if (isInteractive) return
-        }
-
-        // ─────────────────────────────────────────────
-        // ROUTE 4: DM TRIGGER
+        // ROUTE 5: DM TRIGGER
         // ─────────────────────────────────────────────
 
         if (isDMTrigger) {
@@ -375,6 +381,7 @@ function isSmartReplyFollowup(body, isGroup, isMentioned, type) {
             await executeAiFlow(ctx, body)
             return
         }
+
 
     } catch (err) {
         botLogger.err('handler', err, 'fatal')

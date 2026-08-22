@@ -1,32 +1,73 @@
 // src/services/interactive.js
-// Menyimpan sesi interaktif yang menunggu balasan user (Teks & Tombol Interaktif)
+// Menyimpan sesi interaktif yang menunggu balasan user (Teks & Tombol Interaktif) dengan persistensi SQLite
+
+import { dbService } from './db.js'
+import { logger } from '../utils/logger.js'
 
 class InteractiveService {
     constructor() {
         this.sessions = new Map()
+        this.typeRunners = new Map()
     }
 
     /**
-     * Membuat sesi interaktif baru
+     * Mendaftarkan handler dispatcher berdasarkan sessionType (e.g. 'anti_snitch', 'view_once')
+     */
+    registerTypeRunner(type, runnerFn) {
+        this.typeRunners.set(type, runnerFn)
+    }
+
+    /**
+     * Membuat sesi interaktif baru (default tanpa batas waktu / infinite)
      * @param {string} msgId - ID pesan bot yang akan di-reply oleh user / di-klik tombolnya
      * @param {string|string[]} chatId - Chat ID
      * @param {string|string[]} sender - Pengirim yang berhak merespon
-     * @param {Function} handler - Fungsi yang akan dipanggil saat ada balasan
-     * @param {number} [ttlMs=300000] - Masa berlaku sesi (default 5 menit)
+     * @param {Function|string} handlerOrType - Fungsi callback ATAU nama tipe sesi yang terdaftar
+     * @param {Object} [payload=null] - Data serializable untuk disimpan di SQLite
+     * @param {number|null} [ttlMs=null] - Masa berlaku sesi (default null = permanen sampai dijawab)
      */
-    createSession(msgId, chatId, sender, handler, ttlMs = 5 * 60 * 1000) {
+    createSession(msgId, chatId, sender, handlerOrType, payload = null, ttlMs = null) {
         if (!msgId) return
+
+        const isFn = typeof handlerOrType === 'function'
+        const sessionType = isFn ? (payload?.sessionType || 'custom') : String(handlerOrType)
+
+        // 1. Simpan di In-Memory Cache
         this.sessions.set(msgId, {
             chatId,
             sender,
-            handler,
+            handler: isFn ? handlerOrType : null,
+            sessionType,
+            payload,
             timestamp: Date.now()
         })
 
-        // Auto-cleanup
-        setTimeout(() => {
-            this.sessions.delete(msgId)
-        }, ttlMs)
+        // 2. Simpan di SQLite Database untuk persistensi permanen
+        if (payload || !isFn) {
+            dbService.saveInteractiveSession({
+                id: msgId,
+                chatId,
+                sender,
+                sessionType,
+                payload: payload || {}
+            })
+        }
+
+        // 3. Optional Auto-cleanup jika ttlMs ditentukan (> 0)
+        if (ttlMs && ttlMs > 0) {
+            setTimeout(() => {
+                this.deleteSession(msgId)
+            }, ttlMs)
+        }
+    }
+
+    /**
+     * Hapus sesi dari memory dan SQLite
+     */
+    deleteSession(msgId) {
+        if (!msgId) return
+        this.sessions.delete(msgId)
+        dbService.deleteInteractiveSession(msgId)
     }
 
     /**
@@ -63,20 +104,26 @@ class InteractiveService {
     }
 
     /**
-     * Helper pengenal jawaban "Ya / Setuju / Spill"
+     * Helper pengenal jawaban "Ya / Setuju / Spill / Teruskan"
      */
     isAffirmative(answer = '') {
         const clean = String(answer).trim().toLowerCase()
-        const positives = ['1', 'ya', 'yes', 'spill', 'kirim', 'gas', 'lanjut', 'y', 'oke', 'ok', 'antisnitch_1', 'true']
+        const positives = [
+            '1', 'ya', 'yes', 'spill', 'kirim', 'gas', 'lanjut', 'y', 'oke', 'ok',
+            'teruskan', 'terusin', 'forward', 'share', 'buka', 'antisnitch_1', 'viewonce_1', 'true'
+        ]
         return positives.includes(clean)
     }
 
     /**
-     * Helper pengenal jawaban "Tidak / Batal / Abaikan"
+     * Helper pengenal jawaban "Tidak / Batal / Abaikan / Simpan"
      */
     isNegative(answer = '') {
         const clean = String(answer).trim().toLowerCase()
-        const negatives = ['0', 'ga', 'gak', 'ngga', 'tidak', 'no', 'batal', 'abaikan', 'skip', 'n', 'antisnitch_0', 'false', 'privasi']
+        const negatives = [
+            '0', 'ga', 'gak', 'ngga', 'nggak', 'tidak', 'no', 'batal', 'abaikan', 'skip',
+            'n', 'simpan', 'save', 'antisnitch_0', 'viewonce_0', 'false', 'privasi'
+        ]
         return negatives.includes(clean)
     }
 
@@ -94,18 +141,56 @@ class InteractiveService {
 
         if (!targetMsgId) return false
 
-        const session = this.sessions.get(targetMsgId)
+        // 1. Cek memory session terlebih dahulu
+        let session = this.sessions.get(targetMsgId)
+
+        // 2. Fallback: Load dari SQLite jika session di memory hilang (misal setelah restart bot)
+        if (!session) {
+            const dbSession = dbService.getInteractiveSession(targetMsgId)
+            if (dbSession) {
+                session = {
+                    chatId: dbSession.chatId,
+                    sender: dbSession.sender,
+                    sessionType: dbSession.sessionType,
+                    payload: dbSession.payload,
+                    handler: null
+                }
+            }
+        }
+
         if (!session) return false
 
-        // Pastikan chat dan pengirim cocok
-        const isChatMatch = Array.isArray(session.chatId) ? session.chatId.includes(chatId) : session.chatId === chatId
-        const isSenderMatch = Array.isArray(session.sender) ? session.sender.includes(sender) : session.sender === sender
+        // 3. Pastikan chat dan pengirim cocok
+        const normalize = (j) => String(j || '').replace(/[^0-9]/g, '')
+        const senderNorm = normalize(sender)
+        const chatNorm = normalize(chatId)
 
-        if (isChatMatch && isSenderMatch) {
-            this.sessions.delete(targetMsgId)
+        const matchSender = (allowed) => {
+            if (Array.isArray(allowed)) return allowed.some(s => normalize(s) === senderNorm)
+            return normalize(allowed) === senderNorm
+        }
+
+        const matchChat = (allowed) => {
+            if (Array.isArray(allowed)) return allowed.some(c => normalize(c) === chatNorm)
+            return normalize(allowed) === chatNorm
+        }
+
+        if (matchChat(session.chatId) && matchSender(session.sender)) {
             const answer = this.extractAnswer(ctx)
-            await session.handler(ctx, answer)
-            return true
+
+            // Eksekusi handler
+            if (typeof session.handler === 'function') {
+                this.deleteSession(targetMsgId)
+                await session.handler(ctx, answer)
+                return true
+            } else if (session.sessionType && this.typeRunners.has(session.sessionType)) {
+                this.deleteSession(targetMsgId)
+                const runner = this.typeRunners.get(session.sessionType)
+                await runner(ctx, answer, session.payload)
+                return true
+            } else {
+                logger.warn(`[Interactive] Session ${targetMsgId} matched but no runner found for type "${session.sessionType}"`)
+            }
         }
 
         return false
@@ -113,3 +198,4 @@ class InteractiveService {
 }
 
 export const interactiveService = new InteractiveService()
+

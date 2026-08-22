@@ -7,10 +7,13 @@ import { unwrapMessage } from '../utils/message.js'
 
 const CACHE_DIR = path.resolve('./storage/media/cache')
 const REVOKED_DIR = path.resolve('./storage/media/revoked')
+const VIEWONCE_DIR = path.resolve('./storage/media/viewonce')
 
 // Pastikan folder penyimpanan ada
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true })
 if (!fs.existsSync(REVOKED_DIR)) fs.mkdirSync(REVOKED_DIR, { recursive: true })
+if (!fs.existsSync(VIEWONCE_DIR)) fs.mkdirSync(VIEWONCE_DIR, { recursive: true })
+
 
 const MAX_PRECACHE_SIZE = 15 * 1024 * 1024 // 15MB limit untuk auto-cache
 
@@ -132,6 +135,22 @@ class MediaCacheService {
             }
         } catch (err) {
             logger.error(`[MediaCache] Failed to archive revoked media ${msgId}:`, err.message)
+        }
+        return null
+    }
+
+    /**
+     * Arsipkan media sekali lihat (View Once) ke folder permanen (storage/media/viewonce)
+     */
+    async archiveViewOnceMedia(msgId, buffer, ext = 'bin') {
+        try {
+            const filePath = path.join(VIEWONCE_DIR, `${Date.now()}_${msgId}.${ext}`)
+            if (buffer) {
+                await fs.promises.writeFile(filePath, buffer)
+                return filePath
+            }
+        } catch (err) {
+            logger.error(`[MediaCache] Failed to archive view-once media ${msgId}:`, err.message)
         }
         return null
     }

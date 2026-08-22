@@ -21,17 +21,18 @@ export function unwrapMessage(m) {
 }
 
 /**
- * Check if the original message contains any View-Once wrapper
+ * Check if the original message contains any View-Once wrapper or viewOnce flag
  */
 export function isViewOnceMessage(msg) {
     if (!msg?.message) return false
     const m = msg.message
-    return Boolean(
-        m.viewOnceMessage ||
-        m.viewOnceMessageV2 ||
-        m.viewOnceMessageV2Extension
-    )
+    if (m.viewOnceMessage || m.viewOnceMessageV2 || m.viewOnceMessageV2Extension) return true
+    const unwrapped = unwrapMessage(m)
+    if (!unwrapped) return false
+    const mType = Object.keys(unwrapped)[0]
+    return Boolean(unwrapped[mType]?.viewOnce)
 }
+
 
 /**
  * Construct a clean and safe quoted message object for Baileys, ensuring that the target message structure
