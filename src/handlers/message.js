@@ -20,10 +20,17 @@ import { mediaCache } from '../services/mediaCache.js'
 import { handleIncomingViewOnce } from './viewOnce.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
+    if (!Array.isArray(messages)) return
+    for (const msg of messages) {
+        if (!msg?.message) continue
+        await processSingleMessage(sock, msg)
+    }
+}
 
+async function processSingleMessage(sock, msg) {
     try {
-        const msg = messages[0]
-        if (!msg.message) return
+        if (!msg?.message) return
+
 
         const from = msg.key.remoteJid
         const isGroup = from.endsWith('@g.us')

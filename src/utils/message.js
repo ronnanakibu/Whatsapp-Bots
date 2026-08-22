@@ -11,7 +11,10 @@ export function unwrapMessage(m) {
         'viewOnceMessageV2',
         'viewOnceMessageV2Extension',
         'documentWithCaptionMessage',
-        'botInvokeMessage'
+        'botInvokeMessage',
+        'deviceSentMessage',
+        'associatedChildMessage',
+        'groupMentionedMessage'
     ]
     const mType = Object.keys(m)[0]
     if (wrappers.includes(mType)) {
@@ -19,6 +22,7 @@ export function unwrapMessage(m) {
     }
     return m
 }
+
 
 /**
  * Check if the original message contains any View-Once wrapper or viewOnce flag (deep recursive check)
