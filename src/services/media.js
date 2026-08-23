@@ -685,7 +685,7 @@ export class MediaService {
         }
     }
 
-    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '', noCrop = false, removeBg = false, lqPercent = 0) {
+    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '', noCrop = false, removeBg = false, lqPercent = 0, speedMultiplier = 1.0) {
         const tmpDir = path.resolve('./storage/media/tmp')
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
 
@@ -770,8 +770,11 @@ export class MediaService {
                 fs.mkdirSync(framesInDir, { recursive: true })
                 fs.mkdirSync(framesOutDir, { recursive: true })
 
-                // Pecah video asal menjadi sequence gambar PNG stabil di rate 25 FPS
-                await execPromise(`${ffmpegBin} -i "${inputPath}" -vf "fps=25" "${path.join(framesInDir, '%04d.png')}"`)
+                // Pecah video asal menjadi sequence gambar PNG stabil di rate 25 FPS (dengan speed up filter jika ada)
+                const speedFrameFilter = (speedMultiplier && speedMultiplier > 0 && speedMultiplier !== 1)
+                    ? `setpts=${(1 / speedMultiplier).toFixed(4)}*PTS,`
+                    : ''
+                await execPromise(`${ffmpegBin} -i "${inputPath}" -vf "${speedFrameFilter}fps=25" "${path.join(framesInDir, '%04d.png')}"`)
 
                 logger.info('🔥 [Siksa CPU] Menembak modul "rembg p" untuk memproses massal seluruh frame...')
                 try {
@@ -824,9 +827,14 @@ export class MediaService {
                 ffmpegInputArgs = `-framerate 25 -i "${path.join(framesOutDir, '%04d.png')}"`
             }
 
+            const speedFilter = (speedMultiplier && speedMultiplier > 0 && speedMultiplier !== 1 && !removeBg)
+                ? `setpts=${(1 / speedMultiplier).toFixed(4)}*PTS,`
+                : ''
+
             const videoFilter = noCrop
-                ? `scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=25,format=rgba`
-                : `scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba`
+                ? `${speedFilter}scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=25,format=rgba`
+                : `${speedFilter}scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba`
+
 
             // LQ mode: inject additional pixel-scale degradation into video filter
             let lqFilter = ''
