@@ -685,7 +685,7 @@ export class MediaService {
         }
     }
 
-    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '', noCrop = false, removeBg = false, lqPercent = 0, speedMultiplier = 1.0) {
+    async toAnimatedMemeSticker(bufferVideo, topText = '', bottomText = '', noCrop = false, removeBg = false, lqPercent = 0, speedMultiplier = 1.0, maxDuration = 30) {
         const tmpDir = path.resolve('./storage/media/tmp')
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
 
@@ -762,19 +762,30 @@ export class MediaService {
             fs.writeFileSync(inputPath, finalBufferVideo)
             fs.writeFileSync(overlayPath, overlayPng)
 
+            // Dynamic FPS & Quality to ensure resulting WebP is ultra-smooth and strictly under 1MB WhatsApp limit
+            let targetFps = 20
+            let baseQv = 15
+            if (maxDuration > 30) {
+                targetFps = 12
+                baseQv = 30
+            } else if (maxDuration > 10) {
+                targetFps = 15
+                baseQv = 20
+            }
+
             // Dynamic argument loader untuk FFmpeg input
             let ffmpegInputArgs = `-i "${inputPath}"`
 
             if (removeBg) {
-                logger.info('🔥 [Siksa CPU] Memulai proses pemecahan frame video/gif...')
+                logger.info(`🔥 [Siksa CPU] Memulai proses pemecahan frame video/gif (max ${maxDuration}s, fps ${targetFps})...`)
                 fs.mkdirSync(framesInDir, { recursive: true })
                 fs.mkdirSync(framesOutDir, { recursive: true })
 
-                // Pecah video asal menjadi sequence gambar PNG stabil di rate 25 FPS (dengan speed up filter jika ada)
+                // Pecah video asal menjadi sequence gambar PNG stabil di rate target FPS (dengan speed up filter & limit durasi)
                 const speedFrameFilter = (speedMultiplier && speedMultiplier > 0 && speedMultiplier !== 1)
                     ? `setpts=${(1 / speedMultiplier).toFixed(4)}*PTS,`
                     : ''
-                await execPromise(`${ffmpegBin} -i "${inputPath}" -vf "${speedFrameFilter}fps=25" "${path.join(framesInDir, '%04d.png')}"`)
+                await execPromise(`${ffmpegBin} -i "${inputPath}" -t ${maxDuration} -vf "${speedFrameFilter}fps=${targetFps}" "${path.join(framesInDir, '%04d.png')}"`)
 
                 logger.info('🔥 [Siksa CPU] Menembak modul "rembg p" untuk memproses massal seluruh frame...')
                 try {
@@ -824,7 +835,7 @@ export class MediaService {
                 }
 
                 // Alihkan target input FFmpeg dari file video mentah ke folder sequence gambar transparan
-                ffmpegInputArgs = `-framerate 25 -i "${path.join(framesOutDir, '%04d.png')}"`
+                ffmpegInputArgs = `-framerate ${targetFps} -i "${path.join(framesOutDir, '%04d.png')}"`
             }
 
             const speedFilter = (speedMultiplier && speedMultiplier > 0 && speedMultiplier !== 1 && !removeBg)
@@ -832,9 +843,8 @@ export class MediaService {
                 : ''
 
             const videoFilter = noCrop
-                ? `${speedFilter}scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=25,format=rgba`
-                : `${speedFilter}scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=25,format=rgba`
-
+                ? `${speedFilter}scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=${targetFps},format=rgba`
+                : `${speedFilter}scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=${targetFps},format=rgba`
 
             // LQ mode: inject additional pixel-scale degradation into video filter
             let lqFilter = ''
@@ -843,11 +853,30 @@ export class MediaService {
                 const scaleDown = Math.max(32, Math.round(512 * (1 - (pct / 100) * 0.9375)))
                 lqFilter = `,scale=${scaleDown}:${scaleDown}:flags=neighbor,scale=512:512:flags=neighbor`
             }
-            const lqQv = lqPercent > 0 ? Math.round(15 + (80 * (lqPercent / 100))) : 15 // q:v 15=good → 95=worst
+            const lqQv = lqPercent > 0 ? Math.round(baseQv + (80 * (lqPercent / 100))) : baseQv
 
-            await execPromise(`${ffmpegBin} ${ffmpegInputArgs} -i "${overlayPath}" -filter_complex "[0:v]${videoFilter}${lqFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v ${lqQv} -loop 0 -preset default -an -vsync 0 -t 00:00:05 "${outputPath}"`)
+            await execPromise(`${ffmpegBin} ${ffmpegInputArgs} -i "${overlayPath}" -filter_complex "[0:v]${videoFilter}${lqFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v ${lqQv} -loop 0 -preset default -an -vsync 0 -t ${maxDuration} "${outputPath}"`)
 
-            const finalWebpBuffer = fs.readFileSync(outputPath)
+            let finalWebpBuffer = fs.readFileSync(outputPath)
+
+            // Dynamic Auto-Compression if WebP size > 980KB (WhatsApp animated sticker limit is ~1MB)
+            if (finalWebpBuffer.length > 980 * 1024) {
+                const compressedPath = path.join(tmpDir, `${id}_compressed.webp`)
+                const reducedFps = Math.max(8, Math.round(targetFps * 0.75))
+                const reducedQv = Math.min(65, lqQv + 20)
+                const retryVideoFilter = noCrop
+                    ? `${speedFilter}scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=@0x00000000,fps=${reducedFps},format=rgba`
+                    : `${speedFilter}scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=${reducedFps},format=rgba`
+                try {
+                    await execPromise(`${ffmpegBin} ${ffmpegInputArgs} -i "${overlayPath}" -filter_complex "[0:v]${retryVideoFilter}${lqFilter}[bg]; [bg][1:v]overlay=0:0" -vcodec libwebp -lossless 0 -compression_level 6 -q:v ${reducedQv} -loop 0 -preset default -an -vsync 0 -t ${maxDuration} "${compressedPath}"`)
+                    if (fs.existsSync(compressedPath) && fs.statSync(compressedPath).size > 0) {
+                        finalWebpBuffer = fs.readFileSync(compressedPath)
+                    }
+                } catch (_) {} finally {
+                    if (fs.existsSync(compressedPath)) fs.unlinkSync(compressedPath)
+                }
+            }
+
             return await addExif(finalWebpBuffer)
 
         } catch (e) {
@@ -862,6 +891,7 @@ export class MediaService {
             if (fs.existsSync(framesOutDir)) fs.rmSync(framesOutDir, { recursive: true, force: true })
         }
     }
+
 
 
     async boostMediaVolume(buffer, ext = 'mp4', volumeMultiplier = 2.0) {

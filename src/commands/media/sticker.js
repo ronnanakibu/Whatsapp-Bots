@@ -8,8 +8,8 @@ export default {
     name: 'sticker',
     aliases: ['s', 'stiker'],
     category: 'media',
-    description: 'Convert media to sticker (Original Ratio: --1 | Remove BG: --rmbg | Speed: --s2x, --s1.5x | Low Quality: --lq [1-100])',
-    usage: '.sticker [--1] [--rmbg] [--s2x] [--lq 80] Teks Atas | Teks Bawah',
+    description: 'Convert media to sticker (Original Ratio: --1 | Remove BG: --rmbg | Speed: --s2x | Max Duration: --max [sec] | Low Quality: --lq [1-100])',
+    usage: '.sticker [--1] [--rmbg] [--s2x] [--max] [--lq 80] Teks Atas | Teks Bawah',
     cooldown: 5,
     permissions: ['user'],
 
@@ -87,6 +87,7 @@ export default {
             let removeBg = false
             let lqPercent = 0
             let speedMultiplier = 1.0
+            let maxDuration = 30 // Normal default: batas 30 detik
 
             // Deteksi global flag --1 di mana saja dan bersihkan dari teks utama
             if (fullText.includes('--1')) {
@@ -105,6 +106,17 @@ export default {
             if (speedMatch) {
                 speedMultiplier = Math.min(10.0, Math.max(0.1, parseFloat(speedMatch[1])))
                 fullText = fullText.replace(/--s\d+(?:\.\d+)?(?:x)?/gi, '').trim()
+            }
+
+            // Deteksi flag durasi maksimal --max [detik] (default --max adalah 60s / 1 menit)
+            const maxMatch = fullText.match(/--max(?:\s*(\d{1,3}))?/i)
+            if (maxMatch) {
+                if (maxMatch[1]) {
+                    maxDuration = Math.min(90, Math.max(5, parseInt(maxMatch[1], 10)))
+                } else {
+                    maxDuration = 60
+                }
+                fullText = fullText.replace(/--max(?:\s*\d{0,3})?/gi, '').trim()
             }
 
             // Deteksi --lq [0-100]: bisa --lq 80 atau --lq80
@@ -142,11 +154,11 @@ export default {
             // 3. Alirkan buffer ke core service pemrosesan masing-masing
             let stickerBuffer
             if (isAnimated) {
-                logger.info(`⏳ Menjalankan rendering ANIMASI (noCrop: ${noCrop}, removeBg: ${removeBg}, lq: ${lqPercent}%, speed: ${speedMultiplier}x)`)
+                logger.info(`⏳ Menjalankan rendering ANIMASI (noCrop: ${noCrop}, removeBg: ${removeBg}, lq: ${lqPercent}%, speed: ${speedMultiplier}x, duration: ${maxDuration}s)`)
                 if (removeBg) {
                     await reply('🔥 *Siksa CPU Dimulai:* Memecah frame & memproses batch rmbg hulu animasi. Tunggu sebentar ya, cuy...')
                 }
-                stickerBuffer = await mediaService.toAnimatedMemeSticker(buffer, topText, bottomText, noCrop, removeBg, lqPercent, speedMultiplier)
+                stickerBuffer = await mediaService.toAnimatedMemeSticker(buffer, topText, bottomText, noCrop, removeBg, lqPercent, speedMultiplier, maxDuration)
             } else {
                 logger.info(`⏳ Menjalankan rendering STATIS (noCrop: ${noCrop}, removeBg: ${removeBg}, lq: ${lqPercent}%)`)
                 stickerBuffer = await mediaService.toMemeSticker(buffer, topText, bottomText, noCrop, removeBg, lqPercent)
@@ -159,8 +171,9 @@ export default {
             if (process.env.LOG_CHANNEL_JID) {
                 const { logToChannel } = await import('../../utils/channelLogger.js')
                 await logToChannel(sock, { sticker: stickerBuffer })
-                await logToChannel(sock, { text: `[LOG STICKER]\nDibuat oleh: ${pushName}\nCommand Text: ${fullText || '(tanpa teks)'}\nNoCrop: ${noCrop} | RemoveBg: ${removeBg} | LQ: ${lqPercent}% | Speed: ${speedMultiplier}x` })
+                await logToChannel(sock, { text: `[LOG STICKER]\nDibuat oleh: ${pushName}\nCommand Text: ${fullText || '(tanpa teks)'}\nNoCrop: ${noCrop} | RemoveBg: ${removeBg} | LQ: ${lqPercent}% | Speed: ${speedMultiplier}x | MaxDur: ${maxDuration}s` })
             }
+
 
 
             await react('✅')
