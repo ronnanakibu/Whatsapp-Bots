@@ -554,23 +554,91 @@ router.get(['/api/yt/trim', '/trim'], async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
 
+    const targetUrl = url.startsWith('http') ? url : `https://www.youtube.com/watch?v=${url}`
+    logger.info(`[Music/TrimAPI] Trimming: ${targetUrl} [Start: ${start}s, Dur: ${duration}s]`)
+
     try {
+        const { spawn } = await import('child_process')
+
+        // ── STRATEGY 1: yt-dlp → direct audio URL → ffmpeg ───────────────
+        // yt-dlp handles YouTube auth/bot-detection far better than play-dl.
+        const ytdlpAvailable = await new Promise(resolve => {
+            const check = spawn('yt-dlp', ['--version'])
+            check.on('close', code => resolve(code === 0))
+            check.on('error', () => resolve(false))
+        })
+
+        if (ytdlpAvailable) {
+            logger.info('[Music/TrimAPI] Using yt-dlp strategy')
+
+            // Extra yt-dlp args — add cookies file if configured
+            const cookiesFile = process.env.YTDLP_COOKIES_FILE
+            const ytdlpArgs = [
+                '--no-playlist',
+                '--format', 'bestaudio/best',
+                '--get-url',
+                ...(cookiesFile ? ['--cookies', cookiesFile] : []),
+                targetUrl
+            ]
+
+            const ytdlpProc = spawn('yt-dlp', ytdlpArgs)
+            let directUrl = ''
+            let ytdlpErr = ''
+
+            ytdlpProc.stdout.on('data', chunk => { directUrl += chunk.toString() })
+            ytdlpProc.stderr.on('data', chunk => { ytdlpErr += chunk.toString() })
+
+            const ytdlpCode = await new Promise(resolve => ytdlpProc.on('close', resolve))
+
+            directUrl = directUrl.trim().split('\n')[0] // take first URL if multiple
+
+            if (ytdlpCode === 0 && directUrl) {
+                const ffmpeg = spawn('ffmpeg', [
+                    '-y',
+                    '-ss', String(start),
+                    '-t', String(duration),
+                    '-i', directUrl,
+                    '-f', 'mp3',
+                    '-c:a', 'libmp3lame',
+                    '-b:a', '192k',
+                    'pipe:1'
+                ])
+
+                res.setHeader('Content-Type', 'audio/mpeg')
+                res.setHeader('Content-Disposition', `inline; filename="trim_${start}_${duration}s.mp3"`)
+                ffmpeg.stdout.pipe(res)
+
+                ffmpeg.on('error', err => {
+                    logger.error(`[Music/TrimAPI] FFmpeg (yt-dlp) error: ${err.message}`)
+                    if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
+                })
+                req.on('close', () => { try { ffmpeg.kill() } catch {} })
+                return
+            }
+
+            logger.warn(`[Music/TrimAPI] yt-dlp failed (code ${ytdlpCode}): ${ytdlpErr.slice(0, 200)}`)
+        }
+
+        // ── STRATEGY 2: play-dl with optional YouTube cookie ─────────────
+        logger.info('[Music/TrimAPI] Falling back to play-dl strategy')
         const playdlMod = await import('play-dl')
         const playdl = playdlMod.default ?? playdlMod
-        const targetUrl = url.startsWith('http') ? url : `https://www.youtube.com/watch?v=${url}`
 
-        logger.info(`[Music/TrimAPI] Trimming YouTube audio: ${targetUrl} [Start: ${start}s, Dur: ${duration}s]`)
+        // Inject cookie if provided in env
+        if (process.env.YOUTUBE_COOKIE) {
+            try {
+                await playdl.setToken({ youtube: { cookie: process.env.YOUTUBE_COOKIE } })
+            } catch (e) {
+                logger.warn(`[Music/TrimAPI] play-dl setToken failed: ${e.message}`)
+            }
+        }
 
-        const { spawn } = await import('child_process')
         let stream = null
-
         try {
             const streamData = await playdl.stream(targetUrl)
-            if (streamData && streamData.stream) {
-                stream = streamData.stream
-            }
+            if (streamData?.stream) stream = streamData.stream
         } catch (streamErr) {
-            logger.warn(`[Music/TrimAPI] playdl.stream direct failed, trying video_info format: ${streamErr.message}`)
+            logger.warn(`[Music/TrimAPI] playdl.stream failed: ${streamErr.message}`)
         }
 
         if (stream) {
@@ -587,27 +655,21 @@ router.get(['/api/yt/trim', '/trim'], async (req, res) => {
 
             res.setHeader('Content-Type', 'audio/mpeg')
             res.setHeader('Content-Disposition', `inline; filename="trim_${start}_${duration}s.mp3"`)
-
             stream.pipe(ffmpeg.stdin)
             ffmpeg.stdout.pipe(res)
 
-            ffmpeg.on('error', (err) => {
-                logger.error(`[Music/TrimAPI] FFmpeg process error: ${err.message}`)
-                if (!res.headersSent) {
-                    res.status(500).json({ success: false, error: `FFmpeg error: ${err.message}` })
-                }
+            ffmpeg.on('error', err => {
+                logger.error(`[Music/TrimAPI] FFmpeg (play-dl) error: ${err.message}`)
+                if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
             })
-
-            req.on('close', () => {
-                try { ffmpeg.kill() } catch {}
-            })
+            req.on('close', () => { try { ffmpeg.kill() } catch {} })
         } else {
-            // Fallback: extract direct audio CDN URL via video_info
+            // Last resort: video_info direct CDN URL
             const info = await playdl.video_info(targetUrl)
-            const formats = (info && info.format) || []
+            const formats = (info?.format) || []
             const audioFormat = formats.find(f => f.url && f.mimeType?.toLowerCase().includes('audio')) || formats.find(f => f.url)
-            if (!audioFormat || !audioFormat.url) {
-                return res.status(500).json({ success: false, error: 'Tidak dapat menemukan format audio untuk video ini.' })
+            if (!audioFormat?.url) {
+                return res.status(500).json({ success: false, error: 'Tidak dapat menemukan format audio. Coba update yt-dlp cookies atau set YOUTUBE_COOKIE di .env.' })
             }
 
             const ffmpeg = spawn('ffmpeg', [
@@ -623,19 +685,13 @@ router.get(['/api/yt/trim', '/trim'], async (req, res) => {
 
             res.setHeader('Content-Type', 'audio/mpeg')
             res.setHeader('Content-Disposition', `inline; filename="trim_${start}_${duration}s.mp3"`)
-
             ffmpeg.stdout.pipe(res)
 
-            ffmpeg.on('error', (err) => {
-                logger.error(`[Music/TrimAPI] FFmpeg fallback error: ${err.message}`)
-                if (!res.headersSent) {
-                    res.status(500).json({ success: false, error: `FFmpeg error: ${err.message}` })
-                }
+            ffmpeg.on('error', err => {
+                logger.error(`[Music/TrimAPI] FFmpeg (video_info) error: ${err.message}`)
+                if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
             })
-
-            req.on('close', () => {
-                try { ffmpeg.kill() } catch {}
-            })
+            req.on('close', () => { try { ffmpeg.kill() } catch {} })
         }
     } catch (err) {
         logger.error(`[Music/TrimAPI] Error: ${err.message}`)
