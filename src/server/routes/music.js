@@ -542,4 +542,107 @@ router.post('/api/music/update-tunnel', express.json(), async (req, res) => {
     }
 })
 
+// ----------------------------------------------------
+// CE F CLASS PORTAL INTEGRATION: /api/yt/trim & /trim
+// ----------------------------------------------------
+router.get(['/api/yt/trim', '/trim'], async (req, res) => {
+    const { url, start = 0, duration = 30 } = req.query
+    if (!url) {
+        return res.status(400).json({ success: false, error: 'Parameter "url" (YouTube URL atau videoId) wajib diisi.' })
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+
+    try {
+        const playdlMod = await import('play-dl')
+        const playdl = playdlMod.default ?? playdlMod
+        const targetUrl = url.startsWith('http') ? url : `https://www.youtube.com/watch?v=${url}`
+
+        logger.info(`[Music/TrimAPI] Trimming YouTube audio: ${targetUrl} [Start: ${start}s, Dur: ${duration}s]`)
+
+        const { spawn } = await import('child_process')
+        let stream = null
+
+        try {
+            const streamData = await playdl.stream(targetUrl)
+            if (streamData && streamData.stream) {
+                stream = streamData.stream
+            }
+        } catch (streamErr) {
+            logger.warn(`[Music/TrimAPI] playdl.stream direct failed, trying video_info format: ${streamErr.message}`)
+        }
+
+        if (stream) {
+            const ffmpeg = spawn('ffmpeg', [
+                '-y',
+                '-ss', String(start),
+                '-t', String(duration),
+                '-i', 'pipe:0',
+                '-f', 'mp3',
+                '-c:a', 'libmp3lame',
+                '-b:a', '192k',
+                'pipe:1'
+            ])
+
+            res.setHeader('Content-Type', 'audio/mpeg')
+            res.setHeader('Content-Disposition', `inline; filename="trim_${start}_${duration}s.mp3"`)
+
+            stream.pipe(ffmpeg.stdin)
+            ffmpeg.stdout.pipe(res)
+
+            ffmpeg.on('error', (err) => {
+                logger.error(`[Music/TrimAPI] FFmpeg process error: ${err.message}`)
+                if (!res.headersSent) {
+                    res.status(500).json({ success: false, error: `FFmpeg error: ${err.message}` })
+                }
+            })
+
+            req.on('close', () => {
+                try { ffmpeg.kill() } catch {}
+            })
+        } else {
+            // Fallback: extract direct audio CDN URL via video_info
+            const info = await playdl.video_info(targetUrl)
+            const formats = (info && info.format) || []
+            const audioFormat = formats.find(f => f.url && f.mimeType?.toLowerCase().includes('audio')) || formats.find(f => f.url)
+            if (!audioFormat || !audioFormat.url) {
+                return res.status(500).json({ success: false, error: 'Tidak dapat menemukan format audio untuk video ini.' })
+            }
+
+            const ffmpeg = spawn('ffmpeg', [
+                '-y',
+                '-ss', String(start),
+                '-t', String(duration),
+                '-i', audioFormat.url,
+                '-f', 'mp3',
+                '-c:a', 'libmp3lame',
+                '-b:a', '192k',
+                'pipe:1'
+            ])
+
+            res.setHeader('Content-Type', 'audio/mpeg')
+            res.setHeader('Content-Disposition', `inline; filename="trim_${start}_${duration}s.mp3"`)
+
+            ffmpeg.stdout.pipe(res)
+
+            ffmpeg.on('error', (err) => {
+                logger.error(`[Music/TrimAPI] FFmpeg fallback error: ${err.message}`)
+                if (!res.headersSent) {
+                    res.status(500).json({ success: false, error: `FFmpeg error: ${err.message}` })
+                }
+            })
+
+            req.on('close', () => {
+                try { ffmpeg.kill() } catch {}
+            })
+        }
+    } catch (err) {
+        logger.error(`[Music/TrimAPI] Error: ${err.message}`)
+        if (!res.headersSent) {
+            res.status(500).json({ success: false, error: err.message })
+        }
+    }
+})
+
 export default router
