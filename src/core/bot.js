@@ -22,6 +22,7 @@ import { logger, botLogger, setSocket } from '../utils/logger.js'
 import { initReminderScheduler } from '../commands/general/remindme.js'
 import { initWeatherScheduler } from '../commands/utility/cuaca.js'
 import { initRecapScheduler } from '../commands/radio/recap.js'
+import { initStorySyncScheduler } from '../services/storySync.js'
 import { startRadioServer, updateBotStatus } from '../server/radio.js'
 import { metricsService } from '../services/metrics.js'
 
@@ -166,6 +167,10 @@ async function startBot() {
             // Start weekly recap scheduler setelah connected
             initRecapScheduler(sock)
             botLogger.system('Weekly recap scheduler started ✓')
+
+            // Start Instagram Story auto-archive scheduler setelah connected
+            initStorySyncScheduler(sock)
+            botLogger.system('Instagram Story auto-archive scheduler started ✓')
 
             // Start HF Space real-time log streamer
             import('../services/hfLogsStreamer.js').then(({ hfLogsStreamer }) => {

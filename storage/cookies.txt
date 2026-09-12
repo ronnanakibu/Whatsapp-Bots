@@ -9,5 +9,3 @@
 .instagram.com	TRUE	/	TRUE	1817915696	ps_l	1
 .instagram.com	TRUE	/	TRUE	1817915696	ps_n	1
 .instagram.com	TRUE	/	TRUE	0	rur	CCO,73315905569,1817172994:01ffba7d53bd5f57266f2c826a83b677f97d9e22bb9a3eec70192f58c5e7b76dc1be39b0
-.instagram.com	TRUE	/	TRUE	1817172896	sessionid	73315905569%3AMs8Nc1yIPpcMfJ%3A7%3AAYicUB-cbp3mG3QNHYPzI6bJfyFo4-b7cCbPBBG1fw
-.instagram.com	TRUE	/	TRUE	1786241699	wd	1366x599

@@ -800,6 +800,44 @@ export function startRadioServer() {
             }
         })
 
+        socket.on('group:leave', async ({ chatId }) => {
+            const sock = getSocket()
+            if (!sock) {
+                logger.error('[Dashboard/LeaveGroup] Failed: WhatsApp socket offline.')
+                socket.emit('error', 'Gagal: WhatsApp socket sedang offline.')
+                return
+            }
+            logger.info(`[Dashboard/LeaveGroup] Leaving group ${chatId}...`)
+            try {
+                // Kirim salam pamit jika memungkinkan sebelum keluar
+                try {
+                    await sock.sendMessage(chatId, { text: '👋 *Bot pamit keluar dari grup ini.* Terima kasih!' })
+                } catch (_) {}
+
+                await sock.groupLeave(chatId)
+                logger.info(`[Dashboard/LeaveGroup] Successfully left group ${chatId}`)
+
+                // Bersihkan cache avatar grup
+                delete avatarCache[chatId]
+
+                // Hapus konfigurasi grup dari database jika ada
+                if (db) {
+                    try {
+                        db.prepare('DELETE FROM chat_config WHERE chat_id = ?').run(chatId)
+                        db.prepare('DELETE FROM moderation_config WHERE chat_id = ?').run(chatId)
+                    } catch (_) {}
+                }
+
+                // Broadcast updated groups list to all connected clients
+                const groups = await getGroupsList()
+                io?.emit('groups:update', groups)
+                socket.emit('group:left', { chatId, success: true })
+            } catch (err) {
+                logger.error(`[Dashboard/LeaveGroup] Failed to leave group ${chatId}:`, err.message)
+                socket.emit('error', `Gagal keluar dari grup: ${err.message}`)
+            }
+        })
+
         socket.on('db:query', ({ sql }) => {
             if (!db) {
                 socket.emit('db:query_result', { success: false, error: 'Database connection offline.' })
