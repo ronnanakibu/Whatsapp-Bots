@@ -88,6 +88,7 @@ export function markAsArchived(igStoryId) {
  */
 export async function forwardStoryToWebsite({
     mediaBuffer,
+    thumbnailBuffer,
     filename,
     igStoryId,
     takenAt,
@@ -109,6 +110,11 @@ export async function forwardStoryToWebsite({
         const buildFormData = () => {
             const form = new FormData()
             form.append('file', mediaBuffer, { filename: finalFilename, contentType: mimeType })
+            
+            if (thumbnailBuffer) {
+                form.append('thumbnail', thumbnailBuffer, { filename: `thumb_${igStoryId || Date.now()}.jpg`, contentType: 'image/jpeg' })
+            }
+            
             if (takenAt) form.append('timestamp', String(takenAt))
             if (caption) form.append('caption', caption)
             form.append('author', author)
@@ -289,8 +295,19 @@ export async function syncInstagramStories(sock = null, options = {}) {
                 // Tandai hash konten ini sebagai sudah diupload
                 markAsArchived(mediaHash)
 
+                let thumbnailBuffer = null
+                if (story.thumbnail) {
+                    try {
+                        const thumbRes = await axios.get(story.thumbnail, { responseType: 'arraybuffer', timeout: 15000 })
+                        thumbnailBuffer = Buffer.from(thumbRes.data)
+                    } catch (thumbErr) {
+                        botLogger.warn('story-sync', `Gagal mengunduh thumbnail untuk [${story.igStoryId}]: ${thumbErr.message}`)
+                    }
+                }
+
                 const uploadRes = await forwardStoryToWebsite({
                     mediaBuffer,
+                    thumbnailBuffer,
                     filename: story.filename,
                     igStoryId: story.igStoryId,
                     author: targetUser,
