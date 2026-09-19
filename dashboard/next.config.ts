@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
 
   // Base path kalau mau serve di subdirectory: /radio
   // Uncomment kalau pakai port yang sama dengan radio
-  basePath: '/radio',
+  // basePath: '/radio',
 
   // Image domains untuk album art / thumbnails
   images: {
