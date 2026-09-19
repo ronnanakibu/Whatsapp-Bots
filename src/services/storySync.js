@@ -274,6 +274,21 @@ export async function syncInstagramStories(sock = null, options = {}) {
                 })
 
                 const mediaBuffer = Buffer.from(mediaRes.data)
+                
+                // Cegah duplikasi berdasarkan konten asli media menggunakan MD5 hash
+                const crypto = require('crypto')
+                const mediaHash = crypto.createHash('md5').update(mediaBuffer).digest('hex')
+                
+                if (isAlreadyArchived(mediaHash)) {
+                    botLogger.info('story-sync', `Media story [${story.igStoryId}] sudah diarsipkan sebelumnya (Hash match). Skipping.`)
+                    markAsArchived(story.igStoryId) // Tandai ID baru dari snapsave agar ke depannya lgsg di-skip tanpa download
+                    results.skipped.push(story.igStoryId)
+                    continue
+                }
+                
+                // Tandai hash konten ini sebagai sudah diupload
+                markAsArchived(mediaHash)
+
                 const uploadRes = await forwardStoryToWebsite({
                     mediaBuffer,
                     filename: story.filename,
