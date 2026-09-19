@@ -26,7 +26,7 @@
         "@google/generative-ai": "^0.24.1",
         "@gradio/client": "^2.2.1",
         "@hapi/boom": "^10.0.1",
-        "@playwright/test": "^1.60.0",
+        "@huggingface/hub": "^2.17.3",
         "@prisma/client": "^5.15.0",
         "@whiskeysockets/baileys": "^7.0.0-rc13",
         "axios": "^1.17.0",

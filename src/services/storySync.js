@@ -16,6 +16,30 @@ const TARGET_ACCOUNT = (process.env.CEF_STORY_TARGET_ACCOUNT || 'comeinone.f').r
 const CACHE_FILE = path.resolve(process.env.CEF_STORY_CACHE_PATH || './storage/synced_stories.json')
 const INTERVAL_MINUTES = Math.max(1, parseInt(process.env.CEF_STORY_INTERVAL_MINUTES || '10', 10))
 
+const CATEGORY_FILE = path.resolve(process.env.CEF_STORY_CATEGORY_PATH || './storage/story_category.json')
+
+export function getAutoCategory() {
+    try {
+        if (fs.existsSync(CATEGORY_FILE)) {
+            const data = JSON.parse(fs.readFileSync(CATEGORY_FILE, 'utf-8'))
+            if (data && data.category) return data.category
+        }
+    } catch (err) {}
+    return 'General'
+}
+
+export function setAutoCategory(category) {
+    try {
+        const dir = path.dirname(CATEGORY_FILE)
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+        fs.writeFileSync(CATEGORY_FILE, JSON.stringify({ category }, null, 2), 'utf-8')
+        return true
+    } catch (err) {
+        logger.error(`[STORY SYNC] Gagal set kategori: ${err.message}`)
+        return false
+    }
+}
+
 /**
  * Cek apakah story ID sudah pernah diarsipkan ke website
  */
@@ -255,7 +279,7 @@ export async function syncInstagramStories(sock = null, options = {}) {
                     filename: story.filename,
                     igStoryId: story.igStoryId,
                     author: targetUser,
-                    category: 'General',
+                    category: getAutoCategory(),
                     mediaType: story.isVideo ? 'video' : 'image',
                 })
 
@@ -275,7 +299,9 @@ export async function syncInstagramStories(sock = null, options = {}) {
                                 `👤 *Akun*: @${targetUser}\n` +
                                 `📁 *ID*: \`${story.igStoryId}\`\n` +
                                 `🎬 *Tipe*: ${story.isVideo ? 'Video' : 'Foto'}\n` +
-                                `🌐 *Portal Arsip*: https://cef25.my.id`
+                                `🏷️ *Kategori*: ${getAutoCategory()}\n` +
+                                `🌐 *Portal Arsip*: https://cef25.my.id\n\n` +
+                                `_Ketik .setkategori <nama> untuk mengubah target kategori otomatis_`
                             await sock.sendMessage(notifyJid, { text: notifMsg })
                         } catch (notifErr) {
                             botLogger.warn('story-sync', `Gagal kirim notifikasi WhatsApp: ${notifErr.message}`)
@@ -330,6 +356,8 @@ export function initStorySyncScheduler(sock) {
 export default {
     isAlreadyArchived,
     markAsArchived,
+    getAutoCategory,
+    setAutoCategory,
     forwardStoryToWebsite,
     fetchTargetStories,
     syncInstagramStories,

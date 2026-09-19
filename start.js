@@ -182,10 +182,22 @@ async function setupFfmpeg() {
     try {
         await downloadFile(FFMPEG_URL, FFMPEG_TAR)
         inf('Extracting ffmpeg binary...')
-        execSync(
-            `tar -xJf "${FFMPEG_TAR}" --wildcards "*/ffmpeg" --strip-components=1 -C "${path.resolve('./storage/bin/')}"`,
-            { stdio: 'pipe' }
-        )
+        const tmpExtract = path.resolve('./storage/bin/ffmpeg_tmp')
+        if (fs.existsSync(tmpExtract)) fs.rmSync(tmpExtract, { recursive: true, force: true })
+        fs.mkdirSync(tmpExtract, { recursive: true })
+        
+        execSync(`tar -xJf "${FFMPEG_TAR}" -C "${tmpExtract}"`, { stdio: 'pipe' })
+        
+        const extractedDirs = fs.readdirSync(tmpExtract)
+        for (const dir of extractedDirs) {
+            const innerFfmpeg = path.join(tmpExtract, dir, 'ffmpeg')
+            if (fs.existsSync(innerFfmpeg)) {
+                fs.copyFileSync(innerFfmpeg, FFMPEG_PATH)
+                break
+            }
+        }
+        
+        fs.rmSync(tmpExtract, { recursive: true, force: true })
         try { fs.unlinkSync(FFMPEG_TAR) } catch (_) { }
 
         if (!fs.existsSync(FFMPEG_PATH)) {

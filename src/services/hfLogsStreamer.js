@@ -70,18 +70,18 @@ class HfLogsStreamer {
                 })
 
                 response.data.on('end', () => {
-                    logger.warn('[HF-Logs] Log stream ended, reconnecting in 5s...')
-                    setTimeout(connect, 5000)
+                    logger.warn('[HF-Logs] Log stream ended, reconnecting in 5m...')
+                    setTimeout(connect, 300000)
                 })
 
                 response.data.on('error', (err) => {
-                    logger.warn(`[HF-Logs] Stream error (${err.message}), reconnecting in 10s...`)
-                    setTimeout(connect, 10000)
+                    logger.warn(`[HF-Logs] Stream error (${err.message}), reconnecting in 5m...`)
+                    setTimeout(connect, 300000)
                 })
 
             } catch (err) {
-                logger.warn(`[HF-Logs] Failed to connect to HF Space log stream (${err.message}), retrying in 10s...`)
-                setTimeout(connect, 10000)
+                logger.warn(`[HF-Logs] Failed to connect to HF Space log stream (${err.message}), retrying in 5m...`)
+                setTimeout(connect, 300000)
             }
         }
 

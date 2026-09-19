@@ -8,6 +8,7 @@ import util from 'util'
 import crypto from 'crypto'
 import { logger } from '../utils/logger.js'
 import { addExif } from './exif.js'
+import { hfStorage } from './hfStorage.js'
 
 const execPromise = util.promisify(exec)
 
@@ -441,46 +442,62 @@ export class MediaService {
     }
 
     /**
-     * Saves image buffer and returns the accessible asset path/url.
+     * Saves image buffer to HuggingFace and returns the accessible asset URL.
      */
     async saveAvatar(userId, buffer, filename) {
         const ext = path.extname(filename) || '.png'
-        const relativePath = path.join('avatars', `${userId}_${Date.now()}${ext}`)
-        const absolutePath = path.join(this.storageDir, relativePath)
-
-        // Ensure avatars subdirectory exists
-        fs.mkdirSync(path.dirname(absolutePath), { recursive: true })
-
+        const hfFilename = `avatars/${userId}_${Date.now()}${ext}`
         const processedBuffer = await this.compressImage(buffer)
-        fs.writeFileSync(absolutePath, processedBuffer)
-
-        return `/uploads/${relativePath.replace(/\\/g, '/')}`
+        
+        try {
+            return await hfStorage.uploadMedia(processedBuffer, hfFilename)
+        } catch (e) {
+            logger.error(`[MediaService] Gagal upload avatar ${hfFilename} ke HF, fallback ke lokal`, e.message)
+            // Fallback ke lokal jika gagal
+            const absolutePath = path.join(this.storageDir, hfFilename)
+            fs.mkdirSync(path.dirname(absolutePath), { recursive: true })
+            fs.writeFileSync(absolutePath, processedBuffer)
+            return `/uploads/${hfFilename.replace(/\\/g, '/')}`
+        }
     }
 
     /**
-     * Saves banner buffer and returns the accessible asset path/url.
+     * Saves banner buffer to HuggingFace and returns the accessible asset URL.
      */
     async saveBanner(userId, buffer, filename) {
         const ext = path.extname(filename) || '.png'
-        const relativePath = path.join('banners', `${userId}_${Date.now()}${ext}`)
-        const absolutePath = path.join(this.storageDir, relativePath)
-
-        // Ensure banners subdirectory exists
-        fs.mkdirSync(path.dirname(absolutePath), { recursive: true })
-
+        const hfFilename = `banners/${userId}_${Date.now()}${ext}`
         const processedBuffer = await this.compressImage(buffer)
-        fs.writeFileSync(absolutePath, processedBuffer)
-
-        return `/uploads/${relativePath.replace(/\\/g, '/')}`
+        
+        try {
+            return await hfStorage.uploadMedia(processedBuffer, hfFilename)
+        } catch (e) {
+            logger.error(`[MediaService] Gagal upload banner ${hfFilename} ke HF, fallback ke lokal`, e.message)
+            // Fallback ke lokal jika gagal
+            const absolutePath = path.join(this.storageDir, hfFilename)
+            fs.mkdirSync(path.dirname(absolutePath), { recursive: true })
+            fs.writeFileSync(absolutePath, processedBuffer)
+            return `/uploads/${hfFilename.replace(/\\/g, '/')}`
+        }
     }
 
     /**
-     * Deletes a local media asset file.
+     * Deletes a local media asset file or HuggingFace asset.
      */
-    deleteMedia(relativeUrlPath) {
-        if (!relativeUrlPath.startsWith('/uploads/')) return false
+    async deleteMedia(urlPath) {
+        if (urlPath.includes('huggingface.co')) {
+            try {
+                const parts = urlPath.split('/resolve/main/')
+                if (parts.length > 1) {
+                    return await hfStorage.deleteMedia(parts[1])
+                }
+            } catch (e) {}
+            return false
+        }
 
-        const relativePath = relativeUrlPath.replace('/uploads/', '')
+        if (!urlPath.startsWith('/uploads/')) return false
+
+        const relativePath = urlPath.replace('/uploads/', '')
         const absolutePath = path.join(this.storageDir, relativePath)
 
         try {

@@ -33,7 +33,10 @@ const ignoreList = [
     'test_routing.js',
     'upload-retry.js',
     '.env',
-    '.next'
+    '.next',
+    'dashboard',
+    'src/app/dashboard',
+    'yarn.lock'
 ];
 
 function runGitCommand(command) {

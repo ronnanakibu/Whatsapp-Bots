@@ -224,6 +224,34 @@
   resolved "https://registry.npmjs.org/@hapi/hoek/-/hoek-9.3.0.tgz"
   integrity sha512-/c6rf4UJlmHlC9b5BaNvzAcFv7HZ2QHaV0D4/HNlBdvFnvQq8RI4kYdhyPCl7Xj+oWvTWQ8ujhqS53LIgAe6KQ==
 
+"@huggingface/blake3-jit@0.0.2":
+  version "0.0.2"
+  resolved "https://registry.npmjs.org/@huggingface/blake3-jit/-/blake3-jit-0.0.2.tgz"
+  integrity sha512-Bq7B5qabyjrJfhBsl85Jd2QBtf+HzRD7h7A9GfN2lzrrsABhOa5evVPgzoCTxR7Ub0QFj7YDK1YkYRWBU25+2w==
+
+"@huggingface/hub@^2.17.3":
+  version "2.17.3"
+  resolved "https://registry.npmjs.org/@huggingface/hub/-/hub-2.17.3.tgz"
+  integrity sha512-TFAy0iot/xyuQIQKtkzHUsSfeZ6Ju6WgA8N4GrPAfESLNYILXdi+ENe24gQM8C3jH5rQrnswF2iZJf6SagnC/g==
+  dependencies:
+    "@huggingface/tasks" "^0.21.46"
+    "@huggingface/xetchunk-wasm" "^0.2.0"
+  optionalDependencies:
+    cli-progress "^3.12.0"
+
+"@huggingface/tasks@^0.21.46":
+  version "0.21.46"
+  resolved "https://registry.npmjs.org/@huggingface/tasks/-/tasks-0.21.46.tgz"
+  integrity sha512-iyRohYSg3tTD0vz6XUOUjN4il/wX/W9SuPfoVo2ZrDKOIPUqE6MCDu83OHekjlSuU6Prqt6nNW0Kpfg3iduewA==
+
+"@huggingface/xetchunk-wasm@^0.2.0":
+  version "0.2.0"
+  resolved "https://registry.npmjs.org/@huggingface/xetchunk-wasm/-/xetchunk-wasm-0.2.0.tgz"
+  integrity sha512-cmp7oAAWeCpZGrVQTP/LxDtJdzGMfpxwkEVsZsk5jZQ2FwP2njm8LnyobhnQvLpkSAcJJwUzFJC0PYS9ZsqeTg==
+  dependencies:
+    "@huggingface/blake3-jit" "0.0.2"
+    gearhash-jit "1.0.2"
+
 "@img/colour@^1.0.0":
   version "1.1.0"
   resolved "https://registry.npmjs.org/@img/colour/-/colour-1.1.0.tgz"
@@ -1227,6 +1255,13 @@ cli-cursor@^4.0.0:
   dependencies:
     restore-cursor "^4.0.0"
 
+cli-progress@^3.12.0:
+  version "3.12.0"
+  resolved "https://registry.npmjs.org/cli-progress/-/cli-progress-3.12.0.tgz"
+  integrity sha512-tRkV3HJ1ASwm19THiiLIXLO7Im7wlTuKnvkYaTkyoAPefqjNg7W7DHKUlGRxy9vxDvbyCYQkQozvptuMkGCg8A==
+  dependencies:
+    string-width "^4.2.3"
+
 cli-spinners@^2.5.0, cli-spinners@^2.6.1:
   version "2.9.2"
   resolved "https://registry.npmjs.org/cli-spinners/-/cli-spinners-2.9.2.tgz"
@@ -2025,6 +2060,11 @@ gcp-metadata@^8.0.0, gcp-metadata@8.1.2:
     gaxios "^7.0.0"
     google-logging-utils "^1.0.0"
     json-bigint "^1.0.0"
+
+gearhash-jit@1.0.2:
+  version "1.0.2"
+  resolved "https://registry.npmjs.org/gearhash-jit/-/gearhash-jit-1.0.2.tgz"
+  integrity sha512-UhzJL4KXSdqAKepy/tZwmi2Rcy0YMmtiC4DQS4SURCuIWdh8ECZtnXK2ePRMLigfB61hRKdLK/Vgg2bSw73izQ==
 
 get-caller-file@^2.0.1, get-caller-file@^2.0.5:
   version "2.0.5"

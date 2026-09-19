@@ -5,7 +5,6 @@ import { exec } from 'child_process'
 import util from 'util'
 import { PDFDocument } from 'pdf-lib'
 import mammoth from 'mammoth'
-import { chromium } from '@playwright/test'
 import { store } from '../../services/store.js'
 import { unwrapMessage } from '../../utils/message.js'
 
@@ -401,33 +400,7 @@ for i, page in enumerate(doc):
             return ctx.reply('⚠️ Harap reply ke dokumen Word (.docx) yang ingin dikonversi ke PDF!')
         }
 
-        await ctx.react('⏳')
-        const buf = await ctx.downloadMedia(quotedKey)
-        if (!buf) throw new Error('Gagal mengunduh file dokumen')
-
-        const result = await mammoth.convertToHtml({ buffer: buf })
-        const html = result.value
-
-        const browser = await chromium.launch({ headless: true })
-        try {
-            const page = await browser.newPage()
-            await page.setContent(html)
-            const pdfBuffer = await page.pdf({
-                format: 'A4',
-                margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' }
-            })
-
-            const cleanFileName = (docMsg.documentMessage?.fileName || 'document.docx')
-                .replace(/\.[^/.]+$/, '')
-            
-            await ctx.replyMedia(Buffer.from(pdfBuffer), 'document', {
-                mimetype: 'application/pdf',
-                fileName: `${cleanFileName}.pdf`
-            })
-            await ctx.react('✅')
-        } finally {
-            await browser.close()
-        }
+        return ctx.reply('⚠️ Maaf, fitur *.doc2pdf* dinonaktifkan di server ini karena keterbatasan memori (Limit 3GB).')
     },
 
     async handleCompressPdf(ctx) {
