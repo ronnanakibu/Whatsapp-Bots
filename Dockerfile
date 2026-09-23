@@ -7,15 +7,12 @@ COPY dashboard/ .
 RUN npm run build
 
 # ── Stage 2: Runtime ──
-FROM node:20-slim
+# Use standard node:20 which has build-essential & python3 pre-installed
+FROM node:20
 
-# OS dependencies (FFmpeg, Python, build tools for native modules like sharp/better-sqlite3)
+# OS dependencies (only ffmpeg needed now)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    python3 \
-    openssl \
-    ca-certificates \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
