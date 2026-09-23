@@ -13,11 +13,9 @@ FROM node:20-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     python3 \
-    python3-pip \
     openssl \
     ca-certificates \
     curl \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
