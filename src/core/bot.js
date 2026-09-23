@@ -95,7 +95,7 @@ async function startBot() {
 
     // 4. Create socket
     botLogger.system('Connecting to WhatsApp...')
-    sock = makeWASocket({
+    const sock = makeWASocket({
         version,
         auth: state,
         logger: pinoLogger.child({ level: 'fatal' }), // Sembunyikan log internal Baileys yang nyepam

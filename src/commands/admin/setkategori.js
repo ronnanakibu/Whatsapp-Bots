@@ -15,22 +15,22 @@ export default {
 
         if (args.length === 0) {
             const current = getAutoCategory()
-            await reply(??? Kategori otomatis saat ini: ** + '\n\nKetik _.setkategori <nama>_ untuk mengubahnya.')
+            await reply('📁 Kategori otomatis saat ini: **' + current + '**\n\nKetik _.setkategori <nama>_ untuk mengubahnya.')
             return
         }
 
         const newCategory = args.join(' ').trim()
         
-        await react('?')
+        await react('⏳')
 
         const success = setAutoCategory(newCategory)
         
         if (success) {
-            await react('?')
-            await reply(? Berhasil! Kategori default untuk arsip story otomatis selanjutnya telah diubah menjadi: **)
+            await react('✅')
+            await reply('✅ Berhasil! Kategori default untuk arsip story otomatis selanjutnya telah diubah menjadi: **' + newCategory + '**')
         } else {
-            await react('?')
-            await reply('? Gagal mengubah kategori. Silakan periksa log sistem.')
+            await react('❌')
+            await reply('❌ Gagal mengubah kategori. Silakan periksa log sistem.')
         }
     }
 }
