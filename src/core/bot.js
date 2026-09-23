@@ -30,6 +30,7 @@ import { metricsService } from '../services/metrics.js'
 const pinoLogger = logger.child({ module: 'baileys' })
 
 let reconnectCount = 0
+let isStopping = false
 const MAX_RECONNECT_ATTEMPTS = 5
 
 // ─────────────────────────────────────────────
