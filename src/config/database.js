@@ -1,12 +1,24 @@
 // src/config/database.js
-import { PrismaClient } from '@prisma/client'
 import { dbConfig } from './index.js'
 import { logger } from '../utils/logger.js'
+
+let PrismaClient = null
+try {
+    const mod = await import('@prisma/client')
+    PrismaClient = mod.PrismaClient
+} catch (e) {
+    logger.warn(`[Graceful Degradation] PrismaClient not found (Lite Mode). AI and advanced DB features will be disabled.`)
+}
 
 let prismaInstance = null
 
 function getPrismaClient() {
     if (!prismaInstance) {
+        if (!PrismaClient) {
+            // Mock if missing
+            prismaInstance = new Proxy({}, { get() { return () => Promise.resolve(null) } })
+            return prismaInstance
+        }
         try {
             prismaInstance = new PrismaClient({
                 datasources: {

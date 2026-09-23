@@ -35,7 +35,7 @@ import lyricsRouter from './routes/lyrics.js'
 import usersRouter from './routes/users.js'
 import systemRouter from './routes/system.js'
 
-const RADIO_PORT = parseInt(process.env.RADIO_PORT ?? '25637')
+const RADIO_PORT = parseInt(process.env.PORT || process.env.RADIO_PORT || '25637')
 const MAX_HISTORY = 20
 
 let server = null

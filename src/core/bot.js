@@ -23,6 +23,7 @@ import { initReminderScheduler } from '../commands/general/remindme.js'
 import { initWeatherScheduler } from '../commands/utility/cuaca.js'
 import { initRecapScheduler } from '../commands/radio/recap.js'
 import { initStorySyncScheduler } from '../services/storySync.js'
+import { initScheduleSync } from '../services/scheduleSync.js'
 import { startRadioServer, updateBotStatus } from '../server/radio.js'
 import { metricsService } from '../services/metrics.js'
 
@@ -94,7 +95,7 @@ async function startBot() {
 
     // 4. Create socket
     botLogger.system('Connecting to WhatsApp...')
-    const sock = makeWASocket({
+    sock = makeWASocket({
         version,
         auth: state,
         logger: pinoLogger.child({ level: 'fatal' }), // Sembunyikan log internal Baileys yang nyepam
@@ -172,6 +173,10 @@ async function startBot() {
             initStorySyncScheduler(sock)
             botLogger.system('Instagram Story auto-archive scheduler started ✓')
 
+            // Start schedule sync
+            initScheduleSync(sock)
+            botLogger.system('Schedule sync scheduler started ✓')
+
             // Start HF Space real-time log streamer
             import('../services/hfLogsStreamer.js').then(({ hfLogsStreamer }) => {
                 hfLogsStreamer.startStreaming()
@@ -190,12 +195,12 @@ async function startBot() {
             metricsService.setWhatsAppStatus('offline')
             updateBotStatus('close')
 
-            if (shouldReconnect) {
+            if (shouldReconnect && !isStopping) {
                 if (reconnectCount < MAX_RECONNECT_ATTEMPTS) {
                     reconnectCount++
                     const delay = Math.min(Math.pow(2, reconnectCount) * 1000, 30_000)
                     botLogger.warn('bot', `Reconnecting in ${delay / 1000}s (attempt ${reconnectCount}/${MAX_RECONNECT_ATTEMPTS})`)
-                    setTimeout(() => startBot(), delay)
+                    setTimeout(() => startWhatsAppClient(), delay)
                 } else {
                     botLogger.fatal('bot', 'Max reconnect attempts reached. Exiting for automatic daemon restart.')
                     process.exit(1)

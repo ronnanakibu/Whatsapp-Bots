@@ -6,6 +6,11 @@ import { authenticateJwt } from '../middleware/auth.js'
 
 const router = express.Router()
 
+// Liveness Ping (Used for HA Failover)
+router.get('/system/ping', (req, res) => {
+    res.json({ success: true, message: 'PONG', timestamp: Date.now() })
+})
+
 // SYSTEM RESTART Webhook (Bypasses Cloudflare Turnstile Panel protection)
 router.post('/system/restart', (req, res) => {
     const authHeader = req.headers['authorization']

@@ -71,7 +71,11 @@ export async function loadCommands(dir = './src/commands') {
             logger.info(`Loaded command: ${cmd.name} [${cmd.category}]`)
 
         } catch (importErr) {
-            process.stdout.write(`\n❌ [Loader Error] Gagal import ${fullPath}: ${importErr.message}\n`)
+            if (importErr.code === 'ERR_MODULE_NOT_FOUND') {
+                process.stdout.write(`\n⚠️  [Lite Mode] Command ${entry} dilewati (modul dependensi hilang): ${importErr.message.split('\n')[0]}\n`)
+            } else {
+                process.stdout.write(`\n❌ [Loader Error] Gagal import ${fullPath}: ${importErr.message}\n`)
+            }
         }
     }
 

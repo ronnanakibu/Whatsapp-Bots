@@ -1,6 +1,14 @@
 // src/services/media.js
-import sharp from 'sharp'
 import fs from 'fs'
+
+let sharp = null
+try {
+    sharp = (await import('sharp')).default
+} catch (e) {
+    // Sharp tidak ada di Lite Mode, kita abaikan saja.
+    // Nanti error handling ditangkap di fungsi yang pakai sharp.
+}
+
 import path from 'path'
 import https from 'https'
 import { exec, execSync } from 'child_process'

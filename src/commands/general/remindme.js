@@ -337,8 +337,9 @@ export function initReminderScheduler(sock) {
                 try {
                     logger.info(`[Reminder] Firing #${reminder.id} → ${reminder.chat_id}`)
 
-                    // triggerAlarm sudah handle react spam sendiri
-                    await triggerAlarm(_sock, reminder.chat_id, reminder.message, false, reminder.quoted_msg)
+                    const skipSpam = reminder.user_jid === 'system'
+                    // triggerAlarm sudah handle react spam sendiri (bisa dilewati dengan skipSpam)
+                    await triggerAlarm(_sock, reminder.chat_id, reminder.message, false, reminder.quoted_msg, skipSpam)
 
                     db.prepare('UPDATE reminders SET fired = 1 WHERE id = ?').run(reminder.id)
                 } catch (e) {

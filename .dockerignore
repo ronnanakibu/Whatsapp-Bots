@@ -1,0 +1,49 @@
+# Dependencies
+node_modules
+dashboard/node_modules
+dashboard/.next
+
+# Git
+.git
+.gitignore
+
+# Archives (WABOT2.0.rar is 257MB!)
+*.rar
+*.zip
+*.tar.gz
+
+# Logs
+*.log
+storage/logs/*
+
+# Runtime data (lives in volume, not image)
+storage/sessions/*
+storage/media/tmp/*
+storage/database/*.db
+storage/database/*.db-journal
+storage/database/*.db-wal
+storage/stickers/*
+
+# Development files
+memory/
+scratch/
+hf-backend/
+design-system/
+MEMORY.md
+AGENTS.md
+CLAUDE.md
+
+# Dev configs
+.env
+.env.local
+*.code-workspace
+.vscode/
+
+# Build artifacts (dashboard is rebuilt in Docker)
+dashboard/out/
+
+# Scripts not needed in production
+deploy.js
+pull.js
+scratch_*.js
+scratch_*.mjs

@@ -3,20 +3,34 @@
 // Features: chat memory, model pool rotation, vision, image generation
 
 import Groq from 'groq-sdk'
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import OpenAI from 'openai'
 import { Client } from '@gradio/client'
-import sharp from 'sharp'
 import fs from 'fs'
 import { memoryService } from './memory.js'
 import { logger } from '../utils/logger.js'
+
+let GoogleGenerativeAI = null
+let sharp = null
+
+try {
+    const genAiMod = await import('@google/generative-ai')
+    GoogleGenerativeAI = genAiMod.GoogleGenerativeAI
+} catch (e) {
+    logger.warn('[Lite Mode] @google/generative-ai tidak ditemukan. Vision/Gemini dinonaktifkan.')
+}
+
+try {
+    sharp = (await import('sharp')).default
+} catch (e) {
+    logger.warn('[Lite Mode] sharp tidak ditemukan. Image processing AI dinonaktifkan.')
+}
 
 // ─────────────────────────────────────────────
 // CLIENT INIT
 // ─────────────────────────────────────────────
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+const genAI = GoogleGenerativeAI ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null
 const nvidiaClient = process.env.NVIDIA_API_KEY ? new OpenAI({
     apiKey: process.env.NVIDIA_API_KEY,
     baseURL: 'https://integrate.api.nvidia.com/v1'

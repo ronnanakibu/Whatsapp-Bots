@@ -2,7 +2,7 @@
 // Alarm service untuk reminder
 // "Call" diganti react spam — HP bunyi 4x dalam 30 detik
 
-export async function triggerAlarm(sock, chatId, message, _useCall = false, quotedMsgStr = null) {
+export async function triggerAlarm(sock, chatId, message, _useCall = false, quotedMsgStr = null, skipSpam = false) {
     const TZ = process.env.BOT_TIMEZONE ?? 'Asia/Jakarta'
     const timeStr = new Date().toLocaleTimeString('id-ID', {
         hour: '2-digit',
@@ -37,7 +37,7 @@ export async function triggerAlarm(sock, chatId, message, _useCall = false, quot
 
     // React spam background — tidak blocking
     // HP bunyi setiap react (total 4x: pesan + 3 react)
-    if (sentMsg?.key) {
+    if (sentMsg?.key && !skipSpam) {
         const reacts = ['⏰', '🔔', '‼️']
             ; (async () => {
                 for (const emoji of reacts) {

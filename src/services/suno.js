@@ -10,8 +10,14 @@ import { uploadToDrive } from './gdrive.js'
 import { eventBus } from '../events/bus.js'
 import { logger, getSocket } from '../utils/logger.js'
 import dotenv from 'dotenv'
-import sharp from 'sharp'
 dotenv.config({ override: true })
+
+let sharp = null
+try {
+    sharp = (await import('sharp')).default
+} catch (e) {
+    // Abaikan jika tidak ada sharp (Lite Mode)
+}
 
 // Active jobs database in-memory
 const activeJobs = new Map()
