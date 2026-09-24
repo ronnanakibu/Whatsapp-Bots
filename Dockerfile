@@ -1,12 +1,20 @@
-# ── Stage 1: Build dashboard ──
-FROM node:20-slim AS dashboard-builder
+# ── Stage 1: Build radio dashboard ──
+FROM node:20-slim AS radio-builder
 WORKDIR /dashboard
 COPY dashboard/package.json dashboard/package-lock.json ./
 RUN npm ci
 COPY dashboard/ .
 RUN npm run build
 
-# ── Stage 2: Runtime ──
+# ── Stage 2: Build main dashboard ──
+FROM node:20-slim AS main-builder
+WORKDIR /main-dashboard
+COPY src/app/dashboard/package.json src/app/dashboard/package-lock.json ./
+RUN npm ci
+COPY src/app/dashboard/ .
+RUN npm run build
+
+# ── Stage 3: Runtime ──
 # Use standard node:20 which has build-essential & python3 pre-installed
 FROM node:20
 
@@ -28,7 +36,8 @@ COPY start.js ./
 COPY .env.example ./
 
 # Copy built dashboard static files
-COPY --from=dashboard-builder /dashboard/out ./dashboard/out/
+COPY --from=radio-builder /dashboard/out ./dashboard/out/
+COPY --from=main-builder /main-dashboard/out ./src/app/dashboard/out/
 
 # Create storage directory structure (volume will mount over /app/storage)
 RUN mkdir -p storage/sessions storage/database storage/logs \
