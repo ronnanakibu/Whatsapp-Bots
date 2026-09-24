@@ -282,7 +282,7 @@ export async function syncInstagramStories(sock = null, options = {}) {
                 const mediaBuffer = Buffer.from(mediaRes.data)
                 
                 // Cegah duplikasi berdasarkan konten asli media menggunakan MD5 hash
-                const crypto = require('crypto')
+                const crypto = await import('crypto')
                 const mediaHash = crypto.createHash('md5').update(mediaBuffer).digest('hex')
                 
                 if (isAlreadyArchived(mediaHash)) {
