@@ -127,20 +127,63 @@ export default function Overview() {
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorMessages" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="rgb(99, 102, 241)" stopOpacity={0.2}/>
-                  <stop offset="95%" stopColor="rgb(99, 102, 241)" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="hsl(var(--accent))" stopOpacity={0.2}/>
+                  <stop offset="95%" stopColor="hsl(var(--accent))" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <XAxis dataKey="hour" stroke="hsl(var(--muted-foreground)/0.4)" fontSize={9} fontFamily="JetBrains Mono" />
-              <YAxis stroke="hsl(var(--muted-foreground)/0.4)" fontSize={9} fontFamily="JetBrains Mono" />
+              <XAxis dataKey="hour" stroke="hsl(var(--muted-foreground)/0.4)" fontSize={9} fontFamily="var(--font-mono)" />
+              <YAxis stroke="hsl(var(--muted-foreground)/0.4)" fontSize={9} fontFamily="var(--font-mono)" />
               <Tooltip 
                 contentStyle={{ background: 'hsl(var(--surface-elevated))', border: '1px solid hsl(var(--border))' }}
-                labelStyle={{ fontSize: '10px', color: 'hsl(var(--foreground))', fontFamily: 'JetBrains Mono' }}
-                itemStyle={{ fontSize: '11px', color: 'rgb(99, 102, 241)', fontFamily: 'JetBrains Mono' }}
+                labelStyle={{ fontSize: '10px', color: 'hsl(var(--foreground))', fontFamily: 'var(--font-mono)' }}
+                itemStyle={{ fontSize: '11px', color: 'hsl(var(--accent))', fontFamily: 'var(--font-mono)' }}
               />
-              <Area type="monotone" dataKey="Messages" stroke="rgb(99, 102, 241)" strokeWidth={1.5} fillOpacity={1} fill="url(#colorMessages)" />
+              <Area type="monotone" dataKey="Messages" stroke="hsl(var(--accent))" strokeWidth={1.5} fillOpacity={1} fill="url(#colorMessages)" />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Admin Modules Bento Grid */}
+      <div>
+        <div className="mb-4">
+          <h3 className="text-sm font-bold text-white">Control Panel Modules</h3>
+          <p className="text-[10px] text-muted-foreground mt-0.5">Access all BotOS subsystems and configurations</p>
+        </div>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {[
+            { id: 'messages', label: 'Observatory', icon: MessageSquare, color: 'text-blue-400', bg: 'bg-blue-400/10' },
+            { id: 'analytics', label: 'Analytics', icon: Activity, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+            { id: 'ai', label: 'AI Center', icon: Bot, color: 'text-purple-400', bg: 'bg-purple-400/10' },
+            { id: 'groups', label: 'Groups', icon: Users2, color: 'text-amber-400', bg: 'bg-amber-400/10' },
+            { id: 'users', label: 'Users', icon: Users2, color: 'text-orange-400', bg: 'bg-orange-400/10' },
+            { id: 'commands', label: 'Commands', icon: Terminal, color: 'text-cyan-400', bg: 'bg-cyan-400/10' },
+            { id: 'downloader', label: 'Downloads', icon: Compass, color: 'text-rose-400', bg: 'bg-rose-400/10' },
+            { id: 'moderation', label: 'Moderation', icon: ShieldAlert, color: 'text-red-500', bg: 'bg-red-500/10' },
+            { id: 'memory', label: 'Memory DB', icon: Database, color: 'text-indigo-400', bg: 'bg-indigo-400/10' },
+            { id: 'automations', label: 'Automations', icon: Cpu, color: 'text-pink-400', bg: 'bg-pink-400/10' },
+            { id: 'logs', label: 'Logs Center', icon: Terminal, color: 'text-slate-400', bg: 'bg-slate-400/10' },
+            { id: 'deployments', label: 'Deployments', icon: Cpu, color: 'text-teal-400', bg: 'bg-teal-400/10' },
+            { id: 'developer', label: 'Developer', icon: Terminal, color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
+          ].map((mod, i) => {
+            const Icon = mod.icon
+            return (
+              <motion.div
+                key={mod.id}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.03 }}
+                onClick={() => useDashboardStore.setState({ activeTab: mod.id })}
+                className="cursor-pointer group flex flex-col items-center justify-center p-6 bg-surface/40 border border-border/60 hover:border-border hover:bg-surface-elevated transition-all rounded-xl relative overflow-hidden"
+              >
+                <div className={`p-3 rounded-full ${mod.bg} ${mod.color} mb-3 group-hover:scale-110 transition-transform duration-300`}>
+                  <Icon size={22} />
+                </div>
+                <span className="text-xs font-semibold text-foreground group-hover:text-white transition-colors">{mod.label}</span>
+              </motion.div>
+            )
+          })}
         </div>
       </div>
     </div>

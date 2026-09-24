@@ -4,27 +4,28 @@
 
 @layer base {
   :root {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --surface: 240 10% 6%;
-    --surface-elevated: 240 10% 9%;
-    --border: 240 5.9% 15%;
-    --border-subtle: 240 5.9% 10%;
-    --muted: 240 4.8% 12%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 250 95% 60%;
-    --accent-foreground: 0 0% 98%;
-    --accent-subtle: 250 95% 15%;
+    --background: 222 84% 5%;
+    --foreground: 210 40% 98%;
+    --surface: 222 47% 11%;
+    --surface-elevated: 215 32% 17%;
+    --border: 215 32% 17%;
+    --border-subtle: 222 47% 11%;
+    --muted: 215 32% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 142 71% 45%;
+    --accent-foreground: 0 0% 100%;
+    --accent-subtle: 142 71% 15%;
     
-    --success: 142.1 76.2% 36.3%;
-    --warning: 37.9 90.2% 50.1%;
-    --danger: 346.8 77.2% 49.8%;
-    --info: 198.6 88.7% 48.4%;
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --danger: 348 83% 47%;
+    --info: 199 89% 48%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
     
-    --font-display: 'Inter', sans-serif;
-    --font-body: 'Inter', sans-serif;
+    --font-display: 'Fira Sans', sans-serif;
+    --font-body: 'Fira Sans', sans-serif;
+    --font-mono: 'Fira Code', monospace;
   }
 
   .light {
