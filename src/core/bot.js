@@ -203,7 +203,7 @@ async function startBot() {
                     reconnectCount++
                     const delay = Math.min(Math.pow(2, reconnectCount) * 1000, 30_000)
                     botLogger.warn('bot', `Reconnecting in ${delay / 1000}s (attempt ${reconnectCount}/${MAX_RECONNECT_ATTEMPTS})`)
-                    setTimeout(() => startWhatsAppClient(), delay)
+                    setTimeout(() => startBot(), delay)
                 } else {
                     botLogger.fatal('bot', 'Max reconnect attempts reached. Exiting for automatic daemon restart.')
                     process.exit(1)
