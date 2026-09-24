@@ -119,7 +119,9 @@ async function startBot() {
     // 5. Pairing code (kalau ada BOT_NUMBER)
     const rawBotNumber = (process.env.BOT_NUMBER ?? '').split(',')[0] ?? ''
     const phoneNumber = rawBotNumber.replace(/[^0-9]/g, '') || null
-    if (phoneNumber && !state.creds?.registered) {
+    const useQR = process.env.PRINTED_QR === 'true'
+
+    if (phoneNumber && !state.creds?.registered && !useQR) {
         botLogger.system(`Requesting pairing code for +${phoneNumber}...`)
         setTimeout(async () => {
             try {
@@ -137,7 +139,7 @@ async function startBot() {
 
     // 6. Connection events
     sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
-        if (qr && !phoneNumber) {
+        if (qr && (!phoneNumber || useQR)) {
             botLogger.system('QR Code generated — scan with WhatsApp:')
             qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
                 if (!err) process.stdout.write(url + '\n')
