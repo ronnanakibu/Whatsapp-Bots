@@ -12,6 +12,7 @@ import crypto from 'crypto'
 
 import { radioService } from '../services/radio.js'
 import { logger, addLogListener, removeLogListener, addMessageListener, removeMessageListener, getSocket, getLogHistory } from '../utils/logger.js'
+import qrcode from 'qrcode'
 import { metricsService } from '../services/metrics.js'
 import { commands } from '../core/loader.js'
 import { memoryService } from '../services/memory.js'
@@ -1138,7 +1139,26 @@ export function startRadioServer() {
         res.on('error', cleanup)
     })
 
-
+    // QR Code Web Endpoint
+    app.get('/qr', async (req, res) => {
+        if (!currentQrCode) {
+            return res.status(404).send('<body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#222;color:white;font-family:sans-serif;"><h2>QR Code not ready or bot is already connected.</h2></body>')
+        }
+        try {
+            const dataUrl = await qrcode.toDataURL(currentQrCode)
+            res.send(`
+                <html>
+                <body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#111;color:white;font-family:sans-serif;flex-direction:column;margin:0;">
+                    <h2>Scan with WhatsApp</h2>
+                    <img src="${dataUrl}" style="background:white;padding:20px;border-radius:15px;width:300px;height:300px;box-shadow: 0 4px 20px rgba(0,0,0,0.5);"/>
+                    <p style="margin-top:20px;opacity:0.7;">Refresh the page if the QR code expires.</p>
+                </body>
+                </html>
+            `)
+        } catch (err) {
+            res.status(500).send('Error generating QR code')
+        }
+    })
 
     // Locate static build out directories
     const dashboardDir = path.resolve('./src/app/dashboard/out')
