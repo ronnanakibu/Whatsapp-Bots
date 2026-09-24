@@ -174,7 +174,7 @@ export default function Overview() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: i * 0.03 }}
-                onClick={() => useDashboardStore.setState({ activeTab: mod.id })}
+                onClick={() => useDashboardStore.setState({ activeTab: mod.id as any })}
                 className="cursor-pointer group flex flex-col items-center justify-center p-6 bg-surface/40 border border-border/60 hover:border-border hover:bg-surface-elevated transition-all rounded-xl relative overflow-hidden"
               >
                 <div className={`p-3 rounded-full ${mod.bg} ${mod.color} mb-3 group-hover:scale-110 transition-transform duration-300`}>
