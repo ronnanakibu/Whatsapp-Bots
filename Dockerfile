@@ -2,7 +2,7 @@
 FROM node:20-slim AS radio-builder
 WORKDIR /dashboard
 COPY dashboard/package.json dashboard/package-lock.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 COPY dashboard/ .
 RUN npm run build
 
@@ -10,7 +10,7 @@ RUN npm run build
 FROM node:20-slim AS main-builder
 WORKDIR /main-dashboard
 COPY src/app/dashboard/package.json src/app/dashboard/package-lock.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 COPY src/app/dashboard/ .
 RUN npm run build
 
