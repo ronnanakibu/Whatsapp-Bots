@@ -18,9 +18,10 @@ RUN npm run build
 # Use standard node:20 which has build-essential & python3 pre-installed
 FROM node:20
 
-# OS dependencies (only ffmpeg needed now)
+# OS dependencies (ffmpeg & curl for robust media/sound downloads)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

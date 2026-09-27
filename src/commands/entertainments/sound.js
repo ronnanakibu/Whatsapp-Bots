@@ -3,10 +3,15 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
+import { execFile } from 'child_process'
+import util from 'util'
 import { logger } from '../../utils/logger.js'
+
+const execFilePromise = util.promisify(execFile)
 
 const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db')
 const VN_DIR  = path.resolve('./storage/sounds')
+const SOUND_CACHE_DIR = path.resolve('./storage/sounds/cache')
 
 let dbInstance = null
 function getDb() {
@@ -15,6 +20,7 @@ function getDb() {
     const dir = path.dirname(DB_PATH)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
     if (!fs.existsSync(VN_DIR))  fs.mkdirSync(VN_DIR,  { recursive: true })
+    if (!fs.existsSync(SOUND_CACHE_DIR)) fs.mkdirSync(SOUND_CACHE_DIR, { recursive: true })
 
     dbInstance = new Database(DB_PATH)
     dbInstance.pragma('journal_mode = WAL')
@@ -46,9 +52,9 @@ const MEME_SOUNDS = {
     'laugh':      'https://www.myinstants.com/media/sounds/laugh-track.mp3',
     'wow':        'https://www.myinstants.com/media/sounds/anime-wow-sound-effect.mp3',
     'spongebob':  'https://www.myinstants.com/media/sounds/spongebob-fail.mp3',
-    'nani':       'https://www.myinstants.com/media/sounds/nani_1.mp3',
+    'nani':       'https://www.myinstants.com/media/sounds/nani_Pmxf5n3.mp3',
     'run':        'https://www.myinstants.com/media/sounds/run-vine-sound-effect.mp3',
-    'bonk':       'https://www.myinstants.com/media/sounds/bonk_XjB1kwG.mp3',
+    'bonk':       'https://www.myinstants.com/media/sounds/bonk_BEtiM8g.mp3',
     'emotional':  'https://www.myinstants.com/media/sounds/emotional-damage-meme.mp3',
     'illuminati': 'https://www.myinstants.com/media/sounds/illuminati-confirmed.mp3',
     'windows':    'https://www.myinstants.com/media/sounds/windows-xp-startup.mp3',
@@ -57,14 +63,92 @@ const MEME_SOUNDS = {
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
-// ─── Source 1 (PRIORITY): MyInstants REST API ────────────────────────────────
-// Free, no key, clean JSON, 500k+ sounds
+function isValidAudio(buf) {
+    if (!buf || buf.length < 500) return false
+    const str = buf.subarray(0, 100).toString().toLowerCase()
+    if (str.includes('<!doctype') || str.includes('<html') || str.includes('cloudflare') || str.includes('attention required')) {
+        return false
+    }
+    return true
+}
+
+function getCachedSound(url) {
+    try {
+        const hash = crypto.createHash('md5').update(url).digest('hex')
+        const cacheFile = path.join(SOUND_CACHE_DIR, `${hash}.mp3`)
+        if (fs.existsSync(cacheFile)) {
+            const buf = fs.readFileSync(cacheFile)
+            if (isValidAudio(buf)) return buf
+        }
+    } catch (_) {}
+    return null
+}
+
+function saveCachedSound(url, buf) {
+    try {
+        if (!isValidAudio(buf)) return
+        if (!fs.existsSync(SOUND_CACHE_DIR)) fs.mkdirSync(SOUND_CACHE_DIR, { recursive: true })
+        const hash = crypto.createHash('md5').update(url).digest('hex')
+        const cacheFile = path.join(SOUND_CACHE_DIR, `${hash}.mp3`)
+        fs.writeFileSync(cacheFile, buf)
+    } catch (_) {}
+}
+
+async function fetchSoundBuffer(url) {
+    // 1. Cek disk cache lokal terlebih dahulu (0ms response, immune Cloudflare block)
+    const cached = getCachedSound(url)
+    if (cached) return cached
+
+    // 2. Gunakan curl terlebih dahulu (curl bypass Cloudflare TLS fingerprinting yang memblokir Node.js)
+    try {
+        const curlBin = process.platform === 'win32' ? 'curl.exe' : 'curl'
+        const args = [
+            '-s', '-L',
+            '--max-time', '15',
+            '-A', UA,
+            '-e', 'https://www.myinstants.com/',
+            url
+        ]
+        const { stdout } = await execFilePromise(curlBin, args, { encoding: 'buffer', maxBuffer: 20 * 1024 * 1024 })
+        if (isValidAudio(stdout)) {
+            saveCachedSound(url, stdout)
+            return stdout
+        }
+    } catch (curlErr) {
+        logger.warn(`[Sound] curl buffer download failed for ${url}: ${curlErr.message}`)
+    }
+
+    // 3. Fallback ke Axios dengan header browser
+    try {
+        const res = await axios.get(url, {
+            responseType: 'arraybuffer',
+            headers: {
+                'User-Agent': UA,
+                'Referer': 'https://www.myinstants.com/',
+                'Accept': '*/*'
+            },
+            timeout: 15000
+        })
+        const buf = Buffer.from(res.data)
+        if (isValidAudio(buf)) {
+            saveCachedSound(url, buf)
+            return buf
+        }
+    } catch (axiosErr) {
+        logger.warn(`[Sound] axios buffer download failed for ${url}: ${axiosErr.message}`)
+    }
+
+    return null
+}
+
+// ─── Search MyInstants: REST API + Scraper Fallback ──────────────────────────
 async function searchMyInstants(query) {
+    // 1. Coba REST API resmi
     try {
         const res = await axios.get('https://www.myinstants.com/api/v1/instants/', {
             params: { name: query, page: 1, page_size: 5 },
-            headers: { 'User-Agent': UA },
-            timeout: 10000
+            headers: { 'User-Agent': UA, 'Referer': 'https://www.myinstants.com/' },
+            timeout: 5000
         })
         const results = res.data?.results ?? []
         if (results.length > 0 && results[0].sound) {
@@ -74,9 +158,31 @@ async function searchMyInstants(query) {
                 source: 'myinstants'
             }
         }
-    } catch (err) {
-        logger.warn(`[Sound] MyInstants error: ${err.message}`)
+    } catch (_) {
+        // Abaikan, lanjut ke fallback web scraper
     }
+
+    // 2. Fallback: Scrape halaman pencarian MyInstants via curl
+    try {
+        const curlBin = process.platform === 'win32' ? 'curl.exe' : 'curl'
+        const searchUrl = `https://www.myinstants.com/en/search/?name=${encodeURIComponent(query)}`
+        const args = ['-s', '-L', '--max-time', '10', '-A', UA, '-e', 'https://www.myinstants.com/', searchUrl]
+        const { stdout } = await execFilePromise(curlBin, args, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 })
+        const matches = [...stdout.matchAll(/play\('([^']+\.mp3)',\s*'[^']+',\s*'([^']*)'\)/g)]
+        if (matches.length > 0) {
+            const rawPath = matches[0][1]
+            const name = matches[0][2] || query
+            const fullUrl = rawPath.startsWith('http') ? rawPath : `https://www.myinstants.com${rawPath}`
+            return {
+                name,
+                url: fullUrl,
+                source: 'myinstants-web'
+            }
+        }
+    } catch (scrapeErr) {
+        logger.warn(`[Sound] MyInstants scrape error: ${scrapeErr.message}`)
+    }
+
     return null
 }
 
@@ -383,36 +489,16 @@ export default {
                     ptt: true
                 }, { quoted: msg })
             } else {
-                // Download buffer terlebih dahulu agar request memakai User-Agent & Referer lengkap (hindari 403 Cloudflare)
-                let audioBuffer = null
-                try {
-                    const downloadRes = await axios.get(soundUrl, {
-                        responseType: 'arraybuffer',
-                        headers: {
-                            'User-Agent': UA,
-                            'Referer': soundUrl.includes('myinstants.com') ? 'https://www.myinstants.com/' : undefined
-                        },
-                        timeout: 15000
-                    })
-                    audioBuffer = Buffer.from(downloadRes.data)
-                } catch (dlErr) {
-                    logger.warn(`[Sound] Direct buffer download failed for ${soundUrl}: ${dlErr.message}`)
+                const audioBuffer = await fetchSoundBuffer(soundUrl)
+                if (!audioBuffer || audioBuffer.length === 0) {
+                    throw new Error(`Audio buffer kosong atau dibatasi oleh server sumber (${soundUrl})`)
                 }
 
-                if (audioBuffer && audioBuffer.length > 0) {
-                    await sock.sendMessage(from, {
-                        audio: audioBuffer,
-                        mimetype: 'audio/mpeg',
-                        ptt: false
-                    }, { quoted: msg })
-                } else {
-                    // Fallback pass URL langsung ke Baileys
-                    await sock.sendMessage(from, {
-                        audio: { url: soundUrl },
-                        mimetype: 'audio/mpeg',
-                        ptt: false
-                    }, { quoted: msg })
-                }
+                await sock.sendMessage(from, {
+                    audio: audioBuffer,
+                    mimetype: 'audio/mpeg',
+                    ptt: false
+                }, { quoted: msg })
             }
             await react('✅')
         } catch (err) {
