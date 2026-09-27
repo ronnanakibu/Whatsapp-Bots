@@ -217,7 +217,7 @@ export default {
                 await react('✅')
                 return reply(`✅ VN/Audio dari video berhasil disimpan sebagai *"${keyword}"*!\nGunakan: *.sound ${keyword}*`)
             } catch (err) {
-                logger.error('[Sound] VN/Video add error:', err.message, err.stack?.split('\n')[1])
+                logger.error({ err }, `[Sound] VN/Video add error: ${err.message}`)
                 await react('❌')
                 return reply(`❌ Gagal menyimpan VN/Audio: ${err.message}\n\nPastikan kamu reply ke pesan VN atau Video yang valid.`)
             }
@@ -258,7 +258,7 @@ export default {
                     dbList += `\n\n*🌐 Sound Online (Cached):*\n${cachedList}`
                 }
             } catch (err) {
-                logger.error('❌ [Sound] DB List Command Error:', err.message)
+                logger.error({ err }, `❌ [Sound] DB List Command Error: ${err.message}`)
             }
 
             return reply(
@@ -287,7 +287,7 @@ export default {
                     vnList = '\n\n*🎤 VN Tersimpan:*\n' + vnSounds.map(s => `- ${s.keyword}`).join('\n')
                 }
             } catch (err) {
-                logger.error('❌ [Sound] DB List Error:', err.message)
+                logger.error({ err }, `❌ [Sound] DB List Error: ${err.message}`)
             }
 
             return reply(
@@ -322,7 +322,7 @@ export default {
                     sourceLabel = 'vn-lokal'
                 }
             } catch (err) {
-                logger.error('❌ [Sound] VN read error:', err.message)
+                logger.error({ err }, `❌ [Sound] VN read error: ${err.message}`)
             }
         }
 
@@ -336,7 +336,7 @@ export default {
                     sourceLabel = cached.source ?? 'cache'
                 }
             } catch (err) {
-                logger.error('❌ [Sound] DB Read Error:', err.message)
+                logger.error({ err }, `❌ [Sound] DB Read Error: ${err.message}`)
             }
         }
 
@@ -358,7 +358,7 @@ export default {
                         .run(query, soundName, soundUrl, sourceLabel)
                     logger.info(`💾 [Sound] Cached: "${query}" -> "${soundName}" [${sourceLabel}]`)
                 } catch (dbErr) {
-                    logger.error('❌ [Sound] DB Write Error:', dbErr.message)
+                    logger.error({ err: dbErr }, `❌ [Sound] DB Write Error: ${dbErr.message}`)
                 }
 
                 await reply(`🔍 *Sound baru:* "${soundName}"\n💾 Disimpan ke cache dari *${sourceLabel}*`)
@@ -383,18 +383,42 @@ export default {
                     ptt: true
                 }, { quoted: msg })
             } else {
-                // URL online — kirim sebagai audio biasa (bukan PTT)
-                await sock.sendMessage(from, {
-                    audio: { url: soundUrl },
-                    mimetype: 'audio/mpeg',
-                    ptt: false
-                }, { quoted: msg })
+                // Download buffer terlebih dahulu agar request memakai User-Agent & Referer lengkap (hindari 403 Cloudflare)
+                let audioBuffer = null
+                try {
+                    const downloadRes = await axios.get(soundUrl, {
+                        responseType: 'arraybuffer',
+                        headers: {
+                            'User-Agent': UA,
+                            'Referer': soundUrl.includes('myinstants.com') ? 'https://www.myinstants.com/' : undefined
+                        },
+                        timeout: 15000
+                    })
+                    audioBuffer = Buffer.from(downloadRes.data)
+                } catch (dlErr) {
+                    logger.warn(`[Sound] Direct buffer download failed for ${soundUrl}: ${dlErr.message}`)
+                }
+
+                if (audioBuffer && audioBuffer.length > 0) {
+                    await sock.sendMessage(from, {
+                        audio: audioBuffer,
+                        mimetype: 'audio/mpeg',
+                        ptt: false
+                    }, { quoted: msg })
+                } else {
+                    // Fallback pass URL langsung ke Baileys
+                    await sock.sendMessage(from, {
+                        audio: { url: soundUrl },
+                        mimetype: 'audio/mpeg',
+                        ptt: false
+                    }, { quoted: msg })
+                }
             }
             await react('✅')
         } catch (err) {
-            logger.error('❌ [Sound] Send Error:', err.message)
+            logger.error({ err }, `❌ [Sound] Send Error: ${err.message}`)
             await react('❌')
-            await reply('❌ Gagal mengirim sound. Link mungkin sudah mati atau file rusak.')
+            await reply(`❌ Gagal mengirim sound "${soundName || query}". File rusak atau server sumber membatasi akses.\n\n_💡 Tips: Kamu bisa menyimpan VN favoritmu sendiri menggunakan command:_\n*.sound add <nama>* _(sambil reply ke VN/Video)_`)
         }
     }
 }

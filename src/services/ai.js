@@ -29,8 +29,8 @@ try {
 // CLIENT INIT
 // ─────────────────────────────────────────────
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
-const genAI = GoogleGenerativeAI ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null
+const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null
+const genAI = GoogleGenerativeAI && process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null
 const nvidiaClient = process.env.NVIDIA_API_KEY ? new OpenAI({
     apiKey: process.env.NVIDIA_API_KEY,
     baseURL: 'https://integrate.api.nvidia.com/v1'
@@ -207,6 +207,7 @@ async function nvidiaChat(chatId, userMessage, retryCount = 0) {
 // ─────────────────────────────────────────────
 
 async function groqChat(chatId, userMessage, retryCount = 0) {
+    if (!groq) throw new Error('GROQ_API_KEY tidak dikonfigurasi.')
     const model = getAvailableModel(GROQ_MODELS)
     const history = memoryService.getHistory(chatId)
 
@@ -340,20 +341,22 @@ async function enhancePrompt(rawPrompt) {
         logger.warn(`[AI] Gemini failed to enhance prompt: ${e.message}. Trying Groq/NVIDIA fallback...`)
         
         // Try Groq fallback
-        try {
-            const groqModel = getAvailableModel(GROQ_MODELS)
-            const res = await groq.chat.completions.create({
-                model: groqModel,
-                messages: [{ role: 'user', content: instructions }],
-                temperature: 0.7,
-            })
-            const reply = res.choices[0]?.message?.content?.trim()
-            if (reply && reply.length > 10) {
-                logger.info(`[AI] Enhanced Prompt via Groq: ${reply.slice(0, 100)}...`)
-                return reply
+        if (groq) {
+            try {
+                const groqModel = getAvailableModel(GROQ_MODELS)
+                const res = await groq.chat.completions.create({
+                    model: groqModel,
+                    messages: [{ role: 'user', content: instructions }],
+                    temperature: 0.7,
+                })
+                const reply = res.choices[0]?.message?.content?.trim()
+                if (reply && reply.length > 10) {
+                    logger.info(`[AI] Enhanced Prompt via Groq: ${reply.slice(0, 100)}...`)
+                    return reply
+                }
+            } catch (groqErr) {
+                logger.warn(`[AI] Groq fallback failed: ${groqErr.message}`)
             }
-        } catch (groqErr) {
-            logger.warn(`[AI] Groq fallback failed: ${groqErr.message}`)
         }
 
         // Try NVIDIA fallback
@@ -640,18 +643,32 @@ Format:
 
 Sumber: [sebutkan sumber/konteks singkat]`
 
-    // Gunakan Groq untuk kecepatan, tanpa memory (standalone)
-    const model = getAvailableModel(GROQ_MODELS)
-    const res = await groq.chat.completions.create({
-        model,
-        messages: [
-            { role: 'system', content: 'Kamu adalah ensiklopedia yang memberikan fakta menarik dan akurat.' },
-            { role: 'user', content: prompt }
-        ],
-        max_tokens: 256,
-        temperature: 0.9,
-    })
-    return { text: res.choices[0]?.message?.content?.trim(), provider: 'groq', model }
+    // Gunakan Groq jika tersedia, atau fallback ke NVIDIA
+    if (groq) {
+        const model = getAvailableModel(GROQ_MODELS)
+        const res = await groq.chat.completions.create({
+            model,
+            messages: [
+                { role: 'system', content: 'Kamu adalah ensiklopedia yang memberikan fakta menarik dan akurat.' },
+                { role: 'user', content: prompt }
+            ],
+            max_tokens: 256,
+            temperature: 0.9,
+        })
+        return { text: res.choices[0]?.message?.content?.trim(), provider: 'groq', model }
+    } else if (nvidiaClient) {
+        const res = await nvidiaClient.chat.completions.create({
+            model: 'meta/llama-3.1-8b-instruct',
+            messages: [
+                { role: 'system', content: 'Kamu adalah ensiklopedia yang memberikan fakta menarik dan akurat.' },
+                { role: 'user', content: prompt }
+            ],
+            max_tokens: 256,
+            temperature: 0.9,
+        })
+        return { text: res.choices[0]?.message?.content?.trim(), provider: 'nvidia', model: 'meta/llama-3.1-8b-instruct' }
+    }
+    throw new Error('AI engine tidak tersedia (GROQ_API_KEY atau NVIDIA_API_KEY belum dikonfigurasi).')
 }
 
 // ─────────────────────────────────────────────
@@ -1007,7 +1024,7 @@ async function generateYoutubeMetadata(vibePrompt) {
     `
 
     // Try Groq first (Primary for text)
-    try {
+    if (groq) try {
         const groqModel = getAvailableModel(GROQ_MODELS)
         const res = await groq.chat.completions.create({
             model: groqModel,

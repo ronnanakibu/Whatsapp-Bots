@@ -13,10 +13,29 @@ import { botLogger } from '../utils/logger.js'
 import { getYtdlpPath, ytdlpGetAudioUrl, ytdlpStream, getCookieArgs } from './ytdlp.js'
 import { db } from './db.js'
 
+// ─────────────────────────────────────────────
+// FFMPEG PATH
+// ─────────────────────────────────────────────
+
+function getFfmpegPath() {
+    const isWindows = process.platform === 'win32'
+    const local = path.resolve('./storage/bin/ffmpeg' + (isWindows ? '.exe' : ''))
+    if (fs.existsSync(local)) {
+        try {
+            fs.accessSync(local, fs.constants.X_OK)
+        } catch (_) {
+            try { fs.chmodSync(local, 0o755) } catch (_) { }
+        }
+        return local
+    }
+    return 'ffmpeg' // fallback system PATH
+}
+
 // Cek apakah filter 'afifo' didukung oleh ffmpeg (karena sudah dihapus sejak versi FFmpeg awal 2024)
 let _isAfifoSupported = false
 try {
-    const filters = execSync('ffmpeg -filters', { stdio: 'pipe' }).toString()
+    const ffmpegBin = getFfmpegPath() || 'ffmpeg'
+    const filters = execSync(`"${ffmpegBin}" -filters`, { stdio: 'pipe' }).toString()
     _isAfifoSupported = filters.includes(' afifo ')
 } catch (e) {
     botLogger.warn('radio', `Gagal mengecek filter afifo ffmpeg: ${e.message}`)
@@ -271,22 +290,7 @@ function fetchStream(url, redirectCount = 0) {
     })
 }
 
-// ─────────────────────────────────────────────
-// FFMPEG PATH
-// ─────────────────────────────────────────────
 
-function getFfmpegPath() {
-    const local = path.resolve('./storage/bin/ffmpeg')
-    if (fs.existsSync(local)) {
-        try {
-            fs.accessSync(local, fs.constants.X_OK)
-        } catch (_) {
-            try { fs.chmodSync(local, 0o755) } catch (_) { }
-        }
-        return local
-    }
-    return 'ffmpeg' // fallback system PATH
-}
 
 // ─────────────────────────────────────────────
 // CONSTANTS

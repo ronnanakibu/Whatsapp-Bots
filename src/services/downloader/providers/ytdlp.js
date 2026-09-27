@@ -17,6 +17,10 @@ export async function downloadYtdlp(url, options = {}) {
     const ytdlpPath = getYtdlpPath()
 
     if (!ytdlpPath) {
+        if (process.env.HF_API_URL) {
+            logger.info(`[yt-dlp] Local yt-dlp binary tidak ditemukan, mencoba via HF Space...`)
+            return await downloadViaHF(url, format)
+        }
         throw new Error('yt-dlp binary tidak ditemukan. Harap tunggu proses download yt-dlp selesai di background.')
     }
 
@@ -45,20 +49,42 @@ export async function downloadYtdlp(url, options = {}) {
         logger.debug(`[yt-dlp] Using cookies file: ${cookiesPath}`)
     }
 
+    // Ensure ffmpeg location is passed if present
+    const isWindows = process.platform === 'win32'
+    const ffmpegCandidates = [
+        process.env.FFMPEG_PATH,
+        path.resolve('./storage/bin'),
+        path.resolve('./storage/bin/ffmpeg' + (isWindows ? '.exe' : '')),
+    ]
+    const foundFfmpeg = ffmpegCandidates.find(p => p && fs.existsSync(p))
+    if (foundFfmpeg) {
+        args.push('--ffmpeg-location', foundFfmpeg)
+    }
+
     if (format === 'audio') {
-        const quality = options.audioQuality === 'normal' ? '128K' : '320K'
-        args.push(
-            '--extract-audio',
-            '--audio-format', 'mp3',
-            '--audio-quality', quality
-        )
+        if (foundFfmpeg) {
+            const quality = options.audioQuality === 'normal' ? '128K' : '320K'
+            args.push(
+                '--extract-audio',
+                '--audio-format', 'mp3',
+                '--audio-quality', quality
+            )
+        } else {
+            // Tanpa ffmpeg, extract-audio akan melempar error postprocessing.
+            // Gunakan format native audio (m4a) yang tidak membutuhkan ffmpeg!
+            args.push('-f', 'bestaudio[ext=m4a]/bestaudio')
+        }
     } else {
         // Video MP4 with target resolution limit
         const res = options.resolution || '1080'
-        args.push(
-            '-f', `bestvideo[height<=${res}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${res}]+bestaudio/best[height<=${res}]/best`,
-            '--merge-output-format', 'mp4'
-        )
+        if (foundFfmpeg) {
+            args.push(
+                '-f', `bestvideo[height<=${res}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${res}]+bestaudio/best[height<=${res}]/best`,
+                '--merge-output-format', 'mp4'
+            )
+        } else {
+            args.push('-f', `best[height<=${res}][ext=mp4]/best[ext=mp4]/best`)
+        }
     }
 
     args.push(url)
@@ -76,6 +102,12 @@ export async function downloadYtdlp(url, options = {}) {
             if (code !== 0) {
                 // Hapus sisa file jika ada error
                 cleanupTempFiles(sessionId)
+                if (process.env.HF_API_URL) {
+                    logger.info(`[yt-dlp] Local yt-dlp failed (code ${code}), falling back to HF Space...`)
+                    return downloadViaHF(url, format).then(resolve).catch(hfErr => {
+                        reject(new Error(`yt-dlp error (${code}): ${stderr.slice(0, 200)} | HF fallback: ${hfErr.message}`))
+                    })
+                }
                 return reject(new Error(`yt-dlp error (${code}): ${stderr.slice(0, 200)}`))
             }
 
@@ -128,6 +160,12 @@ export async function downloadYtdlp(url, options = {}) {
 
         proc.on('error', err => {
             cleanupTempFiles(sessionId)
+            if (process.env.HF_API_URL) {
+                logger.info(`[yt-dlp] Local yt-dlp proc error (${err.message}), falling back to HF Space...`)
+                return downloadViaHF(url, format).then(resolve).catch(hfErr => {
+                    reject(new Error(`Gagal menjalankan yt-dlp: ${err.message} | HF fallback: ${hfErr.message}`))
+                })
+            }
             reject(new Error(`Gagal menjalankan yt-dlp: ${err.message}`))
         })
 
