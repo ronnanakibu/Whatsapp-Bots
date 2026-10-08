@@ -1,16 +1,17 @@
 // src/commands/entertainments/sound.js
-import axios from 'axios'
-import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 import { execFile, exec } from 'child_process'
 import util from 'util'
+import Database from 'better-sqlite3'
+import yts from 'yt-search'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { logger } from '../../utils/logger.js'
 import { tgStorage } from '../../services/tgStorage.js'
 import { mediaCache } from '../../services/mediaCache.js'
 import { getFfmpegPath } from '../../services/media.js'
+import { download } from '../../services/downloader/index.js'
 import { unwrapMessage } from '../../utils/message.js'
 import { normalizeNumber } from '../../utils/permissions.js'
 
@@ -37,6 +38,7 @@ function getDb() {
             keyword    TEXT PRIMARY KEY,
             sound_name TEXT NOT NULL,
             sound_url  TEXT NOT NULL,
+            audio_data BLOB,
             source     TEXT NOT NULL DEFAULT 'unknown',
             created_at INTEGER NOT NULL DEFAULT (unixepoch())
         );
@@ -51,19 +53,15 @@ function getDb() {
     `)
 
     // Migrasi kolom jika tabel lama belum memiliki audio_data atau mime_type
-    try {
-        dbInstance.exec('ALTER TABLE sound_vn ADD COLUMN audio_data BLOB')
-    } catch (_) {}
-    try {
-        dbInstance.exec('ALTER TABLE sound_vn ADD COLUMN mime_type TEXT')
-    } catch (_) {}
+    try { dbInstance.exec('ALTER TABLE sound_vn ADD COLUMN audio_data BLOB') } catch (_) {}
+    try { dbInstance.exec('ALTER TABLE sound_vn ADD COLUMN mime_type TEXT') } catch (_) {}
+    try { dbInstance.exec('ALTER TABLE sound_cache ADD COLUMN audio_data BLOB') } catch (_) {}
 
     return dbInstance
 }
 
-// ─── Koleksi Meme Sounds Bawaan (Terverifikasi Aktif & Bebas Blokir) ───────────
+// ─── Koleksi Meme Sounds Bawaan (Instan 0ms Response) ─────────────────────────
 const MEME_SOUNDS = {
-    // Klasik & Viral
     'vineboom':   'https://www.myinstants.com/media/sounds/vine-boom.mp3',
     'bruh':       'https://www.myinstants.com/media/sounds/movie_1.mp3',
     'crickets':   'https://www.myinstants.com/media/sounds/crickets.mp3',
@@ -126,11 +124,9 @@ function saveCachedSound(url, buf) {
 }
 
 async function fetchSoundBuffer(url) {
-    // 1. Cek disk cache lokal terlebih dahulu
     const cached = getCachedSound(url)
     if (cached) return cached
 
-    // 2. Gunakan HTTP fetch dengan header browser
     try {
         const res = await fetch(url, {
             headers: {
@@ -151,16 +147,9 @@ async function fetchSoundBuffer(url) {
         logger.warn(`[Sound] fetch buffer failed for ${url}: ${fetchErr.message}`)
     }
 
-    // 3. Fallback ke curl
     try {
         const curlBin = process.platform === 'win32' ? 'curl.exe' : 'curl'
-        const args = [
-            '-s', '-L',
-            '--max-time', '15',
-            '-A', UA,
-            '-e', 'https://www.myinstants.com/',
-            url
-        ]
+        const args = ['-s', '-L', '--max-time', '15', '-A', UA, '-e', 'https://www.myinstants.com/', url]
         const { stdout } = await execFilePromise(curlBin, args, { encoding: 'buffer', maxBuffer: 20 * 1024 * 1024 })
         if (isValidAudio(stdout)) {
             saveCachedSound(url, stdout)
@@ -173,13 +162,107 @@ async function fetchSoundBuffer(url) {
     return null
 }
 
+/**
+ * Cari daftar sound dari MyInstants Soundboard menggunakan curl untuk melewati proteksi TLS
+ */
+async function searchMyInstantsList(query) {
+    try {
+        const curlBin = process.platform === 'win32' ? 'curl.exe' : 'curl'
+        const url = `https://www.myinstants.com/en/search/?name=${encodeURIComponent(query)}`
+        const args = ['-s', '-L', '--max-time', '10', '-A', UA, url]
+        const { stdout } = await execFilePromise(curlBin, args)
+        if (!stdout) return []
+
+        const regex = /onclick="play\('([^']+)'[^)]*\)"[\s\S]*?<a[^>]*class="instant-link[^"]*"[^>]*>([^<]+)<\/a>/g
+        const results = []
+        let match
+        while ((match = regex.exec(stdout)) !== null) {
+            results.push({
+                mp3: `https://www.myinstants.com${match[1]}`,
+                title: match[2].trim()
+            })
+            if (results.length >= 10) break
+        }
+        return results
+    } catch (err) {
+        logger.warn(`[Sound] MyInstants search error for "${query}": ${err.message}`)
+        return []
+    }
+}
+
+/**
+ * Cari sound effect meme online secara dinamis
+ * 1. Prioritas 1: MyInstants Meme Soundboard (respon cepat 1-2 detik, koleksi meme otentik)
+ * 2. Prioritas 2: YouTube SFX Engine (Klip audio pendek 1-30 detik)
+ */
+async function searchOnlineSound(query) {
+    // 1. MyInstants Soundboard Search
+    try {
+        const instants = await searchMyInstantsList(query)
+        if (instants && instants.length > 0) {
+            for (const item of instants.slice(0, 3)) {
+                logger.info(`[Sound] Mencoba unduh dari MyInstants: "${item.title}" -> ${item.mp3}`)
+                const buf = await fetchSoundBuffer(item.mp3)
+                if (buf && isValidAudio(buf)) {
+                    return {
+                        title: item.title,
+                        url: item.mp3,
+                        buffer: buf,
+                        source: 'myinstants',
+                        ext: 'mp3'
+                    }
+                }
+            }
+        }
+    } catch (mErr) {
+        logger.warn(`[Sound] MyInstants lookup failed: ${mErr.message}`)
+    }
+
+    // 2. Fallback: YouTube SFX / Meme Klip Pendek
+    try {
+        const searchTerms = [
+            `${query} sound effect`,
+            `${query} meme sound`,
+            query
+        ]
+
+        for (const term of searchTerms) {
+            const res = await yts(term).catch(() => null)
+            const videos = res?.videos || []
+            if (videos.length === 0) continue
+
+            // Prioritaskan klip pendek sound effect murni (1 sampai 30 detik)
+            const matched = videos.find(v => v.seconds >= 1 && v.seconds <= 30)
+                || videos.find(v => v.seconds >= 1 && v.seconds <= 60)
+
+            if (matched) {
+                logger.info(`[Sound] Found YouTube sound candidate: "${matched.title}" (${matched.seconds}s) -> ${matched.url}`)
+                const dl = await download(matched.url, { format: 'audio' })
+                if (dl?.buffer && dl.buffer.length > 500) {
+                    return {
+                        title: matched.title,
+                        url: matched.url,
+                        duration: matched.timestamp,
+                        buffer: dl.buffer,
+                        source: 'youtube-sfx',
+                        ext: dl.ext || 'mp3'
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        logger.warn(`[Sound] Online sound search failed for "${query}": ${err.message}`)
+    }
+    return null
+}
+
 export default {
     name: 'sound',
     aliases: ['snd', 'vn', 'voice'],
     category: 'entertainment',
-    description: 'Kirim voice note meme, simpan audio kustom, atau kelola koleksi soundboard',
-    usage: '.sound <nama> | .sound add <nama> (reply VN) | .sound del <nama> | .sound list',
-    example: '.sound bruh | .sound add rizz (reply VN)',
+    description: 'Kirim voice note meme, simpan audio kustom, atau cari soundboard meme online',
+    usage: '.sound <nama/pencarian> | .sound search <query> | .sound add <nama> (reply VN) | .sound del <nama> | .sound list',
+    example: '.sound bruh | .sound metal pipe | .sound search anime | .sound add rizz (reply VN)',
     cooldown: 2,
     permissions: ['user'],
 
@@ -189,7 +272,6 @@ export default {
 
         const sub = args[0]?.toLowerCase()
 
-        // Kumpulkan identifier bot untuk resolusi fromMe
         const rawBotId = sock.user?.id ?? ''
         const botNumbers = new Set([
             normalizeNumber(rawBotId),
@@ -237,7 +319,6 @@ export default {
                         message: unwrappedQuoted
                     }
 
-                    // Prioritas: Ambil dari cache lokal terlebih dahulu
                     targetBuffer = await mediaCache.getMediaBuffer(sock, reconstructedQuotedMsg)
                     if (!targetBuffer) {
                         targetBuffer = await downloadMediaMessage(
@@ -254,7 +335,7 @@ export default {
                 }
             }
 
-            // 2. Cek dari Direct Message (misal dikirim dengan caption .sound add <nama>)
+            // 2. Cek dari Direct Message
             if (!targetBuffer && unwrappedDirect) {
                 const dType = Object.keys(unwrappedDirect)[0]
                 const isAudio = dType === 'audioMessage' || (dType === 'documentMessage' && unwrappedDirect.documentMessage?.mimetype?.startsWith('audio/'))
@@ -287,7 +368,7 @@ export default {
                 )
             }
 
-            // Jika sumber dari video, ekstrak audio menggunakan FFmpeg
+            // Ekstrak audio jika input berupa video
             if (isVideo) {
                 const ffmpegBin = getFfmpegPath()
                 const tmpDir = path.resolve('./storage/media/tmp')
@@ -311,7 +392,6 @@ export default {
                 }
             }
 
-            // Normalisasi mimetype
             if (targetBuffer[0] === 0x4F && targetBuffer[1] === 0x67 && targetBuffer[2] === 0x67) {
                 mimeType = 'audio/ogg; codecs=opus'
             } else if (mimeType.includes('mp3') || mimeType.includes('mpeg')) {
@@ -322,14 +402,12 @@ export default {
             const ext = mimeType.includes('mpeg') ? 'mp3' : 'ogg'
             const filePath = path.join(VN_DIR, `${safeKeyword}_${Date.now()}.${ext}`)
 
-            // 1. Simpan ke disk lokal
             try {
                 fs.writeFileSync(filePath, targetBuffer)
             } catch (err) {
                 logger.warn(`[Sound] Gagal tulis file lokal: ${err.message}`)
             }
 
-            // 2. Simpan ke Database SQLite (Menyimpan binary audio_data secara permanen)
             try {
                 db.prepare(`
                     INSERT OR REPLACE INTO sound_vn (keyword, file_path, audio_data, mime_type, added_by, created_at)
@@ -341,7 +419,6 @@ export default {
                 return reply(`❌ Gagal menyimpan ke database: ${dbErr.message}`)
             }
 
-            // 3. Backup otomatis ke Telegram Cloud Vault jika dikonfigurasi
             if (tgStorage.isConfigured) {
                 try {
                     const tgName = `sound_${safeKeyword}.${ext}`
@@ -369,20 +446,28 @@ export default {
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // SUB-COMMAND: del / delete / hapus (Hapus VN dari Database)
+        // SUB-COMMAND: del / delete / hapus
         // ─────────────────────────────────────────────────────────────────────
         if (sub === 'del' || sub === 'delete' || sub === 'hapus') {
             const keyword = args.slice(1).join(' ').toLowerCase().trim()
             if (!keyword) return reply('❌ Sebutkan keyword sound yang ingin dihapus.\n*Contoh:* .sound del rizz')
 
             const existing = db.prepare('SELECT file_path FROM sound_vn WHERE keyword = ?').get(keyword)
-            if (!existing) {
+            const cached = db.prepare('SELECT keyword FROM sound_cache WHERE keyword = ?').get(keyword)
+
+            if (!existing && !cached) {
                 return reply(`❌ Sound dengan keyword *"${keyword}"* tidak ditemukan di database.`)
             }
 
-            db.prepare('DELETE FROM sound_vn WHERE keyword = ?').run(keyword)
-            if (existing.file_path && fs.existsSync(existing.file_path)) {
-                try { fs.unlinkSync(existing.file_path) } catch (_) {}
+            if (existing) {
+                db.prepare('DELETE FROM sound_vn WHERE keyword = ?').run(keyword)
+                if (existing.file_path && fs.existsSync(existing.file_path)) {
+                    try { fs.unlinkSync(existing.file_path) } catch (_) {}
+                }
+            }
+
+            if (cached) {
+                db.prepare('DELETE FROM sound_cache WHERE keyword = ?').run(keyword)
             }
 
             await react('🗑️')
@@ -390,15 +475,46 @@ export default {
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // SUB-COMMAND: list / daftar (Daftar Seluruh Sound)
+        // SUB-COMMAND: search / cari (Cari daftar soundboard meme online)
+        // ─────────────────────────────────────────────────────────────────────
+        if (sub === 'search' || sub === 'cari') {
+            const q = args.slice(1).join(' ').trim()
+            if (!q) {
+                return reply('❌ Masukkan kata kunci yang ingin dicari!\n*Contoh:* .sound search metal pipe')
+            }
+
+            await react('🔍')
+            const list = await searchMyInstantsList(q)
+            if (!list || list.length === 0) {
+                await react('❌')
+                return reply(`❌ Tidak ditemukan soundboard meme dengan kata kunci *"${q}"*.`)
+            }
+
+            const items = list.map((item, idx) => `${idx + 1}. *${item.title}*\n   ▶️ *.sound ${item.title.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()}*`).join('\n\n')
+            await react('✅')
+            return reply(
+                `🔊 *Hasil Pencarian Soundboard Meme:* "${q}"\n\n` +
+                items +
+                `\n\n_Ketik salah satu perintah *.sound <nama>* di atas untuk langsung memutarnya!_`
+            )
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // SUB-COMMAND: list / daftar
         // ─────────────────────────────────────────────────────────────────────
         if (sub === 'list' || sub === 'daftar') {
             const builtInList = Object.keys(MEME_SOUNDS).map(s => `• ${s}`).join('\n')
             let vnList = ''
+            let cacheList = ''
             try {
                 const vnSounds = db.prepare('SELECT keyword FROM sound_vn ORDER BY keyword ASC').all()
                 if (vnSounds.length > 0) {
                     vnList = '\n\n*🎤 Sound Kustom Tersimpan:*\n' + vnSounds.map(s => `• ${s.keyword}`).join('\n')
+                }
+
+                const cachedSounds = db.prepare('SELECT keyword, sound_name FROM sound_cache ORDER BY created_at DESC LIMIT 15').all()
+                if (cachedSounds.length > 0) {
+                    cacheList = '\n\n*🌐 Sound Online (Tercache):*\n' + cachedSounds.map(s => `• ${s.keyword} _(${s.sound_name.slice(0, 30)})_`).join('\n')
                 }
             } catch (_) {}
 
@@ -406,7 +522,8 @@ export default {
                 `🔊 *Daftar Koleksi Sound Bot*\n\n` +
                 `*📦 Sound Bawaan (${Object.keys(MEME_SOUNDS).length}):*\n${builtInList}` +
                 vnList +
-                `\n\n_Ketik *.sound <nama>* untuk memutar sound._\n_Simpan sound baru: Reply audio dengan *.sound add <nama>*_`
+                cacheList +
+                `\n\n_Ketik *.sound <nama>* untuk memutar sound apa pun._\n_Simpan sound baru: Reply audio dengan *.sound add <nama>*_`
             )
         }
 
@@ -422,27 +539,31 @@ export default {
             } catch (_) {}
 
             return reply(
-                `🔊 *Soundboard & Voice Note Menu*\n\n` +
+                `🔊 *Soundboard & Meme Sound Menu*\n\n` +
                 `*📖 Cara Penggunaan:*\n` +
-                `1. *.sound <nama>*\n` +
-                `   Memutar voice note meme (Contoh: *.sound bruh* atau *.sound vineboom*).\n\n` +
-                `2. *(Reply VN/Audio/Video)* *.sound add <nama>*\n` +
-                `   Menyimpan audio menjadi sound kustom bot.\n\n` +
-                `3. *.sound list*\n` +
-                `   Melihat seluruh daftar sound (${customCount} sound kustom tersimpan).\n\n` +
-                `4. *.sound del <nama>*\n` +
+                `1. *.sound <nama/pencarian>*\n` +
+                `   Memutar voice note meme bawaan atau *mencari otomatis di meme soundboard / internet*!\n` +
+                `   Contoh: *.sound bruh*, *.sound metal pipe*, *.sound skibidi*, *.sound waduh*\n\n` +
+                `2. *.sound search <kata_kunci>*\n` +
+                `   Mencari daftar pilihan soundboard meme dari internet.\n` +
+                `   Contoh: *.sound search anime*, *.sound search fart*\n\n` +
+                `3. *(Reply VN/Audio/Video)* *.sound add <nama>*\n` +
+                `   Menyimpan audio menjadi sound kustom pribadi bot secara permanen.\n\n` +
+                `4. *.sound list*\n` +
+                `   Melihat seluruh koleksi sound (${customCount} sound kustom tersimpan).\n\n` +
+                `5. *.sound del <nama>*\n` +
                 `   Menghapus sound kustom yang tersimpan.\n\n` +
-                `*🔥 Rekomendasi Sound Populer:*\n${topSounds}`
+                `*🔥 Rekomendasi Sound Bawaan:*\n${topSounds}`
             )
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // PLAY SOUND (.sound <nama>)
+        // PLAY SOUND (.sound <nama / pencarian>)
         // ─────────────────────────────────────────────────────────────────────
         const query = args.join(' ').toLowerCase().trim()
         await react('⏳')
 
-        // 1. Cek Sound Kustom di DB
+        // 1. Cek Sound Kustom di DB (Paling Cepat: 0ms)
         try {
             const vnRow = db.prepare('SELECT file_path, audio_data, mime_type FROM sound_vn WHERE keyword = ?').get(query)
             if (vnRow) {
@@ -483,13 +604,62 @@ export default {
             }
         }
 
-        // 3. Sound tidak ditemukan
+        // 3. Cek Sound Cache di DB (Hasil Pencarian Online Sebelumnya)
+        try {
+            const cacheRow = db.prepare('SELECT sound_name, sound_url, audio_data FROM sound_cache WHERE keyword = ?').get(query)
+            if (cacheRow) {
+                let cachedBuffer = cacheRow.audio_data
+                if (!cachedBuffer && cacheRow.sound_url) {
+                    cachedBuffer = await fetchSoundBuffer(cacheRow.sound_url)
+                }
+                if (cachedBuffer && cachedBuffer.length > 0) {
+                    await sock.sendMessage(from, {
+                        audio: cachedBuffer,
+                        mimetype: 'audio/mpeg',
+                        ptt: true
+                    }, { quoted: msg })
+                    await react('✅')
+                    return
+                }
+            }
+        } catch (cacheErr) {
+            logger.error(`[Sound] Cache read error: ${cacheErr.message}`)
+        }
+
+        // 4. PENCARIAN ONLINE OTOMATIS (Meme Soundboard / SFX Library)
+        try {
+            const onlineResult = await searchOnlineSound(query)
+            if (onlineResult && onlineResult.buffer) {
+                // Simpan ke SQLite cache agar panggilan berikutnya 0ms
+                try {
+                    db.prepare(`
+                        INSERT OR REPLACE INTO sound_cache (keyword, sound_name, sound_url, audio_data, source, created_at)
+                        VALUES (?, ?, ?, ?, 'online-sfx', unixepoch())
+                    `).run(query, onlineResult.title, onlineResult.url, onlineResult.buffer)
+                } catch (_) {}
+
+                // Kirim langsung sebagai Voice Note
+                await sock.sendMessage(from, {
+                    audio: onlineResult.buffer,
+                    mimetype: 'audio/mpeg',
+                    ptt: true
+                }, { quoted: msg })
+
+                await react('✅')
+                return
+            }
+        } catch (searchErr) {
+            logger.warn(`[Sound] Online search error: ${searchErr.message}`)
+        }
+
+        // 5. Sound tidak ditemukan
         await react('❌')
         return reply(
-            `❌ Sound *"${query}"* tidak ditemukan.\n\n` +
+            `❌ Sound *"${query}"* tidak ditemukan di pustaka lokal maupun pencarian online.\n\n` +
             `💡 *Tips:*\n` +
-            `• Ketik *.sound list* untuk melihat daftar sound yang tersedia.\n` +
-            `• Simpan sound baru dengan me-reply audio lalu ketik: *.sound add ${query}*`
+            `• Coba gunakan kata kunci lain (misal: *.sound metal pipe*, *.sound skibidi*, *.sound waduh*).\n` +
+            `• Ketik *.sound list* untuk melihat sound yang tersedia.\n` +
+            `• Simpan sound sendiri: Reply ke VN/Audio lalu ketik: *.sound add ${query}*`
         )
     }
 }
