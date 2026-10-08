@@ -1071,6 +1071,10 @@ export function startRadioServer() {
     apiV2.use('/', lyricsRouter)
     apiV2.use('/', usersRouter)
 
+    // Mount system router directly on /api and root for healthcheck & logs access
+    app.use('/api', systemRouter)
+    app.use('/', systemRouter)
+
     // Mount music router at the root since it contains both legacy /api/music and new /api/v2/music routes
     app.use('/', musicRouter)
 

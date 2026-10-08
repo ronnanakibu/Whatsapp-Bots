@@ -171,7 +171,15 @@ async function searchMyInstantsList(query) {
         const url = `https://www.myinstants.com/en/search/?name=${encodeURIComponent(query)}`
         const args = ['-s', '-L', '--max-time', '10', '-A', UA, url]
         const { stdout } = await execFilePromise(curlBin, args)
-        if (!stdout) return []
+        if (!stdout) {
+            logger.warn(`[Sound/MyInstants] stdout kosong saat query "${query}"`)
+            return []
+        }
+
+        const isChallenge = stdout.includes('Just a moment...') || stdout.includes('cf-turnstile') || stdout.includes('Attention Required')
+        if (isChallenge) {
+            logger.warn(`[Sound/MyInstants] Cloudflare Challenge terdeteksi pada server untuk query "${query}"! (length: ${stdout.length})`)
+        }
 
         const regex = /onclick="play\('([^']+)'[^)]*\)"[\s\S]*?<a[^>]*class="instant-link[^"]*"[^>]*>([^<]+)<\/a>/g
         const results = []
@@ -183,9 +191,29 @@ async function searchMyInstantsList(query) {
             })
             if (results.length >= 10) break
         }
+        logger.info(`[Sound/MyInstants] Ditemukan ${results.length} sound untuk query "${query}"`)
         return results
     } catch (err) {
-        logger.warn(`[Sound] MyInstants search error for "${query}": ${err.message}`)
+        logger.error(`[Sound/MyInstants] Search error untuk "${query}": ${err.message}`)
+        return []
+    }
+}
+
+/**
+ * Cari daftar sound alternatif via YouTube Sound Effect jika MyInstants diblokir
+ */
+async function searchAlternativeSoundList(query) {
+    try {
+        const res = await yts(`${query} sound effect`).catch(() => null)
+        const videos = res?.videos || []
+        const shortClips = videos.filter(v => v.seconds >= 1 && v.seconds <= 30).slice(0, 5)
+        return shortClips.map(v => ({
+            title: v.title,
+            url: v.url,
+            duration: v.timestamp
+        }))
+    } catch (err) {
+        logger.warn(`[Sound/AlternativeSearch] Gagal cari sound effect YouTube: ${err.message}`)
         return []
     }
 }
@@ -193,7 +221,8 @@ async function searchMyInstantsList(query) {
 /**
  * Cari sound effect meme online secara dinamis
  * 1. Prioritas 1: MyInstants Meme Soundboard (respon cepat 1-2 detik, koleksi meme otentik)
- * 2. Prioritas 2: YouTube SFX Engine (Klip audio pendek 1-30 detik)
+ * 2. Prioritas 2: YouTube SFX Engine via downloader service (yt-dlp)
+ * 3. Prioritas 3: YouTube SFX Stream via play-dl fallback
  */
 async function searchOnlineSound(query) {
     // 1. MyInstants Soundboard Search
@@ -201,7 +230,7 @@ async function searchOnlineSound(query) {
         const instants = await searchMyInstantsList(query)
         if (instants && instants.length > 0) {
             for (const item of instants.slice(0, 3)) {
-                logger.info(`[Sound] Mencoba unduh dari MyInstants: "${item.title}" -> ${item.mp3}`)
+                logger.info(`[Sound/MyInstants] Mencoba unduh: "${item.title}" -> ${item.mp3}`)
                 const buf = await fetchSoundBuffer(item.mp3)
                 if (buf && isValidAudio(buf)) {
                     return {
@@ -215,10 +244,10 @@ async function searchOnlineSound(query) {
             }
         }
     } catch (mErr) {
-        logger.warn(`[Sound] MyInstants lookup failed: ${mErr.message}`)
+        logger.warn(`[Sound/MyInstants] Lookup gagal: ${mErr.message}`)
     }
 
-    // 2. Fallback: YouTube SFX / Meme Klip Pendek
+    // 2. Fallback: YouTube SFX Engine
     try {
         const searchTerms = [
             `${query} sound effect`,
@@ -236,17 +265,48 @@ async function searchOnlineSound(query) {
                 || videos.find(v => v.seconds >= 1 && v.seconds <= 60)
 
             if (matched) {
-                logger.info(`[Sound] Found YouTube sound candidate: "${matched.title}" (${matched.seconds}s) -> ${matched.url}`)
-                const dl = await download(matched.url, { format: 'audio' })
-                if (dl?.buffer && dl.buffer.length > 500) {
-                    return {
-                        title: matched.title,
-                        url: matched.url,
-                        duration: matched.timestamp,
-                        buffer: dl.buffer,
-                        source: 'youtube-sfx',
-                        ext: dl.ext || 'mp3'
+                logger.info(`[Sound/YouTube] Kandidat ditemukan: "${matched.title}" (${matched.seconds}s) -> ${matched.url}`)
+                
+                // Coba method A: Downloader service (yt-dlp)
+                try {
+                    const dl = await download(matched.url, { format: 'audio' })
+                    if (dl?.buffer && dl.buffer.length > 500) {
+                        return {
+                            title: matched.title,
+                            url: matched.url,
+                            duration: matched.timestamp,
+                            buffer: dl.buffer,
+                            source: 'youtube-sfx',
+                            ext: dl.ext || 'mp3'
+                        }
                     }
+                } catch (dlErr) {
+                    logger.warn(`[Sound/YouTube] Downloader yt-dlp gagal (${dlErr.message}), mencoba fallback play-dl...`)
+                }
+
+                // Coba method B: play-dl stream fallback
+                try {
+                    const playdl = (await import('play-dl')).default || (await import('play-dl'))
+                    const stream = await playdl.stream(matched.url)
+                    if (stream?.stream) {
+                        const chunks = []
+                        for await (const chunk of stream.stream) {
+                            chunks.push(chunk)
+                        }
+                        const streamBuf = Buffer.concat(chunks)
+                        if (streamBuf.length > 500) {
+                            return {
+                                title: matched.title,
+                                url: matched.url,
+                                duration: matched.timestamp,
+                                buffer: streamBuf,
+                                source: 'youtube-playdl',
+                                ext: 'opus'
+                            }
+                        }
+                    }
+                } catch (pErr) {
+                    logger.warn(`[Sound/YouTube] Fallback play-dl juga gagal: ${pErr.message}`)
                 }
             }
         }
@@ -484,16 +544,33 @@ export default {
             }
 
             await react('🔍')
-            const list = await searchMyInstantsList(q)
+            let list = await searchMyInstantsList(q)
+            let isAlternative = false
+
+            // Jika MyInstants kosong atau diblokir Cloudflare di server, fallback ke YouTube SFX
+            if (!list || list.length === 0) {
+                const altList = await searchAlternativeSoundList(q)
+                if (altList && altList.length > 0) {
+                    list = altList
+                    isAlternative = true
+                }
+            }
+
             if (!list || list.length === 0) {
                 await react('❌')
                 return reply(`❌ Tidak ditemukan soundboard meme dengan kata kunci *"${q}"*.`)
             }
 
-            const items = list.map((item, idx) => `${idx + 1}. *${item.title}*\n   ▶️ *.sound ${item.title.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()}*`).join('\n\n')
+            const header = isAlternative ? 'Hasil Pencarian Sound Effect (Online SFX)' : 'Hasil Pencarian Soundboard Meme'
+            const items = list.map((item, idx) => {
+                const cleanName = item.title.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
+                const durText = item.duration ? ` _(${item.duration})_` : ''
+                return `${idx + 1}. *${item.title}*${durText}\n   ▶️ *.sound ${cleanName}*`
+            }).join('\n\n')
+
             await react('✅')
             return reply(
-                `🔊 *Hasil Pencarian Soundboard Meme:* "${q}"\n\n` +
+                `🔊 *${header}:* "${q}"\n\n` +
                 items +
                 `\n\n_Ketik salah satu perintah *.sound <nama>* di atas untuk langsung memutarnya!_`
             )
@@ -639,9 +716,10 @@ export default {
                 } catch (_) {}
 
                 // Kirim langsung sebagai Voice Note
+                const mime = onlineResult.ext === 'opus' ? 'audio/ogg; codecs=opus' : 'audio/mpeg'
                 await sock.sendMessage(from, {
                     audio: onlineResult.buffer,
-                    mimetype: 'audio/mpeg',
+                    mimetype: mime,
                     ptt: true
                 }, { quoted: msg })
 
