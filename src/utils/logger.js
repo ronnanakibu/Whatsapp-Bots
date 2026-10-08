@@ -269,6 +269,9 @@ const stripAnsi = (str) => str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;
 // Hook process.stdout.write
 const consoleLogPath = './storage/logs/console.log'
 const consoleLogStream = fs.createWriteStream(consoleLogPath, { flags: 'a' })
+consoleLogStream.on('error', () => {
+    // Abaikan write error (misal disk penuh / ENOSPC) agar proses bot tidak crash
+})
 const originalWrite = process.stdout.write.bind(process.stdout)
 process.stdout.write = (chunk, encoding, callback) => {
     const str = chunk ? chunk.toString() : ''

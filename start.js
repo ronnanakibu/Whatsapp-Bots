@@ -40,7 +40,12 @@ process.env.PIP_CACHE_DIR = path.join(globalTmpDir, 'pip-cache')
 
 // Emergency Storage Clean to prevent ENOSPC on low volume limits (Railway/Pterodactyl)
 try {
-    const cleanDirs = ['./storage/media/tmp', './storage/media/temp', './storage/media/radio-temp']
+    const cleanDirs = [
+        './storage/media/cache',
+        './storage/media/tmp',
+        './storage/media/temp',
+        './storage/media/radio-temp'
+    ]
     for (const dir of cleanDirs) {
         const p = path.resolve(dir)
         if (fs.existsSync(p)) {
@@ -55,8 +60,7 @@ try {
         const lp = path.resolve(logPath)
         if (fs.existsSync(lp)) {
             try {
-                const st = fs.statSync(lp)
-                if (st.size > 5 * 1024 * 1024) fs.writeFileSync(lp, '')
+                fs.writeFileSync(lp, '')
             } catch {}
         }
     }
@@ -131,6 +135,46 @@ function setupDirectories() {
         }
     })
     ok('Folder structure ready.')
+}
+
+async function migrateArchivesToTelegram() {
+    const tgToken = process.env.TELEGRAM_BOT_TOKEN
+    const tgChannel = process.env.TELEGRAM_CHANNEL_ID
+    const archiveDirs = ['./storage/media/viewonce', './storage/media/revoked']
+
+    for (const relDir of archiveDirs) {
+        const fullDir = path.resolve(relDir)
+        if (!fs.existsSync(fullDir)) continue
+        const files = fs.readdirSync(fullDir)
+        if (files.length === 0) continue
+
+        inf(`Migrating ${files.length} archived media files from ${relDir} to Telegram...`)
+        for (const file of files) {
+            const filePath = path.join(fullDir, file)
+            if (tgToken && tgChannel) {
+                try {
+                    const buf = fs.readFileSync(filePath)
+                    const blob = new Blob([buf])
+                    const fd = new FormData()
+                    fd.append('chat_id', tgChannel)
+                    fd.append('document', blob, file)
+                    fd.append('caption', `📦 <b>[MIGRATED ARCHIVE]</b> <code>${file}</code>\n🕒 ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`)
+                    fd.append('parse_mode', 'HTML')
+
+                    const res = await fetch(`https://api.telegram.org/bot${tgToken}/sendDocument`, {
+                        method: 'POST',
+                        body: fd
+                    })
+                    const data = await res.json()
+                    if (data.ok) {
+                        try { fs.unlinkSync(filePath) } catch {}
+                        continue
+                    }
+                } catch {}
+            }
+            try { fs.unlinkSync(filePath) } catch {}
+        }
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -513,6 +557,7 @@ async function main() {
     console.log('\n🚀 [Bootstrap] RonnBot v2.0 starting up...\n')
     try {
         setupDirectories()
+        await migrateArchivesToTelegram()
         await setupFonts()
         await setupFfmpeg()
         await setupYtDlp()
