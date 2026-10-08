@@ -26,6 +26,7 @@ import { initStorySyncScheduler } from '../services/storySync.js'
 import { initScheduleSync } from '../services/scheduleSync.js'
 import { startRadioServer, updateBotStatus } from '../server/radio.js'
 import { metricsService } from '../services/metrics.js'
+import { mediaCache } from '../services/mediaCache.js'
 
 const pinoLogger = logger.child({ module: 'baileys' })
 
@@ -111,6 +112,9 @@ async function startBot() {
 
     // Daftarkan socket instance ke logger untuk WhatsApp channel logging
     setSocket(sock)
+
+    // Hook socket outgoing media untuk universal real-time Telegram archiving
+    mediaCache.hookSocketOutgoing(sock)
 
     // Bind In-Memory Store
     store.bind(sock.ev)

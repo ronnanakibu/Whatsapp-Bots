@@ -47,7 +47,9 @@ export class TGStorageService {
 
         if (caption) {
             formData.append('caption', caption.slice(0, 1024))
-            formData.append('parse_mode', 'HTML')
+            if (options.parse_mode) {
+                formData.append('parse_mode', options.parse_mode)
+            }
         }
 
         const url = `https://api.telegram.org/bot${this.token}/${endpoint}`
