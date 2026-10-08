@@ -135,11 +135,39 @@ class InteractiveService {
      * @returns {boolean} - True jika pesan diproses sebagai sesi interaktif
      */
     async handleReply(ctx) {
-        const { quotedMsgId, sender, chatId } = ctx
-        const targetMsgId = quotedMsgId ||
+        const { quotedMsgId, sender, chatId, isDM } = ctx
+        let targetMsgId = quotedMsgId ||
             ctx.msg?.message?.buttonsResponseMessage?.contextInfo?.stanzaId ||
             ctx.msg?.message?.templateButtonReplyMessage?.contextInfo?.stanzaId ||
             ctx.msg?.message?.interactiveResponseMessage?.contextInfo?.stanzaId
+
+        // Jika tidak ada quote, tetapi di DM dan user mengirim jawaban konfirmasi (1, ya, 0, ga, dll):
+        if (!targetMsgId && isDM) {
+            const answer = this.extractAnswer(ctx)
+            if (this.isAffirmative(answer) || this.isNegative(answer)) {
+                const senderNorm = String(sender || '').replace(/[^0-9]/g, '')
+                for (const [id, sess] of Array.from(this.sessions.entries()).reverse()) {
+                    const matchSender = Array.isArray(sess.sender)
+                        ? sess.sender.some(s => String(s).replace(/[^0-9]/g, '') === senderNorm)
+                        : String(sess.sender).replace(/[^0-9]/g, '') === senderNorm
+                    if (matchSender) {
+                        targetMsgId = id
+                        break
+                    }
+                }
+                if (!targetMsgId) {
+                    const latestDb = dbService.getLatestInteractiveSession()
+                    if (latestDb) {
+                        const matchSender = Array.isArray(latestDb.sender)
+                            ? latestDb.sender.some(s => String(s).replace(/[^0-9]/g, '') === senderNorm)
+                            : String(latestDb.sender).replace(/[^0-9]/g, '') === senderNorm
+                        if (matchSender) {
+                            targetMsgId = latestDb.id
+                        }
+                    }
+                }
+            }
+        }
 
         if (!targetMsgId) return false
 

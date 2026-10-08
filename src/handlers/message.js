@@ -379,19 +379,6 @@ function isSmartReplyFollowup(body, isGroup, isMentioned, type) {
             return
         }
 
-        // ─────────────────────────────────────────────
-        // ROUTE 5: DM TRIGGER
-        // ─────────────────────────────────────────────
-
-        if (isDMTrigger) {
-            if (!memoryService.isAiEnabled(from)) return
-
-            botLogger.aiTrigger('dm', body)
-            const { executeAiFlow } = await import('../utils/aiRouter.js')
-            await executeAiFlow(ctx, body)
-            return
-        }
-
 
     } catch (err) {
         botLogger.err('handler', err, 'fatal')

@@ -352,6 +352,34 @@ export class DBService {
         }
     }
 
+    getLatestInteractiveSession() {
+        try {
+            const row = db.prepare('SELECT * FROM interactive_sessions ORDER BY created_at DESC LIMIT 1').get()
+            if (!row) return null
+
+            let chatId = row.chat_id
+            try { if (chatId.startsWith('[')) chatId = JSON.parse(chatId) } catch (_) {}
+
+            let sender = row.sender
+            try { if (sender.startsWith('[')) sender = JSON.parse(sender) } catch (_) {}
+
+            let payload = row.payload
+            try { payload = JSON.parse(row.payload) } catch (_) {}
+
+            return {
+                id: row.id,
+                chatId,
+                sender,
+                sessionType: row.session_type,
+                payload,
+                createdAt: row.created_at
+            }
+        } catch (err) {
+            logger.error('[DB] Failed to get latest interactive session:', err.message)
+            return null
+        }
+    }
+
     deleteInteractiveSession(id) {
         try {
             return db.prepare('DELETE FROM interactive_sessions WHERE id = ?').run(id)

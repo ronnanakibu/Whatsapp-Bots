@@ -28,11 +28,6 @@ export default {
             return
         }
 
-        // Hanya untuk grup (di mana pesan bot ada konteks grup)
-        if (!isGroup) {
-            return reply('⚠️ Command ini hanya bisa dipakai di dalam grup.')
-        }
-
         // ─────────────────────────────────────────
         // MODE 1: Reply ke pesan bot → hapus 1 pesan
         // ─────────────────────────────────────────

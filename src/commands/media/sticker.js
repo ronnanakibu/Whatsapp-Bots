@@ -3,6 +3,8 @@ import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import mediaService from '../../services/media.js'
 import { logger } from '../../utils/logger.js'
 import { unwrapMessage, getCleanQuoted } from '../../utils/message.js'
+import { tgStorage } from '../../services/tgStorage.js'
+import { mediaCache } from '../../services/mediaCache.js'
 
 export default {
     name: 'sticker',
@@ -171,10 +173,53 @@ export default {
             if (process.env.LOG_CHANNEL_JID) {
                 const { logToChannel } = await import('../../utils/channelLogger.js')
                 await logToChannel(sock, { sticker: stickerBuffer })
-                await logToChannel(sock, { text: `[LOG STICKER]\nDibuat oleh: ${pushName}\nCommand Text: ${fullText || '(tanpa teks)'}\nNoCrop: ${noCrop} | RemoveBg: ${removeBg} | LQ: ${lqPercent}% | Speed: ${speedMultiplier}x | MaxDur: ${maxDuration}s` })
             }
 
+            // 5. Arsipkan media input & stiker output ke Telegram Cloud Vault secara realtime
+            if (tgStorage.isConfigured) {
+                try {
+                    let groupName = null
+                    if (ctx.isGroup) {
+                        try {
+                            const groupMeta = await sock.groupMetadata(from).catch(() => null)
+                            if (groupMeta?.subject) groupName = groupMeta.subject
+                        } catch (_) {}
+                    }
 
+                    // A. Arsipkan media original yang dikirim user
+                    const inputExt = isAnimated ? 'mp4' : 'jpg'
+                    const inputName = `sticker_input_${msg.key.id}.${inputExt}`
+                    const inputCaption = mediaCache.formatTelegramCaption('Sticker Input', inputName, buffer, {
+                        sender,
+                        senderName: pushName,
+                        isGroup: ctx.isGroup,
+                        groupName,
+                        from,
+                        mType: isAnimated ? 'videoMessage' : 'imageMessage'
+                    })
+                    await tgStorage.uploadMedia(buffer, inputName, {
+                        caption: inputCaption,
+                        type: isAnimated ? 'video' : 'photo'
+                    })
+
+                    // B. Arsipkan stiker yang dibuat oleh bot
+                    const stickerName = `sticker_output_${msg.key.id}.webp`
+                    const stickerCaption = mediaCache.formatTelegramCaption('Sticker Output', stickerName, stickerBuffer, {
+                        sender: sock.user?.id || 'bot',
+                        senderName: 'RonnBot',
+                        isGroup: ctx.isGroup,
+                        groupName,
+                        from,
+                        mType: 'stickerMessage'
+                    })
+                    await tgStorage.uploadMedia(stickerBuffer, stickerName, {
+                        caption: stickerCaption,
+                        type: 'document'
+                    })
+                } catch (tgErr) {
+                    logger.warn(`[Sticker] Failed to archive to Telegram: ${tgErr.message}`)
+                }
+            }
 
             await react('✅')
 
