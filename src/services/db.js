@@ -279,6 +279,15 @@ export class DBService {
         }
     }
 
+    getRecentMessages(chatJid, limit = 50) {
+        try {
+            return db.prepare('SELECT raw_message FROM message_store WHERE chat_jid = ? ORDER BY created_at DESC LIMIT ?').all(chatJid, limit).reverse()
+        } catch (err) {
+            logger.error(`[DB] Failed to get recent messages for ${chatJid}:`, err.message)
+            return []
+        }
+    }
+
     updateMessageMediaPath(id, mediaPath) {
         try {
             return db.prepare('UPDATE message_store SET media_path = ? WHERE id = ?').run(mediaPath, id)

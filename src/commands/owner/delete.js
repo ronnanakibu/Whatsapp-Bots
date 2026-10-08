@@ -1,100 +1,137 @@
 // src/commands/owner/delete.js
-// Hapus pesan bot dari grup — dua mode:
-//   .delete             → (reply pesan bot) hapus hanya pesan yang di-reply
-//   .delete --N         → hapus N pesan terbaru dari bot di grup ini (max 50)
+// Hapus pesan bot atau pesan member grup (jika bot admin) — dua mode:
+//   .delete             → (reply pesan) hapus pesan yang di-reply
+//   .delete [N]         → hapus N pesan bot terbaru di chat ini (contoh: .delete 1, .delete 5, .delete --20)
 
-import { isOwner } from '../../utils/permissions.js'
-import { store }   from '../../services/store.js'
-import { logger }  from '../../utils/logger.js'
+import { isOwner, normalizeNumber } from '../../utils/permissions.js'
+import { store } from '../../services/store.js'
+import { logger } from '../../utils/logger.js'
 
-const MAX_BULK = 50  // Batas atas bulk delete biar tidak abuse
+const MAX_BULK = 50 // Batas atas bulk delete biar aman
 
 export default {
     name: 'delete',
     aliases: ['del', 'unsend', 'hapus'],
     category: 'owner',
-    description: '[Owner] Hapus pesan bot dari grup. Reply pesan bot atau gunakan --N untuk bulk.',
-    usage: '.delete [--N] | .delete (reply pesan bot)',
-    example: '.delete --10  →  hapus 10 pesan terbaru bot di grup ini',
-    cooldown: 3,
+    description: '[Owner] Hapus pesan bot atau pesan member (jika admin). Reply pesan atau gunakan jumlah untuk bulk.',
+    usage: '.delete [1-50] | .delete (reply pesan)',
+    example: '.delete 5  →  hapus 5 pesan terbaru bot di chat ini',
+    cooldown: 2,
     permissions: ['owner'],
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg, sender, messageContent, isGroup } = ctx
 
-        // Permission guard (double-check selain middleware)
+        // Permission guard
         if (!isOwner(sender)) {
             await react('🚫')
-            return
+            return reply('🚫 Hanya owner yang dapat menggunakan command delete.')
         }
 
-        // ─────────────────────────────────────────
-        // MODE 1: Reply ke pesan bot → hapus 1 pesan
-        // ─────────────────────────────────────────
         const contextInfo = messageContent?.extendedTextMessage?.contextInfo
-        const quotedMsgId   = contextInfo?.stanzaId
+        const quotedMsgId = contextInfo?.stanzaId
         const quotedParticipant = contextInfo?.participant
 
-        // Tentukan fromMe: isReplyToBot (in-memory) ATAU participant = bot JID
-        const botJid = (sock.user?.id ?? '').replace(/:\d+@/, '@')
-        const isReplyToBot = ctx.isReplyToBot
-            || (quotedParticipant && (quotedParticipant.replace(/:\d+@/, '@') === botJid))
-
-        if (quotedMsgId && args.length === 0) {
-            // Hanya boleh hapus pesan dari bot sendiri
-            if (!isReplyToBot) {
-                await react('❌')
-                return reply('❌ Hanya bisa menghapus pesan *dari bot sendiri*.\nReply ke pesan bot, bukan pesan orang lain.')
-            }
-
+        // ─────────────────────────────────────────
+        // MODE 1: Reply ke pesan → hapus 1 pesan
+        // ─────────────────────────────────────────
+        if (quotedMsgId) {
             await react('⏳')
+
+            const rawBotId = sock.user?.id ?? ''
+            const botNumbers = new Set([
+                normalizeNumber(rawBotId),
+                normalizeNumber(sock.user?.lid ?? ''),
+                ...(process.env.BOT_NUMBER ?? '').split(',').map(normalizeNumber)
+            ].filter(Boolean))
+
+            // Cek apakah pesan berasal dari bot
+            const storedMsg = store.loadMessage(from, quotedMsgId)
+            const isFromBot = storedMsg?.key?.fromMe === true
+                || (quotedParticipant && botNumbers.has(normalizeNumber(quotedParticipant)))
+                || ctx.isReplyToBot
+
             try {
+                if (isFromBot) {
+                    // 1. Pesan dari bot sendiri
+                    const key = {
+                        remoteJid: from,
+                        fromMe: true,
+                        id: quotedMsgId,
+                        participant: isGroup ? quotedParticipant : undefined
+                    }
+                    await sock.sendMessage(from, { delete: key })
+                    await react('🗑️')
+                    logger.info(`[Delete] Deleted bot message ${quotedMsgId} in ${from}`)
+                    return
+                }
+
+                // 2. Pesan dari pengguna lain
+                if (!isGroup) {
+                    await react('❌')
+                    return reply('❌ Di Direct Message (chat pribadi), bot hanya bisa menarik pesan yang dikirim oleh bot sendiri.')
+                }
+
+                // Di grup: periksa apakah bot adalah admin
+                const groupMeta = await sock.groupMetadata(from).catch(() => null)
+                const isBotAdmin = groupMeta?.participants?.some(p => {
+                    const pNorm = normalizeNumber(p.id)
+                    return botNumbers.has(pNorm) && (p.admin === 'admin' || p.admin === 'superadmin')
+                })
+
+                if (!isBotAdmin) {
+                    await react('❌')
+                    return reply('❌ Bot bukan admin di grup ini, sehingga hanya bisa menghapus pesan bot sendiri.\nJadikan bot sebagai admin grup untuk menghapus pesan member lain.')
+                }
+
+                // Bot admin di grup -> hapus pesan member lain untuk semua orang
                 const key = {
                     remoteJid: from,
-                    fromMe: true,
+                    fromMe: false,
                     id: quotedMsgId,
-                    participant: isGroup ? quotedParticipant : undefined
+                    participant: quotedParticipant
                 }
                 await sock.sendMessage(from, { delete: key })
                 await react('🗑️')
-                logger.info(`[Delete] Deleted 1 message (id: ${quotedMsgId}) in ${from}`)
+                logger.info(`[Delete] Admin-deleted member message ${quotedMsgId} (${quotedParticipant}) in ${from}`)
+                return
             } catch (err) {
                 logger.error('[Delete] Failed to delete quoted msg:', err.message)
                 await react('❌')
                 return reply(`❌ Gagal menghapus pesan: ${err.message}`)
             }
-            return
         }
 
         // ─────────────────────────────────────────
-        // MODE 2: .delete --N  →  bulk delete N pesan bot terbaru
+        // MODE 2: .delete [N] / .delete --N → bulk delete N pesan bot terbaru
         // ─────────────────────────────────────────
-        const countArg = args.find(a => a.startsWith('--'))
-        if (!countArg) {
+        let count = 0
+        if (args.length > 0) {
+            // Bersihkan format: hilangkan strip, em-dash, dsb ('--', '-', '–')
+            const cleanArg = args[0].replace(/^[–—\-]+/, '').trim()
+            const parsedNum = parseInt(cleanArg, 10)
+            if (!isNaN(parsedNum) && parsedNum > 0) {
+                count = Math.min(parsedNum, MAX_BULK)
+            }
+        }
+
+        if (count === 0) {
             return reply(
-                `⚠️ *Cara pakai:*\n` +
-                `- *(reply pesan bot)* .delete — hapus 1 pesan\n` +
-                `- *.delete --20* — hapus 20 pesan terbaru bot di grup ini\n\n` +
-                `_Maks bulk: ${MAX_BULK} pesan_`
+                `⚠️ *Cara pakai command .delete:*\n\n` +
+                `1. *(Reply pesan)* \`.delete\`\n` +
+                `   Menghapus 1 pesan yang di-reply (pesan bot, atau pesan siapa pun jika bot admin di grup).\n\n` +
+                `2. \`.delete 5\` atau \`.delete --5\`\n` +
+                `   Menghapus 5 pesan terbaru bot di chat ini.\n\n` +
+                `_Maks bulk: ${MAX_BULK} pesan._`
             )
         }
 
-        const countRaw = parseInt(countArg.replace('--', ''), 10)
-        if (isNaN(countRaw) || countRaw < 1) {
-            return reply(`❌ Angka tidak valid: \`${countArg}\`\nContoh: *.delete --20*`)
-        }
-
-        const count = Math.min(countRaw, MAX_BULK)
-
-        // Ambil pesan dari store, filter hanya pesan bot (`fromMe`) di grup ini
-        const chatMsgs = store.messages[from] ?? []
-        const botMsgs = chatMsgs
-            .filter(m => m.key?.fromMe === true)
-            .slice(-count)   // ambil N terbaru
+        // Ambil pesan bot terbaru dari store
+        const botMsgs = store.getRecentBotMessages(from, count)
 
         if (botMsgs.length === 0) {
             await react('⚠️')
-            return reply(`⚠️ Tidak ada pesan bot yang tersimpan di memori untuk grup ini.\n_Pesan harus dikirim setelah bot restart terakhir._`)
+            return reply(`⚠️ Tidak ada riwayat pesan bot yang tersimpan untuk chat ini.`)
         }
 
         await react('⏳')
@@ -107,15 +144,14 @@ export default {
             try {
                 await sock.sendMessage(from, { delete: botMsg.key })
                 successCount++
-                // Throttle agar tidak kena rate-limit WA
                 await new Promise(r => setTimeout(r, 250))
             } catch (err) {
                 failCount++
-                logger.warn(`[Delete] Failed to delete msg ${botMsg.key.id}: ${err.message}`)
+                logger.warn(`[Delete] Failed to delete msg ${botMsg.key?.id}: ${err.message}`)
             }
         }
 
-        // Hapus status message itu sendiri juga kalau masih ada
+        // Hapus status message itu sendiri
         try {
             if (statusMsg?.key) {
                 await sock.sendMessage(from, { delete: statusMsg.key })
@@ -123,10 +159,9 @@ export default {
         } catch (_) {}
 
         await react('✅')
-
         const summary = failCount > 0
-            ? `✅ Berhasil hapus *${successCount}* pesan, gagal *${failCount}* pesan.`
-            : `✅ Berhasil menghapus *${successCount}* pesan bot dari grup ini.`
+            ? `✅ Berhasil menghapus *${successCount}* pesan, gagal *${failCount}* pesan.`
+            : `✅ Berhasil menghapus *${successCount}* pesan bot.`
 
         logger.info(`[Delete] Bulk delete in ${from}: ${successCount} ok, ${failCount} fail`)
         return reply(summary)

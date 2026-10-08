@@ -103,6 +103,63 @@ class DatabaseBackedStore {
 
         return null
     }
+
+    saveMessage(msg) {
+        if (!msg?.key?.remoteJid || !msg?.key?.id) return
+        const jid = msg.key.remoteJid
+        const id = msg.key.id
+
+        if (!this.memoryCache.has(jid)) {
+            this.memoryCache.set(jid, new Map())
+        }
+        const chatMap = this.memoryCache.get(jid)
+        chatMap.set(id, msg)
+
+        if (chatMap.size > MAX_IN_MEMORY_PER_CHAT) {
+            const firstKey = chatMap.keys().next().value
+            chatMap.delete(firstKey)
+        }
+    }
+
+    getRecentMessages(jid, limit = 50) {
+        const results = []
+        if (jid && this.memoryCache.has(jid)) {
+            const chatMap = this.memoryCache.get(jid)
+            results.push(...Array.from(chatMap.values()))
+        }
+
+        try {
+            const dbMsgs = dbService.getRecentMessages(jid, limit)
+            for (const row of dbMsgs) {
+                try {
+                    const parsed = JSON.parse(row.raw_message)
+                    if (parsed?.key?.id && !results.some(m => m.key?.id === parsed.key.id)) {
+                        results.push(parsed)
+                    }
+                } catch (_) {}
+            }
+        } catch (_) {}
+
+        return results.slice(-limit)
+    }
+
+    getRecentBotMessages(jid, limit = 50) {
+        const all = this.getRecentMessages(jid, 100)
+        return all.filter(m => m?.key?.fromMe === true).slice(-limit)
+    }
+
+    /**
+     * Proxy getter agar akses legacy seperti store.messages[from]
+     * tidak pernah menghasilkan undefined / TypeError
+     */
+    get messages() {
+        return new Proxy({}, {
+            get: (target, prop) => {
+                if (typeof prop !== 'string') return []
+                return this.getRecentMessages(prop, 100)
+            }
+        })
+    }
 }
 
 export const store = new DatabaseBackedStore()

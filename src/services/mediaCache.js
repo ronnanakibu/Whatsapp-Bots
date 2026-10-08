@@ -6,6 +6,7 @@ import { dbService } from './db.js'
 import { logger, botLogger } from '../utils/logger.js'
 import { unwrapMessage } from '../utils/message.js'
 import { tgStorage } from './tgStorage.js'
+import { store } from './store.js'
 
 const CACHE_DIR = path.resolve('./storage/media/cache')
 const REVOKED_DIR = path.resolve('./storage/media/revoked')
@@ -182,6 +183,9 @@ class MediaCacheService {
         sock.sendMessage = async (jid, content, options) => {
             const sentResult = await originalSendMessage(jid, content, options)
             try {
+                if (sentResult?.key) {
+                    store.saveMessage(sentResult)
+                }
                 this.archiveOutgoingMedia(sock, jid, content, sentResult).catch(err => {
                     botLogger.debug?.('mediacache', `Failed to archive outgoing media: ${err.message}`)
                 })
