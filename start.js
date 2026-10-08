@@ -140,26 +140,81 @@ function setupDirectories() {
 async function migrateArchivesToTelegram() {
     const tgToken = process.env.TELEGRAM_BOT_TOKEN
     const tgChannel = process.env.TELEGRAM_CHANNEL_ID
-    const archiveDirs = ['./storage/media/viewonce', './storage/media/revoked']
+    const archiveDirs = [
+        { dir: './storage/media/viewonce', activity: 'View Once' },
+        { dir: './storage/media/revoked', activity: 'Anti-Delete' }
+    ]
 
-    for (const relDir of archiveDirs) {
-        const fullDir = path.resolve(relDir)
+    let sqliteDb = null
+    try {
+        const Database = (await import('better-sqlite3')).default
+        const dbPath = path.resolve('./storage/database/main.db')
+        if (fs.existsSync(dbPath)) {
+            sqliteDb = new Database(dbPath, { readonly: true })
+        }
+    } catch {}
+
+    for (const item of archiveDirs) {
+        const fullDir = path.resolve(item.dir)
         if (!fs.existsSync(fullDir)) continue
         const files = fs.readdirSync(fullDir)
         if (files.length === 0) continue
 
-        inf(`Migrating ${files.length} archived media files from ${relDir} to Telegram...`)
+        inf(`Migrating ${files.length} archived media files from ${item.dir} to Telegram...`)
         for (const file of files) {
             const filePath = path.join(fullDir, file)
             if (tgToken && tgChannel) {
                 try {
                     const buf = fs.readFileSync(filePath)
+                    const stats = fs.statSync(filePath)
+                    const ext = path.extname(file).toLowerCase().replace('.', '')
+
+                    let mediaType = 'Document'
+                    if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) mediaType = 'Photo'
+                    else if (['mp4', 'mkv', 'mov', 'webm'].includes(ext)) mediaType = 'Video'
+                    else if (['mp3', 'ogg', 'opus', 'm4a', 'wav'].includes(ext)) mediaType = 'Audio'
+
+                    const id = path.parse(file).name.replace(/^(viewonce_|revoked_)/, '')
+                    let senderLine = 'Unknown'
+                    let fromLine = 'Direct Message'
+                    let timestamp = stats.mtime.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
+
+                    if (sqliteDb) {
+                        try {
+                            const row = sqliteDb.prepare('SELECT sender_jid, push_name, chat_jid, created_at FROM message_store WHERE id = ?').get(id)
+                            if (row) {
+                                const parsed = (row.sender_jid || '').split('@')[0].split(':')[0]
+                                senderLine = row.push_name && row.push_name !== parsed ? `${parsed} (${row.push_name})` : parsed || 'Unknown'
+                                if (row.chat_jid && row.chat_jid.endsWith('@g.us')) {
+                                    fromLine = row.chat_jid
+                                } else {
+                                    fromLine = 'Direct Message'
+                                }
+                                if (row.created_at) {
+                                    timestamp = new Date(row.created_at * 1000).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
+                                }
+                            }
+                        } catch {}
+                    }
+
+                    const sizeStr = buf.length > 1024 * 1024
+                        ? `${(buf.length / (1024 * 1024)).toFixed(2)} MB`
+                        : `${(buf.length / 1024).toFixed(1)} KB`
+
+                    const caption = [
+                        `[${item.activity}]`,
+                        `${mediaType} ${file}`,
+                        `Sender : ${senderLine}`,
+                        `From: ${fromLine}`,
+                        `Timestamp: ${timestamp}`,
+                        `Size: ${sizeStr}`
+                    ].join('\n')
+
                     const blob = new Blob([buf])
                     const fd = new FormData()
                     fd.append('chat_id', tgChannel)
                     fd.append('document', blob, file)
-                    fd.append('caption', `📦 <b>[MIGRATED ARCHIVE]</b> <code>${file}</code>\n🕒 ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`)
-                    fd.append('parse_mode', 'HTML')
+                    fd.append('caption', caption)
 
                     const res = await fetch(`https://api.telegram.org/bot${tgToken}/sendDocument`, {
                         method: 'POST',
@@ -174,6 +229,10 @@ async function migrateArchivesToTelegram() {
             }
             try { fs.unlinkSync(filePath) } catch {}
         }
+    }
+
+    if (sqliteDb) {
+        try { sqliteDb.close() } catch {}
     }
 }
 

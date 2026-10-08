@@ -132,14 +132,25 @@ export async function handleIncomingViewOnce(sock, msg) {
             }
         }
 
+        let groupName = null
+        if (isGroup) {
+            try {
+                const groupMeta = await sock.groupMetadata(from).catch(() => null)
+                if (groupMeta?.subject) groupName = groupMeta.subject
+            } catch (_) {}
+        }
+
         // 2. Arsipkan buffer ke Telegram Channel & local temp jika berhasil diunduh
         const ext = mediaCache.getExtension(mType, mime)
         let savedPath = null
         if (buffer && buffer.length > 0) {
             savedPath = await mediaCache.archiveViewOnceMedia(msgId, buffer, ext, {
+                sender: sender,
+                senderNumber: senderNumber,
                 senderName: pushName,
-                senderNumber,
-                chatName: isGroup ? 'Grup' : 'Private Chat',
+                isGroup: isGroup,
+                groupName: groupName,
+                from: from,
                 caption,
                 mType
             })
@@ -164,14 +175,6 @@ export async function handleIncomingViewOnce(sock, msg) {
 
         const devJid = `${devNumber}@s.whatsapp.net`
         const allowedJids = ownerRaw.map(n => n.includes('@') ? n : `${n.replace(/[^0-9]/g, '')}@s.whatsapp.net`)
-
-        let groupName = 'Grup'
-        if (isGroup) {
-            try {
-                const groupMeta = await sock.groupMetadata(from).catch(() => null)
-                if (groupMeta?.subject) groupName = groupMeta.subject
-            } catch (_) {}
-        }
 
         let mTypeDesc = 'Foto'
         if (mType === 'videoMessage') mTypeDesc = 'Video'

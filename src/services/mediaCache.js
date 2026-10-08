@@ -147,6 +147,60 @@ class MediaCacheService {
             await fs.promises.writeFile(targetPath, buffer)
             botLogger.info('mediacache', `🗄️ [REVOKED MEDIA] Archived ${(buffer.length / 1024).toFixed(1)} KB -> ${targetPath}`)
         } catch (err) {
+    /**
+     * Format caption Telegram rapi sesuai template
+     */
+    formatTelegramCaption(activity, filename, buffer, meta = {}) {
+        let mediaType = 'Document'
+        const ext = path.extname(filename).toLowerCase().replace('.', '')
+        if (['jpg', 'jpeg', 'png', 'webp'].includes(ext) || meta.mType === 'imageMessage') mediaType = 'Photo'
+        else if (['mp4', 'mkv', 'mov', 'webm'].includes(ext) || meta.mType === 'videoMessage' || meta.mType === 'ptvMessage') mediaType = 'Video'
+        else if (meta.mType === 'audioMessage') mediaType = meta.ptt ? 'Voice Note' : 'Audio'
+        else if (['mp3', 'ogg', 'opus', 'm4a', 'wav'].includes(ext)) mediaType = 'Audio'
+        else if (meta.mType === 'stickerMessage' || ext === 'webp') mediaType = 'Sticker'
+
+        // Sender : Parsed Sender JID
+        const rawSender = meta.senderNumber || meta.sender || meta.senderJid || ''
+        const parsedSender = rawSender.split('@')[0].split(':')[0] || 'Unknown'
+        const senderLine = meta.senderName && meta.senderName !== parsedSender
+            ? `${parsedSender} (${meta.senderName})`
+            : parsedSender
+
+        // From: (Parsed Group ID into name, if group), (if private message, just write "Direct Message")
+        let fromLine = 'Direct Message'
+        if (meta.isGroup || (meta.from && meta.from.endsWith('@g.us')) || (meta.chatJid && meta.chatJid.endsWith('@g.us'))) {
+            fromLine = meta.groupName || meta.chatName || meta.from || 'Group'
+        }
+
+        // Timestamp:
+        const now = meta.timestamp ? new Date(meta.timestamp) : new Date()
+        const timestamp = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
+
+        // Size:
+        const bytes = buffer ? buffer.length : (meta.size || 0)
+        const sizeStr = bytes > 1024 * 1024
+            ? `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+            : `${(bytes / 1024).toFixed(1)} KB`
+
+        return [
+            `[${activity}]`,
+            `${mediaType} ${filename}`,
+            `Sender : ${senderLine}`,
+            `From: ${fromLine}`,
+            `Timestamp: ${timestamp}`,
+            `Size: ${sizeStr}`
+        ].join('\n')
+    }
+
+    /**
+     * Arsipkan media yang di-revoke ke Telegram Channel & disk lokal
+     */
+    async archiveRevokedMedia(msgId, buffer, ext = 'bin', meta = {}) {
+        let targetPath = path.join(REVOKED_DIR, `${msgId}.${ext}`)
+        try {
+            await fs.promises.writeFile(targetPath, buffer)
+            botLogger.info('mediacache', `🗄️ [REVOKED MEDIA] Archived ${(buffer.length / 1024).toFixed(1)} KB -> ${targetPath}`)
+        } catch (err) {
             botLogger.warn('mediacache', `Gagal tulis disk revoked media ${msgId}: ${err.message}`)
             targetPath = null
         }
@@ -154,16 +208,10 @@ class MediaCacheService {
         // Upload ke Telegram Channel sebagai arsip cloud unlimited
         if (tgStorage.isConfigured) {
             try {
-                const caption = [
-                    '🗑️ <b>[ANTI-DELETE ARCHIVE]</b>',
-                    meta.senderName ? `👤 <b>Pengirim:</b> ${meta.senderName} (${meta.senderNumber || ''})` : null,
-                    meta.chatName ? `📍 <b>Chat:</b> ${meta.chatName}` : null,
-                    meta.body ? `💬 <b>Pesan:</b> <i>"${meta.body}"</i>` : null,
-                    `🕒 <b>Waktu:</b> ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
-                ].filter(Boolean).join('\n')
-
+                const filename = `revoked_${msgId}.${ext}`
+                const caption = this.formatTelegramCaption('Anti-Delete', filename, buffer, meta)
                 const mediaType = meta.mType === 'imageMessage' ? 'photo' : (meta.mType === 'videoMessage' ? 'video' : (meta.mType === 'audioMessage' ? 'audio' : 'document'))
-                await tgStorage.uploadMedia(buffer, `revoked_${msgId}.${ext}`, {
+                await tgStorage.uploadMedia(buffer, filename, {
                     caption,
                     type: mediaType
                 })
@@ -191,16 +239,10 @@ class MediaCacheService {
         // Upload ke Telegram Channel sebagai arsip cloud unlimited
         if (tgStorage.isConfigured) {
             try {
-                const caption = [
-                    '👁️ <b>[VIEW ONCE ARCHIVE]</b>',
-                    meta.senderName ? `👤 <b>Pengirim:</b> ${meta.senderName} (${meta.senderNumber || ''})` : null,
-                    meta.chatName ? `📍 <b>Chat:</b> ${meta.chatName}` : null,
-                    meta.caption ? `💬 <b>Caption:</b> <i>"${meta.caption}"</i>` : null,
-                    `🕒 <b>Waktu:</b> ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
-                ].filter(Boolean).join('\n')
-
+                const filename = `viewonce_${msgId}.${ext}`
+                const caption = this.formatTelegramCaption('View Once', filename, buffer, meta)
                 const mediaType = meta.mType === 'imageMessage' ? 'photo' : (meta.mType === 'videoMessage' ? 'video' : (meta.mType === 'audioMessage' ? 'audio' : 'document'))
-                await tgStorage.uploadMedia(buffer, `viewonce_${msgId}.${ext}`, {
+                await tgStorage.uploadMedia(buffer, filename, {
                     caption,
                     type: mediaType
                 })

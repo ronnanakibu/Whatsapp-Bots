@@ -232,9 +232,12 @@ async function dispatchBatchRevoke(sock, queueKey) {
                 try {
                     const ext = mediaCache.getExtension(it.mType, it.mime)
                     const savedPath = await mediaCache.archiveRevokedMedia(it.key.id, it.buffer, ext, {
+                        sender: it.senderJid || it.sender,
+                        senderNumber: senderNumber,
                         senderName: pushName,
-                        senderNumber,
-                        chatName: isGroup ? `Grup ${groupName}` : 'Private Chat',
+                        isGroup: isGroup,
+                        groupName: groupName,
+                        from: chatJid,
                         body: it.body || '',
                         mType: it.mType
                     })
