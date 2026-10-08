@@ -1,16 +1,24 @@
+// src/commands/entertainments/sound.js
 import axios from 'axios'
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
-import { execFile } from 'child_process'
+import { execFile, exec } from 'child_process'
 import util from 'util'
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { logger } from '../../utils/logger.js'
+import { tgStorage } from '../../services/tgStorage.js'
+import { mediaCache } from '../../services/mediaCache.js'
+import { getFfmpegPath } from '../../services/media.js'
+import { unwrapMessage } from '../../utils/message.js'
+import { normalizeNumber } from '../../utils/permissions.js'
 
 const execFilePromise = util.promisify(execFile)
+const execPromise = util.promisify(exec)
 
 const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db')
-const VN_DIR  = path.resolve('./storage/sounds')
+const VN_DIR = path.resolve('./storage/sounds')
 const SOUND_CACHE_DIR = path.resolve('./storage/sounds/cache')
 
 let dbInstance = null
@@ -19,7 +27,7 @@ function getDb() {
 
     const dir = path.dirname(DB_PATH)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    if (!fs.existsSync(VN_DIR))  fs.mkdirSync(VN_DIR,  { recursive: true })
+    if (!fs.existsSync(VN_DIR)) fs.mkdirSync(VN_DIR, { recursive: true })
     if (!fs.existsSync(SOUND_CACHE_DIR)) fs.mkdirSync(SOUND_CACHE_DIR, { recursive: true })
 
     dbInstance = new Database(DB_PATH)
@@ -34,16 +42,28 @@ function getDb() {
         );
         CREATE TABLE IF NOT EXISTS sound_vn (
             keyword    TEXT PRIMARY KEY,
-            file_path  TEXT NOT NULL,
+            file_path  TEXT,
+            audio_data BLOB,
+            mime_type  TEXT,
             added_by   TEXT NOT NULL,
             created_at INTEGER NOT NULL DEFAULT (unixepoch())
         );
     `)
+
+    // Migrasi kolom jika tabel lama belum memiliki audio_data atau mime_type
+    try {
+        dbInstance.exec('ALTER TABLE sound_vn ADD COLUMN audio_data BLOB')
+    } catch (_) {}
+    try {
+        dbInstance.exec('ALTER TABLE sound_vn ADD COLUMN mime_type TEXT')
+    } catch (_) {}
+
     return dbInstance
 }
 
-// ─── Built-in meme sounds ────────────────────────────────────────────────────
+// ─── Koleksi Meme Sounds Bawaan (Terverifikasi Aktif & Bebas Blokir) ───────────
 const MEME_SOUNDS = {
+    // Klasik & Viral
     'vineboom':   'https://www.myinstants.com/media/sounds/vine-boom.mp3',
     'bruh':       'https://www.myinstants.com/media/sounds/movie_1.mp3',
     'crickets':   'https://www.myinstants.com/media/sounds/crickets.mp3',
@@ -59,6 +79,17 @@ const MEME_SOUNDS = {
     'illuminati': 'https://www.myinstants.com/media/sounds/illuminati-confirmed.mp3',
     'windows':    'https://www.myinstants.com/media/sounds/windows-xp-startup.mp3',
     'boom':       'https://www.myinstants.com/media/sounds/yamede-kudasai.mp3',
+    'amongus':    'https://www.myinstants.com/media/sounds/among-us-role-reveal-sound.mp3',
+    'airhorn':    'https://www.myinstants.com/media/sounds/mlg-airhorn.mp3',
+    'metalgear':  'https://www.myinstants.com/media/sounds/mgs-alert.mp3',
+    'wasted':     'https://www.myinstants.com/media/sounds/gta-v-death-sound-effect-102.mp3',
+    'discord':    'https://www.myinstants.com/media/sounds/discord-notification.mp3',
+    'roblox':     'https://www.myinstants.com/media/sounds/roblox-death-sound_1.mp3',
+    'error':      'https://www.myinstants.com/media/sounds/windows-error.mp3',
+    'sheesh':     'https://www.myinstants.com/media/sounds/sheesh-sound-effect.mp3',
+    'tada':       'https://www.myinstants.com/media/sounds/tada1.mp3',
+    'rimshot':    'https://www.myinstants.com/media/sounds/ba-dum-tss_1.mp3',
+    'applause':   'https://www.myinstants.com/media/sounds/applause-8.mp3'
 }
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -95,11 +126,32 @@ function saveCachedSound(url, buf) {
 }
 
 async function fetchSoundBuffer(url) {
-    // 1. Cek disk cache lokal terlebih dahulu (0ms response, immune Cloudflare block)
+    // 1. Cek disk cache lokal terlebih dahulu
     const cached = getCachedSound(url)
     if (cached) return cached
 
-    // 2. Gunakan curl terlebih dahulu (curl bypass Cloudflare TLS fingerprinting yang memblokir Node.js)
+    // 2. Gunakan HTTP fetch dengan header browser
+    try {
+        const res = await fetch(url, {
+            headers: {
+                'User-Agent': UA,
+                'Referer': 'https://www.myinstants.com/',
+                'Accept': '*/*'
+            }
+        })
+        if (res.ok) {
+            const ab = await res.arrayBuffer()
+            const buf = Buffer.from(ab)
+            if (isValidAudio(buf)) {
+                saveCachedSound(url, buf)
+                return buf
+            }
+        }
+    } catch (fetchErr) {
+        logger.warn(`[Sound] fetch buffer failed for ${url}: ${fetchErr.message}`)
+    }
+
+    // 3. Fallback ke curl
     try {
         const curlBin = process.platform === 'win32' ? 'curl.exe' : 'curl'
         const args = [
@@ -115,396 +167,329 @@ async function fetchSoundBuffer(url) {
             return stdout
         }
     } catch (curlErr) {
-        logger.warn(`[Sound] curl buffer download failed for ${url}: ${curlErr.message}`)
-    }
-
-    // 3. Fallback ke Axios dengan header browser
-    try {
-        const res = await axios.get(url, {
-            responseType: 'arraybuffer',
-            headers: {
-                'User-Agent': UA,
-                'Referer': 'https://www.myinstants.com/',
-                'Accept': '*/*'
-            },
-            timeout: 15000
-        })
-        const buf = Buffer.from(res.data)
-        if (isValidAudio(buf)) {
-            saveCachedSound(url, buf)
-            return buf
-        }
-    } catch (axiosErr) {
-        logger.warn(`[Sound] axios buffer download failed for ${url}: ${axiosErr.message}`)
+        logger.warn(`[Sound] curl buffer failed for ${url}: ${curlErr.message}`)
     }
 
     return null
 }
-
-// ─── Search MyInstants: REST API + Scraper Fallback ──────────────────────────
-async function searchMyInstants(query) {
-    // 1. Coba REST API resmi
-    try {
-        const res = await axios.get('https://www.myinstants.com/api/v1/instants/', {
-            params: { name: query, page: 1, page_size: 5 },
-            headers: { 'User-Agent': UA, 'Referer': 'https://www.myinstants.com/' },
-            timeout: 5000
-        })
-        const results = res.data?.results ?? []
-        if (results.length > 0 && results[0].sound) {
-            return {
-                name: results[0].name,
-                url: results[0].sound,
-                source: 'myinstants'
-            }
-        }
-    } catch (_) {
-        // Abaikan, lanjut ke fallback web scraper
-    }
-
-    // 2. Fallback: Scrape halaman pencarian MyInstants via curl
-    try {
-        const curlBin = process.platform === 'win32' ? 'curl.exe' : 'curl'
-        const searchUrl = `https://www.myinstants.com/en/search/?name=${encodeURIComponent(query)}`
-        const args = ['-s', '-L', '--max-time', '10', '-A', UA, '-e', 'https://www.myinstants.com/', searchUrl]
-        const { stdout } = await execFilePromise(curlBin, args, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 })
-        const matches = [...stdout.matchAll(/play\('([^']+\.mp3)',\s*'[^']+',\s*'([^']*)'\)/g)]
-        if (matches.length > 0) {
-            const rawPath = matches[0][1]
-            const name = matches[0][2] || query
-            const fullUrl = rawPath.startsWith('http') ? rawPath : `https://www.myinstants.com${rawPath}`
-            return {
-                name,
-                url: fullUrl,
-                source: 'myinstants-web'
-            }
-        }
-    } catch (scrapeErr) {
-        logger.warn(`[Sound] MyInstants scrape error: ${scrapeErr.message}`)
-    }
-
-    return null
-}
-
 
 export default {
     name: 'sound',
     aliases: ['snd', 'vn', 'voice'],
     category: 'entertainment',
-    description: 'Kirim voice note meme — lokal, database, simpan VN, atau cari di MyInstants',
-    usage: '.sound <nama> | .sound add <nama> (reply VN) | .sound del <nama>',
+    description: 'Kirim voice note meme, simpan audio kustom, atau kelola koleksi soundboard',
+    usage: '.sound <nama> | .sound add <nama> (reply VN) | .sound del <nama> | .sound list',
     example: '.sound bruh | .sound add rizz (reply VN)',
-    cooldown: 3,
+    cooldown: 2,
     permissions: ['user'],
 
     async execute(ctx) {
-        const { args, reply, react, sock, from, msg, sender, messageContent, type } = ctx
+        const { args, reply, react, sock, from, msg, sender, messageContent } = ctx
         const db = getDb()
 
-        // ── SUB-COMMAND: add ─────────────────────────────────────────────────
-        if (args[0]?.toLowerCase() === 'add') {
-            const keyword = args.slice(1).join(' ').toLowerCase().trim()
-            if (!keyword) return reply('❌ Sebutkan nama/keyword untuk VN ini!\n*Contoh:* .sound add rizz (reply ke VN atau Video)')
+        const sub = args[0]?.toLowerCase()
 
-            // Deteksi audio/video di quoted message atau pesan langsung
+        // Kumpulkan identifier bot untuk resolusi fromMe
+        const rawBotId = sock.user?.id ?? ''
+        const botNumbers = new Set([
+            normalizeNumber(rawBotId),
+            normalizeNumber(sock.user?.lid ?? ''),
+            ...(process.env.BOT_NUMBER ?? '').split(',').map(normalizeNumber)
+        ].filter(Boolean))
+
+        // ─────────────────────────────────────────────────────────────────────
+        // SUB-COMMAND: add / save / simpan (Simpan VN/Audio/Video ke Database)
+        // ─────────────────────────────────────────────────────────────────────
+        if (sub === 'add' || sub === 'save' || sub === 'simpan') {
+            const keyword = args.slice(1).join(' ').toLowerCase().trim()
+            if (!keyword) {
+                return reply('❌ Sebutkan nama/keyword untuk sound ini!\n*Contoh:* .sound add rizz (sambil reply ke pesan VN, Audio, atau Video)')
+            }
+
             const contextInfo = messageContent?.extendedTextMessage?.contextInfo
-            const quotedMsg   = contextInfo?.quotedMessage ?? null
+            const quotedMsg = contextInfo?.quotedMessage ?? null
             const quotedStanzaId = contextInfo?.stanzaId
             const quotedParticipant = contextInfo?.participant
 
-            let audioMsg = null
-            let videoMsg = null
-            let targetMsgForDownload = null
+            const unwrappedDirect = unwrapMessage(messageContent)
+            const unwrappedQuoted = unwrapMessage(quotedMsg)
 
-            if (type === 'audioMessage') {
-                audioMsg = messageContent?.audioMessage
-                targetMsgForDownload = msg
-            } else if (type === 'videoMessage') {
-                videoMsg = messageContent?.videoMessage
-                targetMsgForDownload = msg
-            } else if (quotedMsg) {
-                const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2']
-                const qType  = Object.keys(quotedMsg)[0]
-                const inner  = WRAPPERS.includes(qType)
-                    ? (quotedMsg[qType]?.message ?? quotedMsg)
-                    : quotedMsg
-                const innerType = Object.keys(inner)[0]
-
-                if (innerType === 'audioMessage') {
-                    audioMsg = inner.audioMessage
-                    targetMsgForDownload = {
-                        key: {
-                            remoteJid: from,
-                            id: quotedStanzaId ?? msg.key.id,
-                            fromMe: quotedParticipant
-                                ? (quotedParticipant === sock.user?.id || quotedParticipant === sock.user?.lid)
-                                : false,
-                            participant: quotedParticipant || undefined,
-                        },
-                        message: inner
-                    }
-                } else if (innerType === 'videoMessage') {
-                    videoMsg = inner.videoMessage
-                    targetMsgForDownload = {
-                        key: {
-                            remoteJid: from,
-                            id: quotedStanzaId ?? msg.key.id,
-                            fromMe: quotedParticipant
-                                ? (quotedParticipant === sock.user?.id || quotedParticipant === sock.user?.lid)
-                                : false,
-                            participant: quotedParticipant || undefined,
-                        },
-                        message: inner
-                    }
-                }
-            }
-
-            if (!audioMsg && !videoMsg) {
-                return reply('❌ Reply ke pesan suara/VN atau video dulu, lalu ketik:\n*.sound add <nama>*\n\nAtau kirim VN/Video langsung dengan caption *.sound add <nama>*')
-            }
-
-            // Cek apakah keyword sudah ada
-            const existingVn  = db.prepare('SELECT keyword FROM sound_vn WHERE keyword = ?').get(keyword)
-            const existingUrl = db.prepare('SELECT keyword FROM sound_cache WHERE keyword = ?').get(keyword)
-            if (existingVn || existingUrl || MEME_SOUNDS[keyword]) {
-                return reply(`❌ Keyword *"${keyword}"* sudah dipakai. Pilih nama lain.`)
-            }
+            let targetBuffer = null
+            let mimeType = 'audio/ogg; codecs=opus'
+            let isVideo = false
 
             await react('⏳')
-            try {
-                // Download media menggunakan sock (REQUIRED oleh Baileys untuk private media)
-                const { downloadMediaMessage } = await import('@whiskeysockets/baileys')
-                const buffer = await downloadMediaMessage(
-                    targetMsgForDownload,
-                    'buffer',
-                    {},
-                    { logger: logger, reconnectCount: 3, reuploadRequest: sock.updateMediaMessage }
-                )
 
-                if (!buffer || buffer.length === 0) throw new Error('Buffer kosong — media tidak bisa diunduh')
+            // 1. Cek dari Quoted Message
+            if (unwrappedQuoted) {
+                const qType = Object.keys(unwrappedQuoted)[0]
+                const isAudio = qType === 'audioMessage' || (qType === 'documentMessage' && unwrappedQuoted.documentMessage?.mimetype?.startsWith('audio/'))
+                isVideo = qType === 'videoMessage' || qType === 'ptvMessage'
 
-                const safeKeyword = keyword.replace(/[^a-z0-9_-]/g, '_')
-                let ext = 'ogg'
-                let finalBuffer = buffer
+                if (isAudio || isVideo) {
+                    const reconstructedQuotedMsg = {
+                        key: {
+                            remoteJid: from,
+                            id: quotedStanzaId ?? '',
+                            fromMe: quotedParticipant ? botNumbers.has(normalizeNumber(quotedParticipant)) : false,
+                            participant: quotedParticipant || undefined,
+                        },
+                        message: unwrappedQuoted
+                    }
 
-                const isAlreadyOgg = audioMsg && audioMsg.mimetype?.includes('ogg') && buffer[0] === 0x4F && buffer[1] === 0x67 && buffer[2] === 0x67
+                    // Prioritas: Ambil dari cache lokal terlebih dahulu
+                    targetBuffer = await mediaCache.getMediaBuffer(sock, reconstructedQuotedMsg)
+                    if (!targetBuffer) {
+                        targetBuffer = await downloadMediaMessage(
+                            reconstructedQuotedMsg,
+                            'buffer',
+                            {},
+                            { logger: console, reconnectCount: 3, reuploadRequest: sock.updateMediaMessage }
+                        ).catch(() => null)
+                    }
 
-                if (!isAlreadyOgg) {
-                    const tmpDir = path.resolve('./storage/media/tmp')
-                    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
-
-                    const id = crypto.randomBytes(4).toString('hex')
-                    const inExt = videoMsg ? 'mp4' : 'mp3'
-                    const tempInPath = path.join(tmpDir, `${id}_in.${inExt}`)
-                    const tempOutPath = path.join(tmpDir, `${id}_out.ogg`)
-
-                    fs.writeFileSync(tempInPath, buffer)
-
-                    // Execute FFmpeg to convert/extract to OGG/Opus
-                    const { exec } = await import('child_process')
-                    const util = await import('util')
-                    const execPromise = util.promisify(exec)
-
-                    try {
-                        await execPromise(`ffmpeg -y -i "${tempInPath}" -vn -c:a libopus -b:a 64k "${tempOutPath}"`)
-                        finalBuffer = fs.readFileSync(tempOutPath)
-                    } finally {
-                        if (fs.existsSync(tempInPath)) fs.unlinkSync(tempInPath)
-                        if (fs.existsSync(tempOutPath)) fs.unlinkSync(tempOutPath)
+                    if (isAudio && unwrappedQuoted[qType]?.mimetype) {
+                        mimeType = unwrappedQuoted[qType].mimetype
                     }
                 }
-
-                const filePath = path.join(VN_DIR, `${safeKeyword}_${Date.now()}.${ext}`)
-                fs.writeFileSync(filePath, finalBuffer)
-
-                db.prepare('INSERT OR REPLACE INTO sound_vn (keyword, file_path, added_by) VALUES (?, ?, ?)')
-                    .run(keyword, filePath, sender)
-
-                await react('✅')
-                return reply(`✅ VN/Audio dari video berhasil disimpan sebagai *"${keyword}"*!\nGunakan: *.sound ${keyword}*`)
-            } catch (err) {
-                logger.error({ err }, `[Sound] VN/Video add error: ${err.message}`)
-                await react('❌')
-                return reply(`❌ Gagal menyimpan VN/Audio: ${err.message}\n\nPastikan kamu reply ke pesan VN atau Video yang valid.`)
             }
+
+            // 2. Cek dari Direct Message (misal dikirim dengan caption .sound add <nama>)
+            if (!targetBuffer && unwrappedDirect) {
+                const dType = Object.keys(unwrappedDirect)[0]
+                const isAudio = dType === 'audioMessage' || (dType === 'documentMessage' && unwrappedDirect.documentMessage?.mimetype?.startsWith('audio/'))
+                isVideo = dType === 'videoMessage' || dType === 'ptvMessage'
+
+                if (isAudio || isVideo) {
+                    targetBuffer = await mediaCache.getMediaBuffer(sock, msg)
+                    if (!targetBuffer) {
+                        targetBuffer = await downloadMediaMessage(
+                            msg,
+                            'buffer',
+                            {},
+                            { logger: console, reconnectCount: 3, reuploadRequest: sock.updateMediaMessage }
+                        ).catch(() => null)
+                    }
+                    if (isAudio && unwrappedDirect[dType]?.mimetype) {
+                        mimeType = unwrappedDirect[dType].mimetype
+                    }
+                }
+            }
+
+            if (!targetBuffer || targetBuffer.length === 0) {
+                await react('❌')
+                return reply(
+                    '❌ Media suara tidak ditemukan!\n\n' +
+                    '*Cara pakai:*\n' +
+                    '1. Reply ke pesan Voice Note, Audio, atau Video.\n' +
+                    '2. Ketik: *.sound add <nama_sound>*\n' +
+                    'Contoh: *.sound add ketawa*'
+                )
+            }
+
+            // Jika sumber dari video, ekstrak audio menggunakan FFmpeg
+            if (isVideo) {
+                const ffmpegBin = getFfmpegPath()
+                const tmpDir = path.resolve('./storage/media/tmp')
+                if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+                const randId = crypto.randomBytes(4).toString('hex')
+                const tempIn = path.join(tmpDir, `${randId}_in.mp4`)
+                const tempOut = path.join(tmpDir, `${randId}_out.ogg`)
+
+                try {
+                    fs.writeFileSync(tempIn, targetBuffer)
+                    await execPromise(`${ffmpegBin} -y -i "${tempIn}" -vn -c:a libopus -b:a 64k "${tempOut}"`)
+                    if (fs.existsSync(tempOut)) {
+                        targetBuffer = fs.readFileSync(tempOut)
+                        mimeType = 'audio/ogg; codecs=opus'
+                    }
+                } catch (convErr) {
+                    logger.warn(`[Sound] Gagal konversi video ke audio via ffmpeg: ${convErr.message}`)
+                } finally {
+                    try { if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn) } catch (_) {}
+                    try { if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut) } catch (_) {}
+                }
+            }
+
+            // Normalisasi mimetype
+            if (targetBuffer[0] === 0x4F && targetBuffer[1] === 0x67 && targetBuffer[2] === 0x67) {
+                mimeType = 'audio/ogg; codecs=opus'
+            } else if (mimeType.includes('mp3') || mimeType.includes('mpeg')) {
+                mimeType = 'audio/mpeg'
+            }
+
+            const safeKeyword = keyword.replace(/[^a-z0-9_-]/g, '_')
+            const ext = mimeType.includes('mpeg') ? 'mp3' : 'ogg'
+            const filePath = path.join(VN_DIR, `${safeKeyword}_${Date.now()}.${ext}`)
+
+            // 1. Simpan ke disk lokal
+            try {
+                fs.writeFileSync(filePath, targetBuffer)
+            } catch (err) {
+                logger.warn(`[Sound] Gagal tulis file lokal: ${err.message}`)
+            }
+
+            // 2. Simpan ke Database SQLite (Menyimpan binary audio_data secara permanen)
+            try {
+                db.prepare(`
+                    INSERT OR REPLACE INTO sound_vn (keyword, file_path, audio_data, mime_type, added_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, unixepoch())
+                `).run(keyword, filePath, targetBuffer, mimeType, sender)
+            } catch (dbErr) {
+                logger.error(`[Sound] DB save error: ${dbErr.message}`)
+                await react('❌')
+                return reply(`❌ Gagal menyimpan ke database: ${dbErr.message}`)
+            }
+
+            // 3. Backup otomatis ke Telegram Cloud Vault jika dikonfigurasi
+            if (tgStorage.isConfigured) {
+                try {
+                    const tgName = `sound_${safeKeyword}.${ext}`
+                    const caption = mediaCache.formatTelegramCaption('Sound Saved', tgName, targetBuffer, {
+                        sender,
+                        isGroup: ctx.isGroup,
+                        from,
+                        mType: 'audioMessage',
+                        ptt: true
+                    })
+                    await tgStorage.uploadMedia(targetBuffer, tgName, {
+                        caption,
+                        type: 'audio'
+                    })
+                } catch (tgErr) {
+                    logger.warn(`[Sound] Backup ke Telegram gagal: ${tgErr.message}`)
+                }
+            }
+
+            await react('✅')
+            return reply(
+                `✅ Sound *"${keyword}"* (${(targetBuffer.length / 1024).toFixed(1)} KB) berhasil disimpan secara permanen!\n\n` +
+                `▶️ Putar kapan saja dengan mengetik: *.sound ${keyword}*`
+            )
         }
 
-        // ── SUB-COMMAND: del ─────────────────────────────────────────────────
-        if (args[0]?.toLowerCase() === 'del' || args[0]?.toLowerCase() === 'delete') {
+        // ─────────────────────────────────────────────────────────────────────
+        // SUB-COMMAND: del / delete / hapus (Hapus VN dari Database)
+        // ─────────────────────────────────────────────────────────────────────
+        if (sub === 'del' || sub === 'delete' || sub === 'hapus') {
             const keyword = args.slice(1).join(' ').toLowerCase().trim()
-            if (!keyword) return reply('❌ Sebutkan keyword yang mau dihapus.\n*Contoh:* .sound del rizz')
+            if (!keyword) return reply('❌ Sebutkan keyword sound yang ingin dihapus.\n*Contoh:* .sound del rizz')
 
             const existing = db.prepare('SELECT file_path FROM sound_vn WHERE keyword = ?').get(keyword)
             if (!existing) {
-                const cacheRows = db.prepare('DELETE FROM sound_cache WHERE keyword = ?').run(keyword)
-                if (cacheRows.changes > 0) return reply(`🗑️ Sound cache *"${keyword}"* berhasil dihapus.`)
-                return reply(`❌ Keyword *"${keyword}"* tidak ditemukan di database.`)
+                return reply(`❌ Sound dengan keyword *"${keyword}"* tidak ditemukan di database.`)
             }
 
             db.prepare('DELETE FROM sound_vn WHERE keyword = ?').run(keyword)
-            try { fs.unlinkSync(existing.file_path) } catch (_) {}
-            return reply(`🗑️ VN *"${keyword}"* berhasil dihapus dari database.`)
-        }
-
-        // ── SUB-COMMAND: list ─────────────────────────────────────────────────
-        if (args[0]?.toLowerCase() === 'list') {
-            const builtInList = Object.keys(MEME_SOUNDS).map(s => `- ${s}`).join('\n')
-            let dbList = ''
-            try {
-                const vnSounds = db.prepare('SELECT keyword FROM sound_vn ORDER BY keyword ASC').all()
-                const vnList = vnSounds.map(s => `- ${s.keyword} (added)`).join('\n')
-
-                const cachedSounds = db.prepare('SELECT keyword, sound_name FROM sound_cache ORDER BY keyword ASC').all()
-                const cachedList = cachedSounds.map(s => `- ${s.keyword} _(${s.sound_name})_`).join('\n')
-
-                if (vnList) {
-                    dbList += `\n\n*🎤 VN Tersimpan (Lokal):*\n${vnList}`
-                }
-                if (cachedList) {
-                    dbList += `\n\n*🌐 Sound Online (Cached):*\n${cachedList}`
-                }
-            } catch (err) {
-                logger.error({ err }, `❌ [Sound] DB List Command Error: ${err.message}`)
+            if (existing.file_path && fs.existsSync(existing.file_path)) {
+                try { fs.unlinkSync(existing.file_path) } catch (_) {}
             }
 
-            return reply(
-                `🔊 *Daftar Seluruh Sound Bot* 🔊\n\n` +
-                `*📦 Sound Bawaan (Built-in):*\n${builtInList}` +
-                dbList +
-                `\n\n*Cara pakai:* Ketik *.sound <nama>*`
-            )
+            await react('🗑️')
+            return reply(`🗑️ Sound *"${keyword}"* berhasil dihapus dari database.`)
         }
 
-        // ── LIST (no args) ───────────────────────────────────────────────────
-        if (args.length === 0) {
-            const available = Object.keys(MEME_SOUNDS).map(s => `- ${s}`).join('\n')
-
-            let cachedList = ''
+        // ─────────────────────────────────────────────────────────────────────
+        // SUB-COMMAND: list / daftar (Daftar Seluruh Sound)
+        // ─────────────────────────────────────────────────────────────────────
+        if (sub === 'list' || sub === 'daftar') {
+            const builtInList = Object.keys(MEME_SOUNDS).map(s => `• ${s}`).join('\n')
             let vnList = ''
             try {
-                const cachedSounds = db.prepare('SELECT keyword, sound_name, source FROM sound_cache ORDER BY created_at DESC LIMIT 30').all()
-                if (cachedSounds.length > 0) {
-                    cachedList = '\n\n*🌐 Sound Online (Cached):*\n' +
-                        cachedSounds.map(s => `- ${s.keyword} _(${s.sound_name})_ [${s.source}]`).join('\n')
-                }
-
-                const vnSounds = db.prepare('SELECT keyword FROM sound_vn ORDER BY created_at DESC LIMIT 20').all()
+                const vnSounds = db.prepare('SELECT keyword FROM sound_vn ORDER BY keyword ASC').all()
                 if (vnSounds.length > 0) {
-                    vnList = '\n\n*🎤 VN Tersimpan:*\n' + vnSounds.map(s => `- ${s.keyword}`).join('\n')
+                    vnList = '\n\n*🎤 Sound Kustom Tersimpan:*\n' + vnSounds.map(s => `• ${s.keyword}`).join('\n')
                 }
-            } catch (err) {
-                logger.error({ err }, `❌ [Sound] DB List Error: ${err.message}`)
-            }
+            } catch (_) {}
 
             return reply(
-                `🔊 *Sound Command*\n\n` +
-                `*📦 Sound Lokal:*\n${available}${vnList}${cachedList}\n\n` +
-                `*Cara pakai:*\n` +
-                `- *.sound bruh* — kirim sound\n` +
-                `- *(reply VN)* *.sound add nama* — simpan VN\n` +
-                `- *.sound del nama* — hapus dari database\n\n` +
-                `*Sumber:* MyInstants API`
+                `🔊 *Daftar Koleksi Sound Bot*\n\n` +
+                `*📦 Sound Bawaan (${Object.keys(MEME_SOUNDS).length}):*\n${builtInList}` +
+                vnList +
+                `\n\n_Ketik *.sound <nama>* untuk memutar sound._\n_Simpan sound baru: Reply audio dengan *.sound add <nama>*_`
             )
         }
 
-        // ── PLAY SOUND ───────────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────────────────────────
+        // MENU UTAMA (Tanpa Argumen)
+        // ─────────────────────────────────────────────────────────────────────
+        if (args.length === 0) {
+            const topSounds = Object.keys(MEME_SOUNDS).slice(0, 15).map(s => `• ${s}`).join('\n')
+            let customCount = 0
+            try {
+                const countRow = db.prepare('SELECT COUNT(*) as cnt FROM sound_vn').get()
+                customCount = countRow?.cnt ?? 0
+            } catch (_) {}
+
+            return reply(
+                `🔊 *Soundboard & Voice Note Menu*\n\n` +
+                `*📖 Cara Penggunaan:*\n` +
+                `1. *.sound <nama>*\n` +
+                `   Memutar voice note meme (Contoh: *.sound bruh* atau *.sound vineboom*).\n\n` +
+                `2. *(Reply VN/Audio/Video)* *.sound add <nama>*\n` +
+                `   Menyimpan audio menjadi sound kustom bot.\n\n` +
+                `3. *.sound list*\n` +
+                `   Melihat seluruh daftar sound (${customCount} sound kustom tersimpan).\n\n` +
+                `4. *.sound del <nama>*\n` +
+                `   Menghapus sound kustom yang tersimpan.\n\n` +
+                `*🔥 Rekomendasi Sound Populer:*\n${topSounds}`
+            )
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // PLAY SOUND (.sound <nama>)
+        // ─────────────────────────────────────────────────────────────────────
         const query = args.join(' ').toLowerCase().trim()
-
-        // 1. Cek lokal hardcoded
-        let soundUrl = MEME_SOUNDS[query]
-        let soundName = query
-        let sourceLabel = 'lokal'
-        let isFile = false
-        let fileBuffer = null
-
-        // 2. Cek VN tersimpan di DB
-        if (!soundUrl) {
-            try {
-                const vnRow = db.prepare('SELECT file_path FROM sound_vn WHERE keyword = ?').get(query)
-                if (vnRow && fs.existsSync(vnRow.file_path)) {
-                    fileBuffer = fs.readFileSync(vnRow.file_path)
-                    soundName = query
-                    isFile = true
-                    sourceLabel = 'vn-lokal'
-                }
-            } catch (err) {
-                logger.error({ err }, `❌ [Sound] VN read error: ${err.message}`)
-            }
-        }
-
-        // 3. Cek URL cache di DB
-        if (!soundUrl && !isFile) {
-            try {
-                const cached = db.prepare('SELECT sound_name, sound_url, source FROM sound_cache WHERE keyword = ?').get(query)
-                if (cached) {
-                    soundUrl = cached.sound_url
-                    soundName = cached.sound_name
-                    sourceLabel = cached.source ?? 'cache'
-                }
-            } catch (err) {
-                logger.error({ err }, `❌ [Sound] DB Read Error: ${err.message}`)
-            }
-        }
-
-        // 4. Search online: MyInstants
-        if (!soundUrl && !isFile) {
-            await react('⏳')
-            let scraped = null
-
-            scraped = await searchMyInstants(query)
-
-            if (scraped) {
-                soundUrl    = scraped.url
-                soundName   = scraped.name
-                sourceLabel = scraped.source
-
-                // Cache di database
-                try {
-                    db.prepare('INSERT OR REPLACE INTO sound_cache (keyword, sound_name, sound_url, source) VALUES (?, ?, ?, ?)')
-                        .run(query, soundName, soundUrl, sourceLabel)
-                    logger.info(`💾 [Sound] Cached: "${query}" -> "${soundName}" [${sourceLabel}]`)
-                } catch (dbErr) {
-                    logger.error({ err: dbErr }, `❌ [Sound] DB Write Error: ${dbErr.message}`)
-                }
-
-                await reply(`🔍 *Sound baru:* "${soundName}"\n💾 Disimpan ke cache dari *${sourceLabel}*`)
-            }
-        }
-
-        // 5. Tidak ditemukan di manapun
-        if (!soundUrl && !isFile) {
-            await react('❌')
-            return reply(`❌ Sound *"${query}"* tidak ditemukan.\n\n_Coba kata kunci lain atau gunakan .sound untuk lihat daftar yang tersedia._`)
-        }
-
-        // 6. Kirim ke WA
         await react('⏳')
-        try {
-            if (isFile) {
-                // VN lokal — kirim sebagai PTT (voice note)
-                const ext = fileBuffer?.[0] === 0x4F ? 'audio/ogg; codecs=opus' : 'audio/mpeg'
-                await sock.sendMessage(from, {
-                    audio: fileBuffer,
-                    mimetype: ext,
-                    ptt: true
-                }, { quoted: msg })
-            } else {
-                const audioBuffer = await fetchSoundBuffer(soundUrl)
-                if (!audioBuffer || audioBuffer.length === 0) {
-                    throw new Error(`Audio buffer kosong atau dibatasi oleh server sumber (${soundUrl})`)
-                }
 
-                await sock.sendMessage(from, {
-                    audio: audioBuffer,
-                    mimetype: 'audio/mpeg',
-                    ptt: false
-                }, { quoted: msg })
+        // 1. Cek Sound Kustom di DB
+        try {
+            const vnRow = db.prepare('SELECT file_path, audio_data, mime_type FROM sound_vn WHERE keyword = ?').get(query)
+            if (vnRow) {
+                let playBuffer = vnRow.audio_data
+                if (!playBuffer && vnRow.file_path && fs.existsSync(vnRow.file_path)) {
+                    playBuffer = fs.readFileSync(vnRow.file_path)
+                }
+                if (playBuffer && playBuffer.length > 0) {
+                    await sock.sendMessage(from, {
+                        audio: playBuffer,
+                        mimetype: vnRow.mime_type || 'audio/ogg; codecs=opus',
+                        ptt: true
+                    }, { quoted: msg })
+                    await react('✅')
+                    return
+                }
             }
-            await react('✅')
-        } catch (err) {
-            logger.error({ err }, `❌ [Sound] Send Error: ${err.message}`)
-            await react('❌')
-            await reply(`❌ Gagal mengirim sound "${soundName || query}". File rusak atau server sumber membatasi akses.\n\n_💡 Tips: Kamu bisa menyimpan VN favoritmu sendiri menggunakan command:_\n*.sound add <nama>* _(sambil reply ke VN/Video)_`)
+        } catch (dbErr) {
+            logger.error(`[Sound] DB read error: ${dbErr.message}`)
         }
+
+        // 2. Cek Sound Bawaan (MEME_SOUNDS)
+        if (MEME_SOUNDS[query]) {
+            try {
+                const soundUrl = MEME_SOUNDS[query]
+                const audioBuffer = await fetchSoundBuffer(soundUrl)
+                if (audioBuffer && audioBuffer.length > 0) {
+                    await sock.sendMessage(from, {
+                        audio: audioBuffer,
+                        mimetype: 'audio/mpeg',
+                        ptt: true
+                    }, { quoted: msg })
+                    await react('✅')
+                    return
+                }
+            } catch (playErr) {
+                logger.error(`[Sound] Built-in sound play error: ${playErr.message}`)
+            }
+        }
+
+        // 3. Sound tidak ditemukan
+        await react('❌')
+        return reply(
+            `❌ Sound *"${query}"* tidak ditemukan.\n\n` +
+            `💡 *Tips:*\n` +
+            `• Ketik *.sound list* untuk melihat daftar sound yang tersedia.\n` +
+            `• Simpan sound baru dengan me-reply audio lalu ketik: *.sound add ${query}*`
+        )
     }
 }
