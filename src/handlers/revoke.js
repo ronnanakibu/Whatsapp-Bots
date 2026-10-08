@@ -231,7 +231,13 @@ async function dispatchBatchRevoke(sock, queueKey) {
             if (it.buffer) {
                 try {
                     const ext = mediaCache.getExtension(it.mType, it.mime)
-                    const savedPath = await mediaCache.archiveRevokedMedia(it.key.id, it.buffer, ext)
+                    const savedPath = await mediaCache.archiveRevokedMedia(it.key.id, it.buffer, ext, {
+                        senderName: pushName,
+                        senderNumber,
+                        chatName: isGroup ? `Grup ${groupName}` : 'Private Chat',
+                        body: it.body || '',
+                        mType: it.mType
+                    })
                     it.mediaPath = savedPath
 
                     const tag = it.isViewOnce ? ' 👁️ [VIEW ONCE]' : ''

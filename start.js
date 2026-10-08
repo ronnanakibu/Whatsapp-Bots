@@ -38,6 +38,30 @@ if (!fs.existsSync(globalTmpDir)) {
 process.env.TMPDIR = globalTmpDir
 process.env.PIP_CACHE_DIR = path.join(globalTmpDir, 'pip-cache')
 
+// Emergency Storage Clean to prevent ENOSPC on low volume limits (Railway/Pterodactyl)
+try {
+    const cleanDirs = ['./storage/media/tmp', './storage/media/temp', './storage/media/radio-temp']
+    for (const dir of cleanDirs) {
+        const p = path.resolve(dir)
+        if (fs.existsSync(p)) {
+            const files = fs.readdirSync(p)
+            for (const f of files) {
+                try { fs.rmSync(path.join(p, f), { recursive: true, force: true }) } catch {}
+            }
+        }
+    }
+    const logFiles = ['./storage/logs/console.log', './storage/logs/app.log']
+    for (const logPath of logFiles) {
+        const lp = path.resolve(logPath)
+        if (fs.existsSync(lp)) {
+            try {
+                const st = fs.statSync(lp)
+                if (st.size > 5 * 1024 * 1024) fs.writeFileSync(lp, '')
+            } catch {}
+        }
+    }
+} catch {}
+
 const updateProgress = (msg) => {
     process.stdout.write(`\r\x1b[K⚙️  [Bootstrap] ${msg}...`)
 }

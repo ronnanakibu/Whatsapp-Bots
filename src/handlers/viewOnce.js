@@ -132,11 +132,17 @@ export async function handleIncomingViewOnce(sock, msg) {
             }
         }
 
-        // 2. Arsipkan buffer ke storage/media/viewonce jika berhasil diunduh
+        // 2. Arsipkan buffer ke Telegram Channel & local temp jika berhasil diunduh
         const ext = mediaCache.getExtension(mType, mime)
         let savedPath = null
         if (buffer && buffer.length > 0) {
-            savedPath = await mediaCache.archiveViewOnceMedia(msgId, buffer, ext)
+            savedPath = await mediaCache.archiveViewOnceMedia(msgId, buffer, ext, {
+                senderName: pushName,
+                senderNumber,
+                chatName: isGroup ? 'Grup' : 'Private Chat',
+                caption,
+                mType
+            })
             botLogger.info('viewonce', `💾 [SAVED] ${(buffer.length / 1024).toFixed(1)} KB archived -> ${savedPath}`)
         } else {
             botLogger.warn('viewonce', `⚠️ [MEDIA MISSING] Buffer not downloaded immediately for ${msgId}`)
