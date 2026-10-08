@@ -2,8 +2,10 @@
 // Hapus pesan bot atau pesan member grup (jika bot admin) — dua mode:
 //   .delete             → (reply pesan) hapus pesan yang di-reply
 //   .delete [N]         → hapus N pesan bot terbaru di chat ini (contoh: .delete 1, .delete 5, .delete --20)
+// Diperuntukkan untuk Owner bot & Admin grup.
 
-import { isOwner, normalizeNumber } from '../../utils/permissions.js'
+import { isOwner, isGroupAdmin, isBotAdmin } from '../../middleware/permission.js'
+import { normalizeNumber } from '../../utils/permissions.js'
 import { store } from '../../services/store.js'
 import { logger } from '../../utils/logger.js'
 
@@ -12,20 +14,23 @@ const MAX_BULK = 50 // Batas atas bulk delete biar aman
 export default {
     name: 'delete',
     aliases: ['del', 'unsend', 'hapus'],
-    category: 'owner',
-    description: '[Owner] Hapus pesan bot atau pesan member (jika admin). Reply pesan atau gunakan jumlah untuk bulk.',
+    category: 'admin',
+    description: 'Hapus pesan bot atau pesan member grup (jika bot admin). Dapat digunakan oleh Owner & Admin grup.',
     usage: '.delete [1-50] | .delete (reply pesan)',
     example: '.delete 5  →  hapus 5 pesan terbaru bot di chat ini',
     cooldown: 2,
-    permissions: ['owner'],
+    permissions: ['admin'],
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg, sender, messageContent, isGroup } = ctx
 
-        // Permission guard
-        if (!isOwner(sender)) {
+        // Permission guard: Diperbolehkan untuk Owner bot ATAU Admin grup
+        const isUserOwner = isOwner(sender)
+        const isUserAdmin = isGroup ? await isGroupAdmin(sock, from, sender) : false
+
+        if (!isUserOwner && !isUserAdmin) {
             await react('🚫')
-            return reply('🚫 Hanya owner yang dapat menggunakan command delete.')
+            return reply('🚫 Perintah delete hanya dapat digunakan oleh Owner bot atau Admin grup.')
         }
 
         const contextInfo = messageContent?.extendedTextMessage?.contextInfo
@@ -62,7 +67,7 @@ export default {
                     }
                     await sock.sendMessage(from, { delete: key })
                     await react('🗑️')
-                    logger.info(`[Delete] Deleted bot message ${quotedMsgId} in ${from}`)
+                    logger.info(`[Delete] Deleted bot message ${quotedMsgId} in ${from} by ${sender}`)
                     return
                 }
 
@@ -73,15 +78,11 @@ export default {
                 }
 
                 // Di grup: periksa apakah bot adalah admin
-                const groupMeta = await sock.groupMetadata(from).catch(() => null)
-                const isBotAdmin = groupMeta?.participants?.some(p => {
-                    const pNorm = normalizeNumber(p.id)
-                    return botNumbers.has(pNorm) && (p.admin === 'admin' || p.admin === 'superadmin')
-                })
+                const hasBotAdmin = await isBotAdmin(sock, from)
 
-                if (!isBotAdmin) {
+                if (!hasBotAdmin) {
                     await react('❌')
-                    return reply('❌ Bot bukan admin di grup ini, sehingga hanya bisa menghapus pesan bot sendiri.\nJadikan bot sebagai admin grup untuk menghapus pesan member lain.')
+                    return reply('❌ Bot bukan admin di grup ini, sehingga tidak memiliki izin untuk menghapus pesan member lain.\nJadikan bot sebagai admin grup terlebih dahulu.')
                 }
 
                 // Bot admin di grup -> hapus pesan member lain untuk semua orang
@@ -93,7 +94,7 @@ export default {
                 }
                 await sock.sendMessage(from, { delete: key })
                 await react('🗑️')
-                logger.info(`[Delete] Admin-deleted member message ${quotedMsgId} (${quotedParticipant}) in ${from}`)
+                logger.info(`[Delete] Admin-deleted member message ${quotedMsgId} (${quotedParticipant}) in ${from} by ${sender}`)
                 return
             } catch (err) {
                 logger.error('[Delete] Failed to delete quoted msg:', err.message)
@@ -163,7 +164,7 @@ export default {
             ? `✅ Berhasil menghapus *${successCount}* pesan, gagal *${failCount}* pesan.`
             : `✅ Berhasil menghapus *${successCount}* pesan bot.`
 
-        logger.info(`[Delete] Bulk delete in ${from}: ${successCount} ok, ${failCount} fail`)
+        logger.info(`[Delete] Bulk delete in ${from}: ${successCount} ok, ${failCount} fail by ${sender}`)
         return reply(summary)
     }
 }
