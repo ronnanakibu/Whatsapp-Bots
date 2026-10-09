@@ -49,20 +49,35 @@ export async function downloadYtdlp(url, options = {}) {
         logger.debug(`[yt-dlp] Using cookies file: ${cookiesPath}`)
     }
 
-    // Ensure ffmpeg location is passed if present
+    // Ensure ffmpeg location is passed if custom binary file is present
     const isWindows = process.platform === 'win32'
-    const ffmpegCandidates = [
+    const customFfmpeg = [
         process.env.FFMPEG_PATH,
-        path.resolve('./storage/bin'),
         path.resolve('./storage/bin/ffmpeg' + (isWindows ? '.exe' : '')),
-    ]
-    const foundFfmpeg = ffmpegCandidates.find(p => p && fs.existsSync(p))
-    if (foundFfmpeg) {
-        args.push('--ffmpeg-location', foundFfmpeg)
+    ].find(p => {
+        try {
+            return p && fs.existsSync(p) && !fs.statSync(p).isDirectory()
+        } catch (_) {
+            return false
+        }
+    })
+
+    if (customFfmpeg) {
+        args.push('--ffmpeg-location', customFfmpeg)
+    }
+
+    // Cek ketersediaan ffmpeg (custom binary atau dari system PATH)
+    let hasFfmpeg = !!customFfmpeg
+    if (!hasFfmpeg) {
+        try {
+            const { execSync } = await import('child_process')
+            execSync(isWindows ? 'where ffmpeg' : 'which ffmpeg', { stdio: 'ignore' })
+            hasFfmpeg = true
+        } catch (_) {}
     }
 
     if (format === 'audio') {
-        if (foundFfmpeg) {
+        if (hasFfmpeg) {
             const quality = options.audioQuality === 'normal' ? '128K' : '320K'
             args.push(
                 '--extract-audio',
@@ -77,7 +92,7 @@ export async function downloadYtdlp(url, options = {}) {
     } else {
         // Video MP4 with target resolution limit
         const res = options.resolution || '1080'
-        if (foundFfmpeg) {
+        if (hasFfmpeg) {
             args.push(
                 '-f', `bestvideo[height<=${res}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${res}]+bestaudio/best[height<=${res}]/best`,
                 '--merge-output-format', 'mp4'

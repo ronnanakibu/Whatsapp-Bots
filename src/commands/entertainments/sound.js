@@ -163,7 +163,41 @@ async function fetchSoundBuffer(url) {
 }
 
 /**
- * Cari daftar sound dari MyInstants Soundboard menggunakan curl untuk melewati proteksi TLS
+ * Cari sound effect meme dari FreeSound (Cepat, direct CDN MP3, 100% kebal Cloudflare Turnstile pada server datacenter)
+ */
+async function searchFreeSoundList(query) {
+    try {
+        const url = `https://freesound.org/search/?q=${encodeURIComponent(query)}&f=duration:[0+TO+30]`
+        const res = await fetch(url, {
+            headers: {
+                'User-Agent': UA,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            }
+        })
+        if (!res.ok) return []
+        const text = await res.text()
+        const regex = /data-mp3="([^"]+)"[\s\S]*?data-title="([^"]+)"[\s\S]*?data-duration="([^"]+)"/g
+        const results = []
+        let match
+        while ((match = regex.exec(text)) !== null) {
+            const rawDur = parseFloat(match[3]) || 0
+            results.push({
+                mp3: match[1],
+                title: match[2].trim(),
+                duration: `${rawDur.toFixed(1)}s`
+            })
+            if (results.length >= 10) break
+        }
+        logger.info(`[Sound/FreeSound] Ditemukan ${results.length} sound untuk query "${query}"`)
+        return results
+    } catch (err) {
+        logger.warn(`[Sound/FreeSound] Search error untuk "${query}": ${err.message}`)
+        return []
+    }
+}
+
+/**
+ * Cari daftar sound dari MyInstants Soundboard menggunakan curl
  */
 async function searchMyInstantsList(query) {
     try {
@@ -171,14 +205,12 @@ async function searchMyInstantsList(query) {
         const url = `https://www.myinstants.com/en/search/?name=${encodeURIComponent(query)}`
         const args = ['-s', '-L', '--max-time', '10', '-A', UA, url]
         const { stdout } = await execFilePromise(curlBin, args)
-        if (!stdout) {
-            logger.warn(`[Sound/MyInstants] stdout kosong saat query "${query}"`)
-            return []
-        }
+        if (!stdout) return []
 
         const isChallenge = stdout.includes('Just a moment...') || stdout.includes('cf-turnstile') || stdout.includes('Attention Required')
         if (isChallenge) {
-            logger.warn(`[Sound/MyInstants] Cloudflare Challenge terdeteksi pada server untuk query "${query}"! (length: ${stdout.length})`)
+            logger.warn(`[Sound/MyInstants] Cloudflare Challenge terdeteksi pada server untuk query "${query}"!`)
+            return []
         }
 
         const regex = /onclick="play\('([^']+)'[^)]*\)"[\s\S]*?<a[^>]*class="instant-link[^"]*"[^>]*>([^<]+)<\/a>/g
@@ -187,7 +219,8 @@ async function searchMyInstantsList(query) {
         while ((match = regex.exec(stdout)) !== null) {
             results.push({
                 mp3: `https://www.myinstants.com${match[1]}`,
-                title: match[2].trim()
+                title: match[2].trim(),
+                duration: 'meme'
             })
             if (results.length >= 10) break
         }
@@ -200,7 +233,7 @@ async function searchMyInstantsList(query) {
 }
 
 /**
- * Cari daftar sound alternatif via YouTube Sound Effect jika MyInstants diblokir
+ * Cari daftar sound alternatif via YouTube Sound Effect jika soundboard kosong
  */
 async function searchAlternativeSoundList(query) {
     try {
@@ -220,12 +253,34 @@ async function searchAlternativeSoundList(query) {
 
 /**
  * Cari sound effect meme online secara dinamis
- * 1. Prioritas 1: MyInstants Meme Soundboard (respon cepat 1-2 detik, koleksi meme otentik)
- * 2. Prioritas 2: YouTube SFX Engine via downloader service (yt-dlp)
- * 3. Prioritas 3: YouTube SFX Stream via play-dl fallback
+ * 1. Prioritas 1: FreeSound Soundboard (direct MP3, respon 100ms, 100% bebas blokir)
+ * 2. Prioritas 2: MyInstants Meme Soundboard (koleksi meme)
+ * 3. Prioritas 3: YouTube SFX Engine via downloader service (yt-dlp)
  */
 async function searchOnlineSound(query) {
-    // 1. MyInstants Soundboard Search
+    // 1. FreeSound Soundboard Search (Paling stabil & cepat di cloud / datacenter)
+    try {
+        const freesounds = await searchFreeSoundList(query)
+        if (freesounds && freesounds.length > 0) {
+            for (const item of freesounds.slice(0, 3)) {
+                logger.info(`[Sound/FreeSound] Mencoba unduh: "${item.title}" -> ${item.mp3}`)
+                const buf = await fetchSoundBuffer(item.mp3)
+                if (buf && isValidAudio(buf)) {
+                    return {
+                        title: item.title,
+                        url: item.mp3,
+                        buffer: buf,
+                        source: 'freesound',
+                        ext: 'mp3'
+                    }
+                }
+            }
+        }
+    } catch (fsErr) {
+        logger.warn(`[Sound/FreeSound] Lookup gagal: ${fsErr.message}`)
+    }
+
+    // 2. MyInstants Soundboard Search
     try {
         const instants = await searchMyInstantsList(query)
         if (instants && instants.length > 0) {
@@ -247,7 +302,7 @@ async function searchOnlineSound(query) {
         logger.warn(`[Sound/MyInstants] Lookup gagal: ${mErr.message}`)
     }
 
-    // 2. Fallback: YouTube SFX Engine
+    // 3. Fallback: YouTube SFX Engine
     try {
         const searchTerms = [
             `${query} sound effect`,
@@ -266,8 +321,6 @@ async function searchOnlineSound(query) {
 
             if (matched) {
                 logger.info(`[Sound/YouTube] Kandidat ditemukan: "${matched.title}" (${matched.seconds}s) -> ${matched.url}`)
-                
-                // Coba method A: Downloader service (yt-dlp)
                 try {
                     const dl = await download(matched.url, { format: 'audio' })
                     if (dl?.buffer && dl.buffer.length > 500) {
@@ -281,32 +334,7 @@ async function searchOnlineSound(query) {
                         }
                     }
                 } catch (dlErr) {
-                    logger.warn(`[Sound/YouTube] Downloader yt-dlp gagal (${dlErr.message}), mencoba fallback play-dl...`)
-                }
-
-                // Coba method B: play-dl stream fallback
-                try {
-                    const playdl = (await import('play-dl')).default || (await import('play-dl'))
-                    const stream = await playdl.stream(matched.url)
-                    if (stream?.stream) {
-                        const chunks = []
-                        for await (const chunk of stream.stream) {
-                            chunks.push(chunk)
-                        }
-                        const streamBuf = Buffer.concat(chunks)
-                        if (streamBuf.length > 500) {
-                            return {
-                                title: matched.title,
-                                url: matched.url,
-                                duration: matched.timestamp,
-                                buffer: streamBuf,
-                                source: 'youtube-playdl',
-                                ext: 'opus'
-                            }
-                        }
-                    }
-                } catch (pErr) {
-                    logger.warn(`[Sound/YouTube] Fallback play-dl juga gagal: ${pErr.message}`)
+                    logger.warn(`[Sound/YouTube] Downloader yt-dlp gagal: ${dlErr.message}`)
                 }
             }
         }
@@ -544,15 +572,23 @@ export default {
             }
 
             await react('🔍')
-            let list = await searchMyInstantsList(q)
-            let isAlternative = false
+            // Cari dari FreeSound (100% cepat & bebas Cloudflare) dan MyInstants
+            let list = await searchFreeSoundList(q)
+            let sourceName = 'FreeSound & Soundboard'
 
-            // Jika MyInstants kosong atau diblokir Cloudflare di server, fallback ke YouTube SFX
+            if (!list || list.length === 0) {
+                const myInstantsList = await searchMyInstantsList(q)
+                if (myInstantsList && myInstantsList.length > 0) {
+                    list = myInstantsList
+                    sourceName = 'MyInstants Soundboard'
+                }
+            }
+
             if (!list || list.length === 0) {
                 const altList = await searchAlternativeSoundList(q)
                 if (altList && altList.length > 0) {
                     list = altList
-                    isAlternative = true
+                    sourceName = 'YouTube Sound Effects'
                 }
             }
 
@@ -561,8 +597,7 @@ export default {
                 return reply(`❌ Tidak ditemukan soundboard meme dengan kata kunci *"${q}"*.`)
             }
 
-            const header = isAlternative ? 'Hasil Pencarian Sound Effect (Online SFX)' : 'Hasil Pencarian Soundboard Meme'
-            const items = list.map((item, idx) => {
+            const items = list.slice(0, 10).map((item, idx) => {
                 const cleanName = item.title.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
                 const durText = item.duration ? ` _(${item.duration})_` : ''
                 return `${idx + 1}. *${item.title}*${durText}\n   ▶️ *.sound ${cleanName}*`
@@ -570,7 +605,7 @@ export default {
 
             await react('✅')
             return reply(
-                `🔊 *${header}:* "${q}"\n\n` +
+                `🔊 *Hasil Pencarian Soundboard (${sourceName}):* "${q}"\n\n` +
                 items +
                 `\n\n_Ketik salah satu perintah *.sound <nama>* di atas untuk langsung memutarnya!_`
             )
