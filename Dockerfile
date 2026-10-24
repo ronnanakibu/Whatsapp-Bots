@@ -25,9 +25,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tar \
     && rm -rf /var/lib/apt/lists/*
 
-# Hugging Face Spaces runs as user with UID 1000
-RUN useradd -m -u 1000 user
-
 WORKDIR /app
 
 # Install bot dependencies (copy lockfile for deterministic installs)
@@ -44,20 +41,20 @@ COPY .env.example ./
 COPY --from=radio-builder /dashboard/out ./dashboard/out/
 COPY --from=main-builder /main-dashboard/out ./src/app/dashboard/out/
 
-# Create storage directory structure and assign ownership to user 1000
+# Create storage directory structure and assign ownership to node user (UID 1000)
 RUN mkdir -p storage/sessions storage/database storage/logs \
     storage/media storage/media/tmp storage/bin src/assets/fonts \
     storage/stickers && \
-    chown -R user:user /app
+    chown -R node:node /app
 
-USER user
+USER node
 
-# Environment defaults for Hugging Face Spaces
+# Environment defaults
 ENV TZ=Asia/Jakarta
 ENV NODE_ENV=production
 ENV PORT=7860
-ENV HOME=/home/user
-ENV PATH=/home/user/.local/bin:/app/storage/bin:$PATH
+ENV HOME=/home/node
+ENV PATH=/home/node/.local/bin:/app/storage/bin:$PATH
 
 EXPOSE 7860
 
