@@ -1,3 +1,49 @@
+# pyright: reportMissingImports=false
+# === PATCH: Fix HfFolder removal in newer huggingface_hub versions ===
+import huggingface_hub as _hf_hub  # type: ignore
+if not hasattr(_hf_hub, 'HfFolder'):
+    class _HfFolder:
+        @classmethod
+        def get_token(cls): return None
+        @classmethod
+        def save_token(cls, token): pass
+        @classmethod
+        def delete_token(cls): pass
+    _hf_hub.HfFolder = _HfFolder
+    print("🔧 Patched HfFolder for newer huggingface_hub compatibility.")
+
+# === PATCH: Fix Starlette TemplateResponse API mismatch with Gradio 4.44.1 ===
+try:
+    import starlette.templating as _starlette_tpl  # type: ignore
+    _OrigTemplates = _starlette_tpl.Jinja2Templates
+
+    class _PatchedJinja2Templates(_OrigTemplates):
+        def TemplateResponse(self, *args, **kwargs):
+            if args and isinstance(args[0], str):
+                name = args[0]
+                context = args[1] if len(args) > 1 else {}
+                request = context.get('request') if isinstance(context, dict) else None
+                status_code = args[2] if len(args) > 2 else kwargs.pop('status_code', 200)
+                headers = kwargs.pop('headers', None)
+                media_type = kwargs.pop('media_type', None)
+                background = kwargs.pop('background', None)
+                if request is not None:
+                    try:
+                        return super().TemplateResponse(
+                            request=request, name=name, context=context,
+                            status_code=status_code, headers=headers,
+                            media_type=media_type, background=background
+                        )
+                    except Exception:
+                        pass
+            return super().TemplateResponse(*args, **kwargs)
+
+    _starlette_tpl.Jinja2Templates = _PatchedJinja2Templates
+    print("🔧 Patched Starlette TemplateResponse for Gradio 4.44.1 compatibility.")
+except Exception:
+    pass
+# === END PATCH ===
+
 import os
 import sys
 import time
