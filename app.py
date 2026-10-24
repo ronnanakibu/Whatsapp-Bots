@@ -188,13 +188,18 @@ def start_bot_process():
 
 start_bot_process()
 
-# === FASTAPI & GRADIO REVERSE PROXY LAYER ===
+# === FASTAPI & REVERSE PROXY LAYER ===
 from fastapi import FastAPI, Request, Response, WebSocket
 from fastapi.responses import StreamingResponse, HTMLResponse, RedirectResponse
 import httpx
 import websockets
-import gradio as gr
 import uvicorn
+
+gr = None
+try:
+    import gradio as gr
+except Exception as e:
+    log(f"Gradio import skipped ({e}). Operating in pure FastAPI mode.")
 
 app = FastAPI(title="RonnBot Cloud Engine")
 http_client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{INTERNAL_NODE_PORT}", timeout=None)
@@ -357,60 +362,106 @@ def trigger_cloud_backup():
     except Exception as e:
         return f"❌ Gagal backup sesi: {str(e)}"
 
-# Gradio Blocks UI
-with gr.Blocks(title="RonnBot (WABOT 2.0) - Cloud Control Center", theme=gr.themes.Soft()) as demo:
-    gr.Markdown("""
-    # 🤖 RonnBot (WABOT 2.0) - Cloud Container Edition
-    *WhatsApp Bot Modular Automation & Live Radio Dashboard berjalan 24/7 di Hugging Face.*
-    """)
-    
-    status_bar = gr.Markdown(value=get_bot_status)
-
-    with gr.Tabs():
-        with gr.Tab("📱 WhatsApp Login / QR Code"):
-            gr.Markdown("Jika bot baru pertama kali login atau butuh pairing ulang, scan QR code di bawah ini:")
-            qr_view = gr.HTML(value=get_qr_html)
-            refresh_qr_btn = gr.Button("🔄 Refresh QR / Cek Koneksi", variant="primary")
-            refresh_qr_btn.click(fn=get_qr_html, outputs=qr_view)
-
-        with gr.Tab("📻 BotOS & Radio Dashboards"):
+# Gradio Blocks UI (or Native HTML Fallback)
+gradio_mounted = False
+if gr is not None:
+    try:
+        with gr.Blocks(title="RonnBot (WABOT 2.0) - Cloud Control Center", theme=gr.themes.Soft()) as demo:
             gr.Markdown("""
-            ### 🌐 Akses Panel Web Langsung:
-            - 🖥️ **[Buka BotOS Web Dashboard](/dashboard)** — Panel kontrol web lengkap, chat feed, dan statistik.
-            - 📻 **[Buka Radio Station](/radio)** — Pemutar musik live radio lo-fi & request lagu.
-            - 🎵 **[Direct Audio Stream URL](/stream)** — Stream audio langsung untuk VLC, Winamp, atau Android App.
+            # 🤖 RonnBot (WABOT 2.0) - Cloud Container Edition
+            *WhatsApp Bot Modular Automation & Live Radio Dashboard berjalan 24/7 di Hugging Face.*
             """)
-            gr.HTML("""
-            <div style="margin-top:20px;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.15);">
-                <iframe src="/dashboard" style="width:100%;height:650px;border:none;"></iframe>
+            
+            status_bar = gr.Markdown(value=get_bot_status)
+
+            with gr.Tabs():
+                with gr.Tab("📱 WhatsApp Login / QR Code"):
+                    gr.Markdown("Jika bot baru pertama kali login atau butuh pairing ulang, scan QR code di bawah ini:")
+                    qr_view = gr.HTML(value=get_qr_html)
+                    refresh_qr_btn = gr.Button("🔄 Refresh QR / Cek Koneksi", variant="primary")
+                    refresh_qr_btn.click(fn=get_qr_html, outputs=qr_view)
+
+                with gr.Tab("📻 BotOS & Radio Dashboards"):
+                    gr.Markdown("""
+                    ### 🌐 Akses Panel Web Langsung:
+                    - 🖥️ **[Buka BotOS Web Dashboard](/dashboard)** — Panel kontrol web lengkap, chat feed, dan statistik.
+                    - 📻 **[Buka Radio Station](/radio)** — Pemutar musik live radio lo-fi & request lagu.
+                    - 🎵 **[Direct Audio Stream URL](/stream)** — Stream audio langsung untuk VLC, Winamp, atau Android App.
+                    """)
+                    gr.HTML("""
+                    <div style="margin-top:20px;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.15);">
+                        <iframe src="/dashboard" style="width:100%;height:650px;border:none;"></iframe>
+                    </div>
+                    """)
+
+                with gr.Tab("📜 Live Terminal Logs"):
+                    gr.Markdown("Real-time bootstrap & bot runtime console output:")
+                    logs_view = gr.Code(value=get_logs, language="shell", label="Console Output (Last 200 lines)")
+                    refresh_logs_btn = gr.Button("🔄 Refresh Logs")
+                    refresh_logs_btn.click(fn=get_logs, outputs=logs_view)
+
+                with gr.Tab("⚡ Cloud Sync & Maintenance"):
+                    gr.Markdown("""
+                    ### ☁️ Automated Cloud Session Sync
+                    Sesi WhatsApp kamu secara otomatis di-backup ke Hugging Face Dataset (`ronnlbtrn/wabot-storage`).
+                    Kamu juga bisa melakukan sinkronisasi manual kapan saja di bawah ini:
+                    """)
+                    backup_btn = gr.Button("☁️ Backup Sesi WhatsApp ke Dataset Sekarang", variant="secondary")
+                    backup_msg = gr.Markdown("")
+                    backup_btn.click(fn=trigger_cloud_backup, outputs=backup_msg)
+
+                    gr.Markdown("---")
+                    restart_btn = gr.Button("🔄 Restart Bot Process", variant="stop")
+                    restart_msg = gr.Markdown("")
+                    restart_btn.click(fn=restart_bot_action, outputs=restart_msg)
+
+        app = gr.mount_gradio_app(app, demo, path="/")
+        gradio_mounted = True
+        log("Gradio UI mounted successfully on /")
+    except Exception as mount_err:
+        log(f"Gradio mounting failed: {mount_err}. Falling back to native HTML root.")
+
+if not gradio_mounted:
+    @app.get("/", response_class=HTMLResponse)
+    async def native_root():
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>RonnBot (WABOT 2.0) - Cloud Engine</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+                .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 32px; max-width: 520px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+                h1 { margin-top: 0; font-size: 22px; color: #38bdf8; }
+                p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
+                .btn-group { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
+                .btn { display: block; padding: 12px 20px; border-radius: 8px; font-weight: 600; text-decoration: none; transition: all 0.2s; font-size: 14px; }
+                .btn-primary { background: #2563eb; color: white; }
+                .btn-primary:hover { background: #1d4ed8; }
+                .btn-secondary { background: #334155; color: #e2e8f0; }
+                .btn-secondary:hover { background: #475569; }
+                .badge { display: inline-block; padding: 4px 12px; border-radius: 9999px; background: rgba(34, 197, 94, 0.2); color: #4ade80; font-size: 12px; font-weight: bold; margin-bottom: 16px; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="badge">● BOT ENGINE ONLINE</div>
+                <h1>🤖 RonnBot (WABOT 2.0)</h1>
+                <p>WhatsApp Bot Modular & Live Radio Station berjalan 24/7 di Hugging Face.</p>
+                <div class="btn-group">
+                    <a href="/dashboard" class="btn btn-primary">🖥️ Buka BotOS Dashboard</a>
+                    <a href="/radio" class="btn btn-secondary">📻 Buka Radio Station</a>
+                    <a href="/qr" class="btn btn-secondary">📱 Scan WhatsApp QR Code</a>
+                    <a href="/stream" class="btn btn-secondary">🎵 Live Audio Stream URL</a>
+                    <a href="/api/system/ping" class="btn btn-secondary">⚡ System Health Check</a>
+                </div>
             </div>
-            """)
-
-        with gr.Tab("📜 Live Terminal Logs"):
-            gr.Markdown("Real-time bootstrap & bot runtime console output:")
-            logs_view = gr.Code(value=get_logs, language="shell", label="Console Output (Last 200 lines)")
-            refresh_logs_btn = gr.Button("🔄 Refresh Logs")
-            refresh_logs_btn.click(fn=get_logs, outputs=logs_view)
-
-        with gr.Tab("⚡ Cloud Sync & Maintenance"):
-            gr.Markdown("""
-            ### ☁️ Automated Cloud Session Sync
-            Sesi WhatsApp kamu secara otomatis di-backup ke Hugging Face Dataset (`ronnlbtrn/wabot-storage`).
-            Kamu juga bisa melakukan sinkronisasi manual kapan saja di bawah ini:
-            """)
-            backup_btn = gr.Button("☁️ Backup Sesi WhatsApp ke Dataset Sekarang", variant="secondary")
-            backup_msg = gr.Markdown("")
-            backup_btn.click(fn=trigger_cloud_backup, outputs=backup_msg)
-
-            gr.Markdown("---")
-            restart_btn = gr.Button("🔄 Restart Bot Process", variant="stop")
-            restart_msg = gr.Markdown("")
-            restart_btn.click(fn=restart_bot_action, outputs=restart_msg)
-
-# Mount Gradio onto FastAPI root
-app = gr.mount_gradio_app(app, demo, path="/")
+        </body>
+        </html>
+        """
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT_HF", 7860))
-    log(f"Starting FastAPI & Gradio Server on 0.0.0.0:{port}...")
+    log(f"Starting Cloud Engine Server on 0.0.0.0:{port}...")
     uvicorn.run(app, host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
