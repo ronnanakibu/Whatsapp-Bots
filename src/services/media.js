@@ -326,13 +326,15 @@ export class MediaService {
         }
 
         const maxLineLen = Math.max(...lines.map(l => l.length))
-        let fontSize = Math.floor(460 / (maxLineLen * 0.52))
-        fontSize = Math.max(20, Math.min(65, fontSize))
+        // Tighter & narrow margins: sisakan hanya beberapa pixel di kanan-kiri (~10-15px)
+        let fontSize = Math.floor(492 / (maxLineLen * 0.448))
+        fontSize = Math.max(18, Math.min(82, fontSize))
 
-        const lineSpacing = fontSize * 1.15
+        const lineSpacing = fontSize * 1.10
+        // Posisi vertikal mepet ke batas atas/bawah kanvas (~7-10px margin)
         const startY = isBottom
-            ? (lines.length === 1 ? 512 - 25 : 512 - 25 - lineSpacing)
-            : 25 + fontSize
+            ? (lines.length === 1 ? 512 - 12 : 512 - 12 - lineSpacing)
+            : 6 + (fontSize * 0.94)
 
         return { lines, fontSize, startY, lineSpacing }
     }
@@ -363,7 +365,7 @@ export class MediaService {
         // Line contains emojis: layout segments cleanly
         const emojiSize = fontSize * 1.05
         const isImpact = fontFamily.toLowerCase().includes('impact')
-        const charWidth = isImpact ? fontSize * 0.48 : fontSize * 0.42
+        const charWidth = isImpact ? fontSize * 0.45 : fontSize * 0.42
         const spaceWidth = isImpact ? fontSize * 0.28 : fontSize * 0.22
 
         const parts = []
