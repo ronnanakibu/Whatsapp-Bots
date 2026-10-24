@@ -36,6 +36,7 @@ import { initScheduleSync } from '../services/scheduleSync.js'
 import { startRadioServer, updateBotStatus } from '../server/radio.js'
 import { metricsService } from '../services/metrics.js'
 import { mediaCache } from '../services/mediaCache.js'
+import { sessionSync } from '../services/sessionSync.js'
 
 const pinoLogger = logger.child({ module: 'baileys' })
 
@@ -151,7 +152,6 @@ async function startBot() {
     sock.ev.on('creds.update', async () => {
         await saveCreds()
         try {
-            const { sessionSync } = await import('../services/sessionSync.js')
             sessionSync.triggerDebouncedBackup(30000)
         } catch (_) {}
     })
@@ -181,7 +181,6 @@ async function startBot() {
 
             // Immediately back up the fresh authenticated session to Hugging Face Dataset
             try {
-                const { sessionSync } = await import('../services/sessionSync.js')
                 sessionSync.backupSession().catch(e => {
                     botLogger.warn('session-sync', `Initial session backup warning: ${e.message}`)
                 })
