@@ -187,7 +187,8 @@ class MediaCacheService {
                     store.saveMessage(sentResult)
                 }
                 this.archiveOutgoingMedia(sock, jid, content, sentResult).catch(err => {
-                    botLogger.debug?.('mediacache', `Failed to archive outgoing media: ${err.message}`)
+                    const cause = err.cause ? ` (${err.cause.code || err.cause.message || err.cause})` : ''
+                    botLogger.debug?.('mediacache', `Failed to archive outgoing media: ${err.message}${cause}`)
                 })
             } catch (_) {}
             return sentResult

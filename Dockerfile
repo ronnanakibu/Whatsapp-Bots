@@ -18,11 +18,14 @@ RUN npm run build
 # Use standard node:20 which has build-essential & python3 pre-installed
 FROM node:20
 
-# OS dependencies (ffmpeg, curl, tar for media/sound & cloud session backup)
+# OS dependencies (ffmpeg, curl, tar, fontconfig, python3 for media & yt-dlp)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     tar \
+    fontconfig \
+    fonts-liberation \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -41,10 +44,16 @@ COPY .env.example ./
 COPY --from=radio-builder /dashboard/out ./dashboard/out/
 COPY --from=main-builder /main-dashboard/out ./src/app/dashboard/out/
 
-# Create storage directory structure and assign ownership to node user (UID 1000)
+# Create storage directory structure, pre-download essential fonts & yt-dlp, and assign ownership to node user (UID 1000)
 RUN mkdir -p storage/sessions storage/database storage/logs \
     storage/media storage/media/tmp storage/bin src/assets/fonts \
     storage/stickers && \
+    curl -fsSL -o src/assets/fonts/impact.ttf https://raw.githubusercontent.com/theapache64/mufy/master/assets/impact.ttf && \
+    cp src/assets/fonts/impact.ttf src/assets/fonts/Impact.ttf && \
+    curl -fsSL -o src/assets/fonts/arialn.ttf https://raw.githubusercontent.com/genqiaolynn/fonts/master/ARIALN.TTF && \
+    curl -fsSL -o storage/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp && \
+    chmod 755 storage/bin/yt-dlp && \
+    fc-cache -f && \
     chown -R node:node /app
 
 USER node

@@ -22,6 +22,15 @@ import { pathToFileURL } from 'url'
 process.env.TZ = process.env.BOT_TIMEZONE || 'Asia/Jakarta'
 
 dns.setDefaultResultOrder('ipv4first')
+try {
+    const { setGlobalDispatcher, Agent } = await import('undici')
+    setGlobalDispatcher(new Agent({
+        connect: {
+            family: 4,
+            timeout: 25000
+        }
+    }))
+} catch (_) {}
 
 // Prepend local bin folder and ~/.local/bin to PATH so all spawned commands (ffmpeg, yt-dlp, hermes) are found
 const localBinPath = path.resolve('./storage/bin')
@@ -245,17 +254,17 @@ const FONT_DIR = path.resolve('./src/assets/fonts')
 const REQUIRED_FONTS = [
     {
         name: 'NotoColorEmoji.ttf',
-        url: 'https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf',
+        url: 'https://github.com/googlefonts/noto-emoji/raw/v2.051/fonts/NotoColorEmoji.ttf',
         description: 'Noto Color Emoji (Google)'
     },
     {
         name: 'Impact.ttf',
-        url: 'https://github.com/matomo-org/travis-scripts/raw/master/fonts/Impact.ttf',
+        url: 'https://raw.githubusercontent.com/theapache64/mufy/master/assets/impact.ttf',
         description: 'Impact (meme font)'
     },
     {
         name: 'arialn.ttf',
-        url: 'https://raw.githubusercontent.com/uclalibrary/clis-images-docker/master/fonts/arialn.ttf',
+        url: 'https://raw.githubusercontent.com/genqiaolynn/fonts/master/ARIALN.TTF',
         description: 'Arial Narrow (brat font)'
     }
 ]
@@ -275,6 +284,14 @@ async function setupFonts() {
         } catch (e) {
             wrn(`Gagal download ${font.name}: ${e.message}`)
         }
+    }
+    // Ensure lowercase impact.ttf exists as well for Linux case-sensitivity
+    const upperImpact = path.join(FONT_DIR, 'Impact.ttf')
+    const lowerImpact = path.join(FONT_DIR, 'impact.ttf')
+    if (fs.existsSync(upperImpact) && !fs.existsSync(lowerImpact)) {
+        try { fs.copyFileSync(upperImpact, lowerImpact) } catch (_) {}
+    } else if (fs.existsSync(lowerImpact) && !fs.existsSync(upperImpact)) {
+        try { fs.copyFileSync(lowerImpact, upperImpact) } catch (_) {}
     }
     ok('Font setup complete.')
 }

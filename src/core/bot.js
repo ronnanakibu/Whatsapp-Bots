@@ -2,6 +2,15 @@
 import dns from 'dns'
 process.env.TZ = process.env.BOT_TIMEZONE || 'Asia/Jakarta'
 dns.setDefaultResultOrder('ipv4first')
+try {
+    const { setGlobalDispatcher, Agent } = await import('undici')
+    setGlobalDispatcher(new Agent({
+        connect: {
+            family: 4,
+            timeout: 25000
+        }
+    }))
+} catch (_) {}
 
 import makeWASocket, {
     useMultiFileAuthState,

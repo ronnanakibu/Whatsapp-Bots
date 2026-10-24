@@ -126,6 +126,7 @@ export class MediaService {
         this.storageDir = path.resolve(process.cwd(), 'storage', 'uploads')
         this.ensureStorageDirExists()
         this.#initFontconfig()
+        this.#loadFontBase64()
     }
 
     ensureStorageDirExists() {
@@ -160,6 +161,51 @@ export class MediaService {
         } catch (e) {
             console.error('❌ [MediaService] Fontconfig init gagal:', e.message)
         }
+    }
+
+    #loadFontBase64() {
+        try {
+            const fontDir = path.resolve('./src/assets/fonts')
+            const impactNames = ['Impact.ttf', 'impact.ttf']
+            for (const name of impactNames) {
+                const p = path.join(fontDir, name)
+                if (fs.existsSync(p)) {
+                    this.impactBase64 = fs.readFileSync(p).toString('base64')
+                    console.log(`⚙️ [MediaService] Loaded ${name} base64 (${this.impactBase64.length} chars)`)
+                    break
+                }
+            }
+
+            const arialnNames = ['arialn.ttf', 'ARIALN.TTF', 'arial.ttf']
+            for (const name of arialnNames) {
+                const p = path.join(fontDir, name)
+                if (fs.existsSync(p)) {
+                    this.arialnBase64 = fs.readFileSync(p).toString('base64')
+                    console.log(`⚙️ [MediaService] Loaded ${name} base64 (${this.arialnBase64.length} chars)`)
+                    break
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ [MediaService] Font base64 init warning:', e.message)
+        }
+    }
+
+    #getSvgFontStyle() {
+        // If fonts are missing, re-try loading once
+        if (!this.impactBase64 || !this.arialnBase64) {
+            this.#loadFontBase64()
+        }
+        const rules = []
+        if (this.impactBase64) {
+            rules.push(`@font-face { font-family: 'Impact'; src: url('data:font/truetype;charset=utf-8;base64,${this.impactBase64}') format('truetype'); font-weight: normal; font-style: normal; }`)
+            rules.push(`@font-face { font-family: 'Impact'; src: url('data:font/truetype;charset=utf-8;base64,${this.impactBase64}') format('truetype'); font-weight: bold; font-style: normal; }`)
+        }
+        if (this.arialnBase64) {
+            rules.push(`@font-face { font-family: 'Arial Narrow'; src: url('data:font/truetype;charset=utf-8;base64,${this.arialnBase64}') format('truetype'); font-weight: normal; font-style: normal; }`)
+            rules.push(`@font-face { font-family: 'Arial Narrow'; src: url('data:font/truetype;charset=utf-8;base64,${this.arialnBase64}') format('truetype'); font-weight: bold; font-style: normal; }`)
+        }
+        if (rules.length === 0) return ''
+        return `<defs><style type="text/css">\n${rules.join('\n')}\n</style></defs>`
     }
 
     #wrapText(text, maxCharsPerLine = 11) {
@@ -287,8 +333,8 @@ export class MediaService {
         }
 
         const maxLineLen = Math.max(...lines.map(l => l.length))
-        let fontSize = Math.floor(480 / (maxLineLen * 0.52))
-        fontSize = Math.max(30, Math.min(75, fontSize))
+        let fontSize = Math.floor(450 / (maxLineLen * 0.54))
+        fontSize = Math.max(28, Math.min(75, fontSize))
 
         const lineSpacing = fontSize * 1.12
         let startY
@@ -558,6 +604,7 @@ export class MediaService {
             })
 
             const svg = Buffer.from(`<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                ${this.#getSvgFontStyle()}
                 ${svgContent}
             </svg>`)
 
@@ -686,6 +733,7 @@ export class MediaService {
             })
 
             const svg = Buffer.from(`<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                ${this.#getSvgFontStyle()}
                 ${svgContent}
             </svg>`)
 
@@ -774,6 +822,7 @@ export class MediaService {
             })
 
             const svg = Buffer.from(`<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                ${this.#getSvgFontStyle()}
                 ${svgContent}
             </svg>`)
 

@@ -2,8 +2,8 @@ import { logger, botLogger } from '../utils/logger.js'
 
 export class TGStorageService {
     constructor() {
-        this.token = process.env.TELEGRAM_BOT_TOKEN
-        this.channelId = process.env.TELEGRAM_CHANNEL_ID
+        this.token = process.env.TELEGRAM_BOT_TOKEN ? process.env.TELEGRAM_BOT_TOKEN.replace(/^["']|["']$/g, '').trim() : ''
+        this.channelId = process.env.TELEGRAM_CHANNEL_ID ? process.env.TELEGRAM_CHANNEL_ID.replace(/^["']|["']$/g, '').trim() : ''
         if (!this.token || !this.channelId) {
             logger.warn('⚠️ [TGStorage] TELEGRAM_BOT_TOKEN atau TELEGRAM_CHANNEL_ID belum diset.')
         }
@@ -53,36 +53,53 @@ export class TGStorageService {
         }
 
         const url = `https://api.telegram.org/bot${this.token}/${endpoint}`
-        const res = await fetch(url, {
-            method: 'POST',
-            body: formData
-        })
+        let lastError = null
 
-        const data = await res.json()
-        if (!data.ok) {
-            logger.error(`❌ [TGStorage] Upload error (${endpoint}): ${data.description || JSON.stringify(data)}`)
-            throw new Error(data.description || 'Failed to upload to Telegram')
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 20000)
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    body: formData,
+                    signal: controller.signal
+                })
+                clearTimeout(timeoutId)
+
+                const data = await res.json()
+                if (!data.ok) {
+                    logger.error(`❌ [TGStorage] Upload error (${endpoint}): ${data.description || JSON.stringify(data)}`)
+                    throw new Error(data.description || 'Failed to upload to Telegram')
+                }
+
+                const result = data.result
+                let fileId = null
+                if (result.photo) {
+                    fileId = result.photo[result.photo.length - 1].file_id
+                } else if (result.video) {
+                    fileId = result.video.file_id
+                } else if (result.audio) {
+                    fileId = result.audio.file_id
+                } else if (result.document) {
+                    fileId = result.document.file_id
+                }
+
+                botLogger.info('tgstorage', `☁️ [TG-VAULT] Archived ${filename} (${(buffer.length / 1024).toFixed(1)} KB) -> Telegram Channel Msg #${result.message_id}`)
+
+                return {
+                    ok: true,
+                    messageId: result.message_id,
+                    fileId
+                }
+            } catch (err) {
+                clearTimeout(timeoutId)
+                lastError = err
+                if (attempt < 2) {
+                    await new Promise(r => setTimeout(r, 1000))
+                }
+            }
         }
-
-        const result = data.result
-        let fileId = null
-        if (result.photo) {
-            fileId = result.photo[result.photo.length - 1].file_id
-        } else if (result.video) {
-            fileId = result.video.file_id
-        } else if (result.audio) {
-            fileId = result.audio.file_id
-        } else if (result.document) {
-            fileId = result.document.file_id
-        }
-
-        botLogger.info('tgstorage', `☁️ [TG-VAULT] Archived ${filename} (${(buffer.length / 1024).toFixed(1)} KB) -> Telegram Channel Msg #${result.message_id}`)
-
-        return {
-            ok: true,
-            messageId: result.message_id,
-            fileId
-        }
+        throw lastError
     }
 
     /**
