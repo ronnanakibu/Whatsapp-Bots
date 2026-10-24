@@ -12,6 +12,17 @@ from pathlib import Path
 os.environ["TZ"] = os.environ.get("BOT_TIMEZONE", "Asia/Jakarta")
 os.environ["NODE_ENV"] = "production"
 
+# ZeroGPU Compatibility Hook
+try:
+    import spaces  # type: ignore
+
+    @spaces.GPU
+    def _zero_gpu_dummy():
+        """Required by Hugging Face ZeroGPU supervisor to register GPU space."""
+        return "ok"
+except Exception:
+    pass
+
 BASE_DIR = Path(__file__).resolve().parent
 STORAGE_DIR = BASE_DIR / "storage"
 BIN_DIR = STORAGE_DIR / "bin"
