@@ -43,3 +43,5 @@ WABOT2.0.rar
 
 railway_env_bulk.txt
 hf_env_bulk.txt
+__pycache__/
+*.pyc
