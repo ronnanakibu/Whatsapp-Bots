@@ -19,11 +19,7 @@ export class HFStorageService {
     async uploadMedia(buffer, filename) {
         if (!this.token) throw new Error('Missing HF_TOKEN for uploadMedia')
 
-        // Jika buffer adalah Blob, konversi ke ArrayBuffer/Buffer (HF hub v0.x support Blob/Buffer/File)
-        let data = buffer
-        if (buffer instanceof Blob) {
-            data = Buffer.from(await buffer.arrayBuffer())
-        }
+        let blob = buffer instanceof Blob ? buffer : new Blob([buffer])
 
         try {
             await uploadFile({
@@ -31,7 +27,7 @@ export class HFStorageService {
                 repo: { type: 'dataset', name: this.repo },
                 file: {
                     path: filename,
-                    content: data
+                    content: blob
                 },
                 commitTitle: `Upload ${filename} via WABOT2.0`
             })

@@ -179,6 +179,14 @@ async function startBot() {
             botLogger.section('BOT READY 🚀')
             updateBotStatus('open')
 
+            // Immediately back up the fresh authenticated session to Hugging Face Dataset
+            try {
+                const { sessionSync } = await import('../services/sessionSync.js')
+                sessionSync.backupSession().catch(e => {
+                    botLogger.warn('session-sync', `Initial session backup warning: ${e.message}`)
+                })
+            } catch (_) {}
+
             // Start reminder scheduler setelah connected
             initReminderScheduler(sock)
             botLogger.system('Reminder scheduler started ✓')

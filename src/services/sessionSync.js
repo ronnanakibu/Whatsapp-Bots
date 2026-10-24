@@ -7,8 +7,8 @@ import { logger, botLogger } from '../utils/logger.js'
 
 class SessionSyncService {
     constructor() {
-        this.token = process.env.HF_TOKEN ? process.env.HF_TOKEN.replace(/^["']|["']$/g, '') : ''
-        this.repo = process.env.HF_DATASET_REPO || 'ronnlbtrn/wabot-storage'
+        this.token = process.env.HF_TOKEN ? process.env.HF_TOKEN.replace(/^["']|["']$/g, '').trim() : ''
+        this.repo = (process.env.HF_DATASET_REPO || 'ronnLbtrn/wabot-storage').replace(/^["']|["']$/g, '').trim()
         this.sessionDir = path.resolve('./storage/sessions')
         this.archiveFile = path.resolve('./storage/session.tar.gz')
         this.backupDebounceTimer = null
@@ -102,13 +102,14 @@ class SessionSyncService {
             }
 
             const archiveBuffer = fs.readFileSync(this.archiveFile)
+            const blob = new Blob([archiveBuffer])
 
             await uploadFile({
                 credentials: { accessToken: this.token },
                 repo: { type: 'dataset', name: this.repo },
                 file: {
                     path: 'session.tar.gz',
-                    content: archiveBuffer
+                    content: blob
                 },
                 commitTitle: 'Automated WhatsApp session credentials backup [skip ci]'
             })
