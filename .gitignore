@@ -31,9 +31,10 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Agent session notes
-memory/
-src/assets/fonts/*.ttf
+# Fonts & Media
+src/assets/fonts/
+storage/media/
+scratch/
 
 # Next.js build outputs
 src/app/dashboard/.next/
