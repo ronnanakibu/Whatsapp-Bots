@@ -286,63 +286,53 @@ export class MediaService {
         if (!text) return { lines: [], fontSize: 60, startY: 0, lineSpacing: 0 }
 
         const clean = text.trim().toUpperCase()
+        if (!clean) return { lines: [], fontSize: 60, startY: 0, lineSpacing: 0 }
+
         const words = clean.split(/\s+/).filter(Boolean)
         if (words.length === 0) return { lines: [], fontSize: 60, startY: 0, lineSpacing: 0 }
 
-        // Adaptive target chars per line based on total text length
-        let targetChars = 14
-        if (clean.length > 35) targetChars = 20
-        else if (clean.length > 18) targetChars = 16
-
         let lines = []
-        let current = ''
-        for (const w of words) {
-            if (!current) {
-                current = w
-            } else if ((current + ' ' + w).length <= targetChars) {
-                current += ' ' + w
+        // Batas aman: Maksimal 2 baris saja per region
+        if (words.length === 1) {
+            if (clean.length > 16) {
+                const mid = Math.ceil(clean.length / 2)
+                lines = [clean.slice(0, mid), clean.slice(mid)]
             } else {
-                lines.push(current)
-                current = w
+                lines = [clean]
             }
-        }
-        if (current) lines.push(current)
+        } else if (clean.length <= 14) {
+            lines = [clean]
+        } else {
+            // Perhitungan otomatis pindah baris per karakter (titik tengah karakter)
+            // agar pembagian kedua baris simetris dan pemenggalan kata tetap natural
+            const targetMid = clean.length / 2
+            let bestSplitIndex = 1
+            let minDistanceToMid = Infinity
 
-        // Limit to max 3 lines to maintain aesthetic meme proportion
-        if (lines.length > 3) {
-            const avgPerLine = Math.ceil(clean.length / 3)
-            lines = []
-            current = ''
-            for (const w of words) {
-                if (!current) {
-                    current = w
-                } else if ((current + ' ' + w).length <= avgPerLine) {
-                    current += ' ' + w
-                } else {
-                    lines.push(current)
-                    current = w
+            let charCountSoFar = 0
+            for (let i = 0; i < words.length - 1; i++) {
+                charCountSoFar += words[i].length
+                if (i > 0) charCountSoFar += 1 // spasi
+                const distance = Math.abs(charCountSoFar - targetMid)
+                if (distance < minDistanceToMid) {
+                    minDistanceToMid = distance
+                    bestSplitIndex = i + 1
                 }
             }
-            if (current) lines.push(current)
-        }
 
-        // Balance 2 lines if very uneven
-        if (lines.length === 2 && Math.abs(lines[0].length - lines[1].length) > 8 && words.length >= 3) {
-            const mid = Math.ceil(words.length / 2)
-            lines = [words.slice(0, mid).join(' '), words.slice(mid).join(' ')]
+            const line1 = words.slice(0, bestSplitIndex).join(' ')
+            const line2 = words.slice(bestSplitIndex).join(' ')
+            lines = [line1, line2]
         }
 
         const maxLineLen = Math.max(...lines.map(l => l.length))
-        let fontSize = Math.floor(450 / (maxLineLen * 0.54))
-        fontSize = Math.max(28, Math.min(75, fontSize))
+        let fontSize = Math.floor(460 / (maxLineLen * 0.52))
+        fontSize = Math.max(20, Math.min(65, fontSize))
 
-        const lineSpacing = fontSize * 1.12
-        let startY
-        if (isBottom) {
-            startY = 512 - 25 - ((lines.length - 1) * lineSpacing)
-        } else {
-            startY = 25 + fontSize
-        }
+        const lineSpacing = fontSize * 1.15
+        const startY = isBottom
+            ? (lines.length === 1 ? 512 - 25 : 512 - 25 - lineSpacing)
+            : 25 + fontSize
 
         return { lines, fontSize, startY, lineSpacing }
     }
@@ -711,7 +701,7 @@ export class MediaService {
                     fontWeight: 'bold',
                     fill: 'white',
                     stroke: 'black',
-                    strokeWidth: topData.fontSize > 60 ? '8' : '5',
+                    strokeWidth: topData.fontSize > 50 ? '6' : (topData.fontSize > 32 ? '4' : '3'),
                     emojiMap,
                     letterSpacing: '0px'
                 })
@@ -726,7 +716,7 @@ export class MediaService {
                     fontWeight: 'bold',
                     fill: 'white',
                     stroke: 'black',
-                    strokeWidth: bottomData.fontSize > 60 ? '8' : '5',
+                    strokeWidth: bottomData.fontSize > 50 ? '6' : (bottomData.fontSize > 32 ? '4' : '3'),
                     emojiMap,
                     letterSpacing: '0px'
                 })
@@ -800,7 +790,7 @@ export class MediaService {
                     fontWeight: 'bold',
                     fill: 'white',
                     stroke: 'black',
-                    strokeWidth: topData.fontSize > 60 ? '8' : '5',
+                    strokeWidth: topData.fontSize > 50 ? '6' : (topData.fontSize > 32 ? '4' : '3'),
                     emojiMap,
                     letterSpacing: '0px'
                 })
@@ -815,7 +805,7 @@ export class MediaService {
                     fontWeight: 'bold',
                     fill: 'white',
                     stroke: 'black',
-                    strokeWidth: bottomData.fontSize > 60 ? '8' : '5',
+                    strokeWidth: bottomData.fontSize > 50 ? '6' : (bottomData.fontSize > 32 ? '4' : '3'),
                     emojiMap,
                     letterSpacing: '0px'
                 })
