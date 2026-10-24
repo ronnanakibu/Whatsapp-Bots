@@ -41,6 +41,12 @@ CLAUDE.md
 
 # Build artifacts (dashboard is rebuilt in Docker)
 dashboard/out/
+src/app/dashboard/node_modules
+src/app/dashboard/.next
+src/app/dashboard/out
+
+railway_env_bulk.txt
+hf_env_bulk.txt
 
 # Scripts not needed in production
 deploy.js

@@ -139,7 +139,13 @@ async function startBot() {
         }, 3000)
     }
 
-    sock.ev.on('creds.update', saveCreds)
+    sock.ev.on('creds.update', async () => {
+        await saveCreds()
+        try {
+            const { sessionSync } = await import('../services/sessionSync.js')
+            sessionSync.triggerDebouncedBackup(30000)
+        } catch (_) {}
+    })
 
     // 6. Connection events
     sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
@@ -242,6 +248,12 @@ async function startBot() {
         } catch (e) {
             console.error('❌ Gagal mengirim log shutdown:', e)
         }
+
+        // Backup sesi WhatsApp ke Hugging Face Dataset sebelum shutdown
+        try {
+            const { sessionSync } = await import('../services/sessionSync.js')
+            await sessionSync.backupSession()
+        } catch (_) {}
 
         try {
             sock.end(undefined)

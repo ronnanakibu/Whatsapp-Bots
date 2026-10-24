@@ -18,11 +18,15 @@ RUN npm run build
 # Use standard node:20 which has build-essential & python3 pre-installed
 FROM node:20
 
-# OS dependencies (ffmpeg & curl for robust media/sound downloads)
+# OS dependencies (ffmpeg, curl, tar for media/sound & cloud session backup)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
+    tar \
     && rm -rf /var/lib/apt/lists/*
+
+# Hugging Face Spaces runs as user with UID 1000
+RUN useradd -m -u 1000 user
 
 WORKDIR /app
 
@@ -40,17 +44,25 @@ COPY .env.example ./
 COPY --from=radio-builder /dashboard/out ./dashboard/out/
 COPY --from=main-builder /main-dashboard/out ./src/app/dashboard/out/
 
-# Create storage directory structure (volume will mount over /app/storage)
+# Create storage directory structure and assign ownership to user 1000
 RUN mkdir -p storage/sessions storage/database storage/logs \
     storage/media storage/media/tmp storage/bin src/assets/fonts \
-    storage/stickers
+    storage/stickers && \
+    chown -R user:user /app
 
-# Environment defaults
+USER user
+
+# Environment defaults for Hugging Face Spaces
 ENV TZ=Asia/Jakarta
 ENV NODE_ENV=production
+ENV PORT=7860
+ENV HOME=/home/user
+ENV PATH=/home/user/.local/bin:/app/storage/bin:$PATH
 
-# Health check using the existing /api/system/ping endpoint
+EXPOSE 7860
+
+# Health check using the /api/system/ping endpoint on port 7860
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-25637}/api/system/ping || exit 1
+    CMD curl -f http://localhost:7860/api/system/ping || exit 1
 
 CMD ["node", "start.js"]

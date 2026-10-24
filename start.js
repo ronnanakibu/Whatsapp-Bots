@@ -528,6 +528,16 @@ async function setupPrisma() {
     } catch (e) {
         wrn(`Prisma generate failed: ${e.message}`)
     }
+
+    if (process.env.DATABASE_URL) {
+        inf('Synchronizing Prisma schema to PostgreSQL database...')
+        try {
+            execSync('npx prisma db push --skip-generate', { stdio: 'pipe' })
+            ok('PostgreSQL database schema synchronized successfully.')
+        } catch (e) {
+            wrn(`Prisma db push warning: ${e.message}`)
+        }
+    }
 }
 
 
@@ -622,6 +632,11 @@ async function main() {
         await setupYtDlp()
         await setupOpenssl()
         validateEnv()
+        // Try restoring WhatsApp session from Hugging Face Dataset if local session is missing
+        try {
+            const { sessionSync } = await import('./src/services/sessionSync.js')
+            await sessionSync.restoreSession()
+        } catch (_) {}
         await setupPrisma()
         process.stdout.write('\r\x1b[K✅ [Bootstrap] Pre-launch checks completed successfully!\n')
         await printSummary()
