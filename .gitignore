@@ -12,7 +12,11 @@ storage/sessions/
 storage/logs/
 storage/database/
 storage/sounds/
-storage/bin/ffmpeg.exe
+storage/bin/*.exe
+storage/bin/*.old
+storage/bin/node*
+storage/bin/yt-dlp*
+storage/bin/ffmpeg*
 *.db
 *.db-journal
 *.db-wal
