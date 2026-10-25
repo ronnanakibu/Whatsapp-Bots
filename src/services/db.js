@@ -288,6 +288,27 @@ export class DBService {
         }
     }
 
+    getRecentDialogue(chatJid, limit = 100) {
+        try {
+            const rows = db.prepare(`
+                SELECT push_name, body, created_at 
+                FROM message_store 
+                WHERE chat_jid = ? AND body IS NOT NULL AND TRIM(body) != ''
+                ORDER BY created_at DESC 
+                LIMIT ?
+            `).all(chatJid, limit)
+
+            return rows.reverse().map(r => {
+                const timeStr = r.created_at ? new Date(r.created_at * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''
+                const sender = r.push_name || 'Member'
+                return `[${timeStr}] ${sender}: ${r.body}`
+            })
+        } catch (err) {
+            logger.error(`[DB] Failed to get recent dialogue for ${chatJid}:`, err.message)
+            return []
+        }
+    }
+
     updateMessageMediaPath(id, mediaPath) {
         try {
             return db.prepare('UPDATE message_store SET media_path = ? WHERE id = ?').run(mediaPath, id)

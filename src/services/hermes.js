@@ -176,6 +176,39 @@ class HermesService {
             throw err
         }
     }
+
+    /**
+     * Send group chat transcript to Hermes Agent for uncensored summarization
+     * @param {string} chatId - Group or chat identifier
+     * @param {Array<string>} messages - Array of formatted chat strings
+     */
+    async summarize(chatId, messages) {
+        if (!messages || messages.length === 0) {
+            throw new Error('Daftar pesan tidak boleh kosong.')
+        }
+
+        const headers = { 'Content-Type': 'application/json' }
+        if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`
+
+        const url = `${this.baseUrl}/summarize`
+        try {
+            const response = await axios.post(url, {
+                chat_id: chatId,
+                messages
+            }, { headers, timeout: 180000 })
+
+            if (response.data?.summary) {
+                return response.data.summary
+            }
+            throw new Error('Hermes Agent tidak mengembalikan ringkasan.')
+        } catch (err) {
+            // Fallback to standard chat completions if /summarize endpoint is not present on legacy backend
+            const formattedTranscript = messages.join('\n')
+            const prompt = `Tolong buat rangkuman lengkap, objektif, dan menarik dari transkrip percakapan grup WhatsApp berikut ini (${messages.length} pesan). Pahami bahasa santai, slang Indonesia, singkatan, dan konteks informal tanpa sensor:\n\n${formattedTranscript}`
+            const res = await this.chat(chatId, prompt)
+            return res.text
+        }
+    }
 }
 
 export const hermesService = new HermesService()
