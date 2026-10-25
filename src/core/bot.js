@@ -64,13 +64,19 @@ async function startBot() {
     botLogger.section('BOT STARTUP')
     botLogger.system('Initializing...')
 
+    // 0. Instant Port Binding: Open Port 7860 immediately so Render / UptimeRobot gets 200 OK in <1s
+    try {
+        startRadioServer()
+        botLogger.system('Web & Radio server started (Instant Port Binding) ✓')
+    } catch (err) {
+        botLogger.err('server', err, 'startRadioServer')
+    }
+
     // 1. Load all commands
     botLogger.system('Loading commands...')
     try {
         await loadCommands()
         botLogger.system('Commands loaded ✓')
-        startRadioServer()
-        botLogger.system('Radio server started ✓')
         
         // Start Discord Bot if token exists
         const { startDiscordBot } = await import('../discord/index.js')

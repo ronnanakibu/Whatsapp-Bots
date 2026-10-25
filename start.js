@@ -538,15 +538,7 @@ async function setupOpenssl() {
 // ─────────────────────────────────────────────
 
 async function setupPrisma() {
-    inf('Generating Prisma client database bindings...')
-    try {
-        execSync('npx prisma generate', { stdio: 'pipe' })
-        ok('Prisma client bindings generated successfully.')
-    } catch (e) {
-        wrn(`Prisma generate failed: ${e.message}`)
-    }
-
-    if (process.env.DATABASE_URL) {
+    if (process.env.PRISMA_AUTO_MIGRATE === 'true') {
         inf('Synchronizing Prisma schema to PostgreSQL database...')
         try {
             execSync('npx prisma db push --skip-generate', { stdio: 'pipe' })
@@ -554,6 +546,8 @@ async function setupPrisma() {
         } catch (e) {
             wrn(`Prisma db push warning: ${e.message}`)
         }
+    } else {
+        ok('Database schema ready (instant boot mode).')
     }
 }
 
