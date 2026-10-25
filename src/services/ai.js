@@ -622,7 +622,10 @@ ${code}
 
 Jawab dalam bahasa Indonesia, format rapi dengan markdown.`
 
-    return kimiChat(prompt, 'Kamu adalah asisten pengembang senior yang andal dalam menganalisis kode dan memberikan solusi perbaikan bug secara akurat.')
+    const { hermesService } = await import('./hermes.js')
+    return hermesService.chat(chatId || '__code__', prompt, {
+        systemPrompt: 'Kamu adalah Hermes Code Engine OS, asisten pengembang senior yang andal dalam menganalisis kode dan memberikan solusi perbaikan bug secara akurat.'
+    })
 }
 
 // ─────────────────────────────────────────────
@@ -643,32 +646,10 @@ Format:
 
 Sumber: [sebutkan sumber/konteks singkat]`
 
-    // Gunakan Groq jika tersedia, atau fallback ke NVIDIA
-    if (groq) {
-        const model = getAvailableModel(GROQ_MODELS)
-        const res = await groq.chat.completions.create({
-            model,
-            messages: [
-                { role: 'system', content: 'Kamu adalah ensiklopedia yang memberikan fakta menarik dan akurat.' },
-                { role: 'user', content: prompt }
-            ],
-            max_tokens: 256,
-            temperature: 0.9,
-        })
-        return { text: res.choices[0]?.message?.content?.trim(), provider: 'groq', model }
-    } else if (nvidiaClient) {
-        const res = await nvidiaClient.chat.completions.create({
-            model: 'meta/llama-3.1-8b-instruct',
-            messages: [
-                { role: 'system', content: 'Kamu adalah ensiklopedia yang memberikan fakta menarik dan akurat.' },
-                { role: 'user', content: prompt }
-            ],
-            max_tokens: 256,
-            temperature: 0.9,
-        })
-        return { text: res.choices[0]?.message?.content?.trim(), provider: 'nvidia', model: 'meta/llama-3.1-8b-instruct' }
-    }
-    throw new Error('AI engine tidak tersedia (GROQ_API_KEY atau NVIDIA_API_KEY belum dikonfigurasi).')
+    const { hermesService } = await import('./hermes.js')
+    return hermesService.chat('__fact__', prompt, {
+        systemPrompt: 'Kamu adalah Hermes Knowledge Engine OS, ensiklopedia yang memberikan fakta menarik dan akurat.'
+    })
 }
 
 // ─────────────────────────────────────────────
@@ -988,23 +969,12 @@ async function generateVideoFromImage(imagePath, motionPrompt) {
 }
 
 async function geminiFactCheck(query) {
-    const modelName = getAvailableModel(GEMINI_MODELS)
-    const model = genAI.getGenerativeModel({
-        model: modelName,
-        systemInstruction: "Anda adalah sistem verifikasi fakta otomatis. Anda BUKAN asisten obrolan santai. JANGAN menggunakan kata sapaan, basa-basi, atau intro seperti 'Baiklah', 'Siap', 'Mari kita bedah'. Output Anda HARUS murni berupa laporan faktual yang objektif, analitis, rinci, dan langsung pada intinya."
+    const prompt = `Lakukan riset untuk memverifikasi kebenaran informasi/berita berikut:\n\n"${query}"\n\nJawab LANGSUNG tanpa basa-basi menggunakan format persis seperti di bawah ini:\n\n*1. STATUS:* [Fakta / Hoax / Konteks Keliru / Disinformasi]\n\n*2. RINGKASAN SUMBER & KLAIM:* [Jelaskan secara detail apa inti dari informasi/klaim tersebut dan dari mana asalnya]\n\n*3. ANALISIS FAKTA:* [Berikan penjelasan mendalam, uraikan fakta sebenarnya yang terjadi di lapangan berdasarkan data kredibel]\n\n*4. DAFTAR REFERENSI:* [Berikan daftar bullet point berisi sumber rujukan terpercaya]`
+
+    const { hermesService } = await import('./hermes.js')
+    return hermesService.chat('__factcheck__', prompt, {
+        systemPrompt: "Anda adalah Hermes Fact-Checking Engine OS. Output Anda HARUS murni berupa laporan verifikasi faktual yang objektif, analitis, rinci, dan langsung pada intinya tanpa basa-basi."
     })
-
-    const prompt = `Lakukan riset di internet untuk memverifikasi kebenaran informasi/berita berikut:\n\n"${query}"\n\nJawab LANGSUNG tanpa basa-basi menggunakan format persis seperti di bawah ini:\n\n*1. STATUS:* [Fakta / Hoax / Konteks Keliru / Disinformasi]\n\n*2. RINGKASAN SUMBER & KLAIM:* [Jelaskan secara detail apa inti dari informasi/klaim tersebut dan dari mana asalnya]\n\n*3. ANALISIS FAKTA:* [Berikan penjelasan mendalam, uraikan fakta sebenarnya yang terjadi di lapangan berdasarkan sumber kredibel yang Anda temukan]\n\n*4. DAFTAR REFERENSI:* [Berikan daftar bullet point berisi link/URL sumber berita terpercaya yang memvalidasi analisis Anda]`
-
-    try {
-        const result = await model.generateContent(prompt)
-        const reply = result.response.text()?.trim()
-        if (!reply) throw new Error('Empty response from Gemini')
-        return { text: reply, model: modelName, provider: 'gemini' }
-    } catch (err) {
-        if (err?.status === 429) setCooldown(modelName, 60_000)
-        throw err
-    }
 }
 
 async function generateYoutubeMetadata(vibePrompt) {

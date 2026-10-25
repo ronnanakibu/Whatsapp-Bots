@@ -6,11 +6,11 @@ import { memoryService } from '../../services/memory.js'
 
 export default {
     name: 'q',
-    aliases: ['ai', 'tanya', 'ronnbot'],
+    aliases: ['ai', 'ask', 'tanya', 'chat', 'ronnbot', 'tanyaai', 'bot'],
     category: 'ai',
-    description: 'Chat dengan AI. Bot ingat konteks percakapan.',
-    usage: '.q [pertanyaan]',
-    example: '.q siapa penemu listrik?',
+    description: 'Chat dengan AI (Hermes Agent OS). Bot mengingat konteks percakapan & multi-engine fallback.',
+    usage: '.ask [pertanyaan] atau .ai [pertanyaan] atau .q [pertanyaan]',
+    example: '.ask siapa penemu listrik?',
     cooldown: 3,
     permissions: ['user'],
 
