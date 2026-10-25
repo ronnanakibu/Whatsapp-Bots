@@ -363,7 +363,7 @@ async function setupFfmpeg() {
 // ─────────────────────────────────────────────
 
 const YTDLP_SCRIPT_PATH = path.resolve('./storage/bin/yt-dlp')
-const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp'
+const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp'
 const PYTHON_DIR = path.resolve('./storage/python')
 const PYTHON_BIN = path.resolve('./storage/python/bin/python3')
 const PYTHON_TAR = path.resolve('./storage/bin/python.tar.gz')
@@ -405,18 +405,23 @@ async function setupYtDlp() {
     if (fs.existsSync(YTDLP_SCRIPT_PATH)) {
         const size = fs.statSync(YTDLP_SCRIPT_PATH).size
         if (size > 100_000) {
-            ok(`yt-dlp script ready.`)
             try { fs.chmodSync(YTDLP_SCRIPT_PATH, '755') } catch (_) { }
+            try {
+                execSync(`"${YTDLP_SCRIPT_PATH}" --update-to nightly`, { stdio: 'ignore', timeout: 30000 })
+                ok('yt-dlp nightly ready.')
+            } catch (_) {
+                ok('yt-dlp script ready.')
+            }
             return
         }
         fs.unlinkSync(YTDLP_SCRIPT_PATH)
     }
 
-    inf('Downloading yt-dlp script (~3MB)...')
+    inf('Downloading yt-dlp nightly script (~3MB)...')
     try {
         await downloadFile(YTDLP_URL, YTDLP_SCRIPT_PATH)
         fs.chmodSync(YTDLP_SCRIPT_PATH, '755')
-        ok('yt-dlp script downloaded.')
+        ok('yt-dlp nightly downloaded.')
     } catch (e) {
         wrn(`Gagal download yt-dlp: ${e.message}`)
     }

@@ -51,7 +51,7 @@ RUN mkdir -p storage/sessions storage/database storage/logs \
     curl -fsSL -o src/assets/fonts/impact.ttf https://raw.githubusercontent.com/theapache64/mufy/master/assets/impact.ttf && \
     cp src/assets/fonts/impact.ttf src/assets/fonts/Impact.ttf && \
     curl -fsSL -o src/assets/fonts/arialn.ttf https://raw.githubusercontent.com/genqiaolynn/fonts/master/ARIALN.TTF && \
-    curl -fsSL -o storage/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp && \
+    curl -fsSL -o storage/bin/yt-dlp https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp && \
     chmod 755 storage/bin/yt-dlp && \
     fc-cache -f && \
     chown -R node:node /app

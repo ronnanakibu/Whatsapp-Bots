@@ -10,8 +10,7 @@ import { botLogger } from '../utils/logger.js'
 
 const isWindows = process.platform === 'win32'
 const BIN_DIR = path.resolve('./storage/bin')
-const BIN_PATH = path.resolve(`./storage/bin/yt-dlp${isWindows ? '.exe' : ''}`)
-const YTDLP_URL = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp${isWindows ? '.exe' : ''}`
+const YTDLP_URL = `https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp${isWindows ? '.exe' : ''}`
 
 // ─────────────────────────────────────────────
 // CEK BINARY VALID
@@ -242,7 +241,7 @@ export function ytdlpGetAudioUrl(youtubeUrl) {
             '--no-check-certificates',
             '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best',
             '--get-url',
-            '--extractor-args', 'youtube:player_client=android,ios,web;player_skip=js',
+            '--extractor-args', 'youtube:player_client=android',
             '--buffer-size', '256k',
             ...getCookieArgs(),
             '--no-warnings',
@@ -296,7 +295,7 @@ export function ytdlpStream(youtubeUrl) {
         '--no-check-certificates',
         '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
         '--output', '-', // stream ke stdout
-        '--extractor-args', 'youtube:player_client=android,ios,web;player_skip=js',
+        '--extractor-args', 'youtube:player_client=android',
         '--buffer-size', '256k',
         ...getCookieArgs(),
         '--no-warnings', // Menghilangkan warning bawaan yang tidak perlu

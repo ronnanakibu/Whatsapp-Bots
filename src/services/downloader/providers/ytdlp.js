@@ -39,7 +39,7 @@ export async function downloadYtdlp(url, options = {}) {
         '--no-check-certificates',
         '--write-info-json', // Tulis metadata ke file .info.json
         '-o', outTemplate,
-        '--extractor-args', 'youtube:player_client=android,ios,web;player_skip=js',
+        '--extractor-args', 'youtube:player_client=android',
         '--max-filesize', '100M',
     ]
 
@@ -134,7 +134,7 @@ export async function downloadYtdlp(url, options = {}) {
             if (code !== 0) {
                 // Hapus sisa file jika ada error
                 cleanupTempFiles(sessionId)
-                if (process.env.HF_API_URL) {
+                if (process.env.HF_API_URL && !process.env.HF_API_URL.includes('ronnlbtrn-downloader')) {
                     logger.info(`[yt-dlp] Local yt-dlp failed (code ${code}), falling back to HF Space...`)
                     return downloadViaHF(url, format).then(resolve).catch(hfErr => {
                         reject(new Error(`yt-dlp error (${code}): ${stderr.slice(0, 200)} | HF fallback: ${hfErr.message}`))
@@ -192,7 +192,7 @@ export async function downloadYtdlp(url, options = {}) {
 
         proc.on('error', err => {
             cleanupTempFiles(sessionId)
-            if (process.env.HF_API_URL) {
+            if (process.env.HF_API_URL && !process.env.HF_API_URL.includes('ronnlbtrn-downloader')) {
                 logger.info(`[yt-dlp] Local yt-dlp proc error (${err.message}), falling back to HF Space...`)
                 return downloadViaHF(url, format).then(resolve).catch(hfErr => {
                     reject(new Error(`Gagal menjalankan yt-dlp: ${err.message} | HF fallback: ${hfErr.message}`))
