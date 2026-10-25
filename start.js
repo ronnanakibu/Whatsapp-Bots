@@ -573,16 +573,18 @@ async function printSummary() {
             if (!entry.endsWith('.js')) continue
 
             try {
-                const absolutePath = path.resolve(fullPath)
-                const fileURL = pathToFileURL(absolutePath).href
-                const mod = await import(fileURL)
-                const cmd = mod.default
-                if (cmd?.name) registered.set(cmd.name, entry)
-                if (cmd?.aliases) {
-                    for (const alias of cmd.aliases) registered.set(alias, entry)
+                const content = fs.readFileSync(fullPath, 'utf8')
+                const nameMatch = content.match(/name:\s*['"]([^'"]+)['"]/)
+                if (nameMatch) registered.set(nameMatch[1], entry)
+                const aliasMatch = content.match(/aliases:\s*\[([^\]]+)\]/)
+                if (aliasMatch) {
+                    aliasMatch[1].split(',').forEach(a => {
+                        const clean = a.trim().replace(/['"]/g, '')
+                        if (clean) registered.set(clean, entry)
+                    })
                 }
             } catch (err) {
-                problems.push(`Failed to import ${entry}: ${err.message}`)
+                problems.push(`Failed to read ${entry}: ${err.message}`)
             }
         }
     }
@@ -614,20 +616,9 @@ async function printSummary() {
 // STEP 8: LAUNCH BOT
 // ─────────────────────────────────────────────
 
-function launchBot() {
-    inf('Launching bot...\n')
-    const bot = spawn('node', ['src/core/bot.js'], {
-        stdio: 'inherit',
-        env: process.env
-    })
-    bot.on('exit', (code, signal) => {
-        code === 0
-            ? log('👋', 'Bot exited cleanly.')
-            : err(`Bot exited with code ${code} (signal: ${signal})`)
-        process.exit(code ?? 1)
-    })
-    process.on('SIGTERM', () => bot.kill('SIGTERM'))
-    process.on('SIGINT', () => bot.kill('SIGINT'))
+async function launchBot() {
+    inf('Launching bot in unified process...\n')
+    await import('./src/core/bot.js')
 }
 
 // ─────────────────────────────────────────────
@@ -651,7 +642,7 @@ async function main() {
         await setupPrisma()
         process.stdout.write('\r\x1b[K✅ [Bootstrap] Pre-launch checks completed successfully!\n')
         await printSummary()
-        launchBot()
+        await launchBot()
     } catch (e) {
         err(`Bootstrap fatal error: ${e.message}`)
         console.error(e)

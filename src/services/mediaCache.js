@@ -17,7 +17,7 @@ if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true })
 if (!fs.existsSync(REVOKED_DIR)) fs.mkdirSync(REVOKED_DIR, { recursive: true })
 if (!fs.existsSync(VIEWONCE_DIR)) fs.mkdirSync(VIEWONCE_DIR, { recursive: true })
 
-const MAX_PRECACHE_SIZE = 15 * 1024 * 1024 // 15MB limit untuk auto-cache
+const MAX_PRECACHE_SIZE = 3 * 1024 * 1024 // 3MB limit untuk hemat RAM 512MB Render
 
 class MediaCacheService {
     constructor() {
@@ -346,7 +346,8 @@ class MediaCacheService {
             if (!unwrapped) return
 
             const mType = Object.keys(unwrapped)[0]
-            const mediaTypes = ['imageMessage', 'videoMessage', 'ptvMessage', 'audioMessage', 'stickerMessage', 'documentMessage']
+            // Hemat RAM 512MB: hanya pre-cache gambar, stiker, dan VN (video & doc besar diunduh on-demand)
+            const mediaTypes = ['imageMessage', 'audioMessage', 'stickerMessage']
             if (!mediaTypes.includes(mType)) return
 
             const mediaContent = unwrapped[mType]

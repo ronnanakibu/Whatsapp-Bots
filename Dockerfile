@@ -63,6 +63,7 @@ ENV TZ=Asia/Jakarta
 ENV NODE_ENV=production
 ENV PORT=7860
 ENV HOME=/home/node
+ENV NODE_OPTIONS="--max-old-space-size=384 --expose-gc"
 ENV PATH=/home/node/.local/bin:/app/storage/bin:$PATH
 
 EXPOSE 7860

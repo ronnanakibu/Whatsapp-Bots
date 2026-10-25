@@ -3,11 +3,19 @@ import { logger } from '../utils/logger.js'
 import { isViewOnceMessage } from '../utils/message.js'
 
 
-const MAX_IN_MEMORY_PER_CHAT = 200
+const MAX_IN_MEMORY_PER_CHAT = 25
+const MAX_CHATS_IN_MEMORY = 50
 
 class DatabaseBackedStore {
     constructor() {
         this.memoryCache = new Map() // chatJid -> Map(msgId -> msg)
+    }
+
+    #pruneChatCache() {
+        if (this.memoryCache.size > MAX_CHATS_IN_MEMORY) {
+            const oldestJid = this.memoryCache.keys().next().value
+            if (oldestJid) this.memoryCache.delete(oldestJid)
+        }
     }
 
     bind(ev) {
@@ -18,8 +26,9 @@ class DatabaseBackedStore {
                 const id = msg.key.id
                 if (!id) continue
 
-                // 1. Save to Fast In-Memory Cache
+                // 1. Save to Fast In-Memory Cache (Bounded for 512MB RAM)
                 if (!this.memoryCache.has(jid)) {
+                    this.#pruneChatCache()
                     this.memoryCache.set(jid, new Map())
                 }
                 const chatMap = this.memoryCache.get(jid)
@@ -110,6 +119,7 @@ class DatabaseBackedStore {
         const id = msg.key.id
 
         if (!this.memoryCache.has(jid)) {
+            this.#pruneChatCache()
             this.memoryCache.set(jid, new Map())
         }
         const chatMap = this.memoryCache.get(jid)

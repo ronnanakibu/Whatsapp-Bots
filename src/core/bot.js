@@ -59,6 +59,23 @@ process.on('unhandledRejection', (reason) => {
 })
 
 // ─────────────────────────────────────────────
+// ACTIVE MEMORY WATCHDOG (Render 512MB RAM Guard)
+// ─────────────────────────────────────────────
+
+setInterval(() => {
+    try {
+        const mem = process.memoryUsage()
+        const rssMB = Math.round(mem.rss / (1024 * 1024))
+        const heapUsedMB = Math.round(mem.heapUsed / (1024 * 1024))
+
+        if (rssMB > 380 && typeof global.gc === 'function') {
+            botLogger.warn?.('system', `[MemoryGuard] RAM usage at ${rssMB}MB RSS (${heapUsedMB}MB Heap). Triggering active GC sweep...`)
+            global.gc()
+        }
+    } catch (_) {}
+}, 30000)
+
+// ─────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────
 
