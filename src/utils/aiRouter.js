@@ -44,19 +44,23 @@ const COMMAND_PATTERNS = [
         command: 'cuaca',
         requiresMedia: false,
         patterns: [
-            /\b(cuaca|weather|prakiraan\s+cuaca|cek\s+cuaca|info\s+cuaca|temperature|suhu)\b/i,
+            /\b(aqi|air\s*quality|kualitas\s*udara|polusi|cuaca|weather|prakiraan\s+cuaca|cek\s+cuaca|info\s+cuaca|temperature|suhu)\b/i,
         ],
         extractArgs: (text) => {
-            const match = text.match(/(?:cuaca|weather|di|di\s+kota|kota)\s+([a-zA-Z\s]+?)(?:\s*[?,!.]|$)/i)
-            return match ? [match[1].trim()] : []
+            const cleaned = text
+                .replace(/\b(live\s*update|live|update|cek\s+cuaca|cek|info|prakiraan\s+cuaca|prakiraan|cuaca|weather|aqi|air\s*quality|kualitas\s*udara|polusi|suhu|temperature|hari\s*ini|sekarang|gimana|bagaimana|di|kota|wilayah|kabupaten)\b/gi, '')
+                .replace(/[?!.,;:_`~*'"()\[\]{}]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+            return cleaned ? [cleaned] : ['Jakarta']
         }
     },
     {
         command: 'dl',
         requiresMedia: false,
         patterns: [
-            /(https?:\/\/(www\.)?(instagram\.com|tiktok\.com|youtu\.be|youtube\.com|fb\.watch|facebook\.com)\/\S+)/i,
-            /\b(download|unduh|dl)\s+.*(instagram|tiktok|youtube|facebook|reels|video)\b/i,
+            /(https?:\/\/(www\.)?(instagram\.com|tiktok\.com|youtu\.be|youtube\.com|fb\.watch|facebook\.com|x\.com|twitter\.com)\/\S+)/i,
+            /\b(download|unduh|dl)\s+.*(instagram|tiktok|youtube|facebook|reels|video|twitter|x)\b/i,
         ],
         extractArgs: (text) => {
             const urlMatch = text.match(/(https?:\/\/\S+)/i)
@@ -84,6 +88,33 @@ const COMMAND_PATTERNS = [
             const cleaned = text.replace(/\b(cek|hoax|check|fakta|verifikasi|klarifikasi|benar|gak|beneran)\b/gi, '').trim()
             return cleaned ? [cleaned] : []
         }
+    },
+    {
+        command: 'kalkulator',
+        requiresMedia: false,
+        patterns: [
+            /^(hitung|kalkulator|calculate|math)\s*[:=]?\s*(.+)/i,
+        ],
+        extractArgs: (text) => {
+            const match = text.match(/^(?:hitung|kalkulator|calculate|math)\s*[:=]?\s*(.+)/i)
+            return match ? [match[1].trim()] : []
+        }
+    },
+    {
+        command: 'uptime',
+        requiresMedia: false,
+        patterns: [
+            /^(uptime|bot\s+aktif|lama\s+aktif)$/i,
+        ],
+        extractArgs: () => []
+    },
+    {
+        command: 'ping',
+        requiresMedia: false,
+        patterns: [
+            /^(ping|speed\s+bot|kecepatan\s+bot)$/i,
+        ],
+        extractArgs: () => []
     },
 ]
 
@@ -121,9 +152,30 @@ function detectCommandFromText(userMessage, ctx) {
  * @param {object} ctx
  */
 export async function tryDirectRoute(userMessage, ctx) {
-    // Pure Hermes Agent mode: Keyword pre-router disabled so Hermes receives all chat inputs
-    return false
+    if (!userMessage || typeof userMessage !== 'string') return false
+    const detected = detectCommandFromText(userMessage, ctx)
+    if (!detected) return false
+
+    const command = commands.get(detected.command)
+    if (!command) return false
+
+    botLogger.info('agent', `[AIRouter] Direct routing to "${detected.command}" args: ${JSON.stringify(detected.args)}`)
+
+    const newCtx = {
+        ...ctx,
+        args: detected.args,
+        commandName: detected.command
+    }
+
+    try {
+        await command.execute(newCtx)
+        return true
+    } catch (err) {
+        botLogger.err('agent', err, `Direct route to "${detected.command}" failed`)
+        return false
+    }
 }
+
 
 /**
  * Easter Egg: Kenali identitas owner (Bang Rony) dan pembuat bot.
@@ -344,6 +396,13 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         return true
     }
 
+    // 3. Fast Intent Direct Router (Instant skill execution for AQI, cuaca, sticker, download, etc.)
+    const isDirectRouted = await tryDirectRoute(promptText, ctx)
+    if (isDirectRouted) {
+        await react('✅')
+        return true
+    }
+
     // Normal Text Chat with Live Searching & Reasoning Timer
     // Send initial live status message
     let placeholderMsg = null
@@ -370,13 +429,6 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
 
     const startMs = Date.now()
     try {
-        const isDirectRouted = await tryDirectRoute(promptText, ctx)
-        if (isDirectRouted) {
-            clearInterval(timer)
-            await react('✅')
-            return true
-        }
-
         const isSenderOwner = isOwner(ctx.sender) || ctx.msg?.key?.fromMe
         const aiOptions = {
             isOwner: isSenderOwner,
@@ -392,6 +444,21 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         botLogger.ai(result.provider, result.model, chatId, Date.now() - startMs)
 
         const text = result.text?.trim()
+
+        // 4. Autonomous Skill / Tool Calling from Hermes Agent Mastermind
+        if (text && text.includes('{') && text.includes('executeCommand')) {
+            if (placeholderMsg?.key) {
+                try {
+                    await sock.sendMessage(from, { delete: placeholderMsg.key })
+                } catch (_) {}
+            }
+            const executed = await processAiResponse(ctx, result)
+            if (executed) {
+                await react('✅')
+                return true
+            }
+        }
+
         if (text && placeholderMsg?.key) {
             // Extract mentions (e.g. @6285172013920)
             const mentionMatches = text.match(/@(\d{8,16})\b/g)

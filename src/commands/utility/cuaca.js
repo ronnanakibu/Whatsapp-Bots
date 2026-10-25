@@ -976,16 +976,16 @@ export function initWeatherScheduler(sock) {
 
 export default {
     name: 'cuaca',
-    aliases: ['weather'],
+    aliases: ['weather', 'aqi', 'kualitasudara', 'airquality', 'polusi'],
     category: 'utility',
-    description: 'Cek cuaca realtime kota manapun, atau langganan laporan cuaca harian otomatis setiap 12 malam',
-    usage: '.cuaca [kota] | subscribe [kota] | unsubscribe',
-    example: '.cuaca Medan\n!cuaca subscribe Medan\n!cuaca unsubscribe',
-    cooldown: 5,
+    description: 'Cek cuaca & kualitas udara (AQI) realtime kota manapun, atau langganan laporan cuaca harian otomatis setiap 12 malam',
+    usage: '.cuaca [kota] | .aqi [kota] | subscribe [kota] | unsubscribe',
+    example: '.cuaca Jakarta\n!aqi Jakarta\n!cuaca subscribe Medan\n!cuaca unsubscribe',
+    cooldown: 3,
     permissions: ['user'],
 
     async execute(ctx) {
-        const { args, reply, react, chatId, sock } = ctx
+        const { args, reply, react, chatId, sock, commandName } = ctx
         
         // Pastikan scheduler berjalan
         initWeatherScheduler(sock)
@@ -1041,21 +1041,36 @@ export default {
             }
         }
 
-        // ── 3. CEK CUACA STANDARD (DIRECT QUERY) ──
-        let city = args.join(' ').trim()
-        if (!city) {
-            city = 'Medan'
-        }
+        // ── 3. CEK CUACA & AQI STANDARD (DIRECT QUERY) ──
+        const rawInput = args.join(' ').trim()
+        const isAqiQuery = commandName === 'aqi' || 
+                           commandName === 'kualitasudara' || 
+                           commandName === 'airquality' || 
+                           commandName === 'polusi' ||
+                           /\b(aqi|kualitas\s*udara|air\s*quality|polusi)\b/i.test(rawInput)
 
-        await react('🌤️')
+        // Bersihkan keyword pembuka/penjelas agar nama kota bersih
+        const cleanCity = rawInput
+            .replace(/\b(live\s*update|live|update|cek\s+cuaca|cek|info|prakiraan\s+cuaca|prakiraan|cuaca|weather|aqi|air\s*quality|kualitas\s*udara|polusi|suhu|temperature|hari\s*ini|sekarang|gimana|bagaimana|di|kota|wilayah|kabupaten)\b/gi, '')
+            .replace(/[?!.,;:_`~*'"()\[\]{}]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+
+        const city = cleanCity || 'Jakarta'
+
+        await react(isAqiQuery ? '🍃' : '🌤️')
 
         try {
-            const text = await getDetailedWeatherReport(city)
+            let text = await getDetailedWeatherReport(city)
+            if (isAqiQuery) {
+                text = `🍃 *LIVE REAL-TIME AIR QUALITY & WEATHER UPDATE* 🍃\n\n` + text
+            }
             await reply(text)
             await react('✅')
         } catch (err) {
             await react('❌')
-            await reply(`❌ Gagal ambil data cuaca: ${err.message}`)
+            await reply(`❌ Gagal ambil data cuaca/AQI untuk *${city}*: ${err.message}`)
         }
     }
 }
+
