@@ -39,8 +39,8 @@ const nvidiaClient = process.env.NVIDIA_API_KEY ? new OpenAI({
 export const BRAINS = {
     qwen: { name: 'Qwen 2.5 72B Instruct', model: 'qwen/qwen-2.5-72b-instruct', provider: 'nvidia' },
     nvidia: { name: 'NVIDIA Nemotron 70B', model: 'nvidia/llama-3.1-nemotron-70b-instruct', provider: 'nvidia' },
-    groq: { name: 'Groq Llama 3.3', model: 'llama-3.3-70b-versatile', provider: 'groq' },
-    gemini: { name: 'Google Gemini Flash', model: 'gemini-2.0-flash', provider: 'gemini' },
+    groq: { name: 'Groq GPT-OSS 120B', model: 'openai/gpt-oss-120b', provider: 'groq' },
+    gemini: { name: 'Google Gemini 2.5 Flash', model: 'gemini-2.5-flash', provider: 'gemini' },
     gpt_oss: { name: 'OpenAI GPT-OSS 120B', model: 'openai/gpt-oss-120b', provider: 'nvidia' },
     nemotron_super: { name: 'NVIDIA Nemotron-3 Super 120B', model: 'nvidia/nemotron-3-super-120b-a12b', provider: 'nvidia' },
     llama3_3: { name: 'Meta Llama 3.3 70B', model: 'meta/llama-3.3-70b-instruct', provider: 'nvidia' },

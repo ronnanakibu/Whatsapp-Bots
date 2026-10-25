@@ -15,8 +15,8 @@ export default function AICenter() {
   // Fallback providers mockup if none set
   const rawProviders = aiConfig.providers.length > 0 ? aiConfig.providers : [
     { name: 'nvidia', active: true, ping: 240, model: 'meta/llama-3.1-70b-instruct', status: 'healthy' },
-    { name: 'groq', active: false, ping: 120, model: 'llama-3.3-70b-versatile', status: 'healthy' },
-    { name: 'gemini', active: false, ping: 480, model: 'gemini-2.0-flash', status: 'healthy' }
+    { name: 'groq', active: false, ping: 120, model: 'openai/gpt-oss-120b', status: 'healthy' },
+    { name: 'gemini', active: false, ping: 480, model: 'gemini-2.5-flash', status: 'healthy' }
   ]
 
   const providers = rawProviders.map(p => {

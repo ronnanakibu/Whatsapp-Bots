@@ -6,6 +6,7 @@ import path from 'path'
 import Groq from 'groq-sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
+import { hermesService } from '../../services/hermes.js'
 import { unwrapMessage } from '../../utils/message.js'
 import { logger } from '../../utils/logger.js'
 
@@ -127,7 +128,12 @@ export default {
             if (!transcribedText && genAI) {
                 try {
                     providerName = 'Gemini Audio'
-                    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+                    let model
+                    try {
+                        model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+                    } catch (_) {
+                        model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+                    }
                     const base64Audio = audioData.buffer.toString('base64')
                     const result = await model.generateContent([
                         {
@@ -153,35 +159,18 @@ export default {
 
             const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1)
 
-            // 3. Generate AI Summary if transcribed text is relatively long (> 40 words)
+            // 3. Generate AI Summary if transcribed text is relatively long (> 35 words)
             let summaryText = ''
             const wordCount = transcribedText.split(/\s+/).length
 
-            if (wordCount >= 35 && (groq || genAI)) {
+            if (wordCount >= 35) {
                 try {
-                    if (groq) {
-                        const chatRes = await groq.chat.completions.create({
-                            model: 'llama-3.3-70b-versatile',
-                            messages: [
-                                {
-                                    role: 'system',
-                                    content: 'Kamu adalah asisten perangkum. Buatlah ringkasan inti pesan suara dalam 2-3 poin penting yang padat dan jelas.'
-                                },
-                                {
-                                    role: 'user',
-                                    content: `Rangkum transkrip audio ini:\n"${transcribedText}"`
-                                }
-                            ],
-                            max_tokens: 250
-                        })
-                        summaryText = chatRes.choices[0]?.message?.content?.trim() || ''
-                    } else if (genAI) {
-                        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
-                        const sumRes = await model.generateContent(
-                            `Rangkum transkrip suara berikut menjadi 2-3 poin penting yang singkat dan jelas:\n"${transcribedText}"`
-                        )
-                        summaryText = sumRes.response?.text()?.trim() || ''
-                    }
+                    const sumRes = await hermesService.chat({
+                        chatId: ctx.chatId,
+                        prompt: `Rangkum transkrip suara berikut menjadi 2-3 poin penting yang singkat dan jelas:\n"${transcribedText}"`,
+                        systemPrompt: 'Kamu adalah asisten perangkum pesan suara cerdas. Buatlah ringkasan inti pesan suara dalam 2-3 poin penting yang padat dan jelas.'
+                    })
+                    summaryText = sumRes.text?.trim() || ''
                 } catch (_) {}
             }
 

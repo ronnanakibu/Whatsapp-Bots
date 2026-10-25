@@ -6,6 +6,7 @@ import * as cheerio from 'cheerio'
 import Groq from 'groq-sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
+import { hermesService } from '../../services/hermes.js'
 import { unwrapMessage } from '../../utils/message.js'
 import { logger } from '../../utils/logger.js'
 
@@ -163,7 +164,12 @@ export default {
             // Process PDF with Gemini
             documentTitle = docData.fileName
             try {
-                const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+                let model
+                try {
+                    model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+                } catch (_) {
+                    model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+                }
                 const base64Doc = docData.buffer.toString('base64')
                 const result = await model.generateContent([
                     {
@@ -216,21 +222,12 @@ export default {
             `Teks Sumber:\n"""\n${contentToSummarize}\n"""`
 
         try {
-            if (groq) {
-                const response = await groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [
-                        { role: 'system', content: 'Kamu adalah analis berita dan dokumen cerdas.' },
-                        { role: 'user', content: promptInstruction }
-                    ],
-                    max_tokens: 800
-                })
-                summaryResult = response.choices[0]?.message?.content?.trim() || ''
-            } else if (genAI) {
-                const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
-                const result = await model.generateContent(promptInstruction)
-                summaryResult = result.response?.text()?.trim() || ''
-            }
+            const hermesRes = await hermesService.chat({
+                chatId: ctx.chatId,
+                prompt: promptInstruction,
+                systemPrompt: 'Kamu adalah seorang analis eksekutif profesional. Buatlah ringkasan eksekutif dalam bahasa Indonesia yang rapi, padat, dan elegan.'
+            })
+            summaryResult = hermesRes.text?.trim() || ''
 
             if (!summaryResult) {
                 await react('❌')
