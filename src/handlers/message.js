@@ -11,7 +11,8 @@ import { checkCooldown } from '../middleware/cooldown.js'
 import { validateArgs } from '../middleware/validator.js'
 import { groupGuard } from '../middleware/groupGuard.js'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
-import { normalizeNumber } from '../utils/permissions.js'
+import { normalizeNumber, isOwner } from '../utils/permissions.js'
+import { dbService } from '../services/db.js'
 import { metricsService } from '../services/metrics.js'
 import { interactiveService } from '../services/interactive.js'
 import { processAiResponse, tryDirectRoute } from '../utils/aiRouter.js'
@@ -38,6 +39,14 @@ async function processSingleMessage(sock, msg) {
         const sender = isGroup ? (msg.key.participant || from) : from
         const pushName = msg.pushName || (sender ? sender.split(':')[0].split('@')[0] : 'System')
 
+        // ── TRACK OWNER ACTIVITY IN GROUPS ──
+        if (isGroup) {
+            const isOwnerSender = msg.key.fromMe || isOwner(sender)
+            if (isOwnerSender) {
+                const ts = msg.messageTimestamp ? (typeof msg.messageTimestamp === 'object' ? msg.messageTimestamp.low : Number(msg.messageTimestamp)) : Math.floor(Date.now() / 1000)
+                dbService.trackOwnerGroupActivity(from, ts)
+            }
+        }
 
         // Unwrap nested wrappers recursively (ephemeral, viewonce, documentWithCaption)
         const messageContent = unwrapMessage(msg.message)
@@ -197,6 +206,14 @@ async function processSingleMessage(sock, msg) {
             replyMedia: async (content, mediaType, options = {}) => {
                 return sock.sendMessage(from, { [mediaType]: content, ...options }, { quoted: getCleanQuoted(msg) })
             }
+        }
+
+        // ── OWNER EXECUTIVE CATCH-UP INTERCEPTOR (WHAT HAVE I BEEN MISSING) ──
+        const CATCHUP_REGEX = /^(what\s*i('?ve|\s*have)?\s*been\s*missing|what\s*did\s*i\s*miss|what\s*missed|ketinggalan\s*apa(\s*aja)?|recap\s*all|catchup)[\s.?!]*$/i
+        if (isDM && isOwner(sender) && CATCHUP_REGEX.test(body.trim())) {
+            const { handleOwnerCatchup } = await import('../commands/owner/catchup.js')
+            await handleOwnerCatchup(ctx)
+            return
         }
 
         // ── AI MODERATOR CHECK ──

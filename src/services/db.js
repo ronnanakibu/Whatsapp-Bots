@@ -181,6 +181,11 @@ db.exec(`
         created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
     CREATE INDEX IF NOT EXISTS idx_interactive_lookup ON interactive_sessions(id);
+
+    CREATE TABLE IF NOT EXISTS owner_group_activity (
+        chat_jid TEXT PRIMARY KEY,
+        last_active_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
 `)
 
 // 2. Safe Migration untuk database lama
@@ -306,6 +311,97 @@ export class DBService {
         } catch (err) {
             logger.error(`[DB] Failed to get recent dialogue for ${chatJid}:`, err.message)
             return []
+        }
+    }
+
+    trackOwnerGroupActivity(chatJid, timestamp = null) {
+        try {
+            const ts = timestamp || Math.floor(Date.now() / 1000)
+            return db.prepare(`
+                INSERT INTO owner_group_activity (chat_jid, last_active_at)
+                VALUES (?, ?)
+                ON CONFLICT(chat_jid) DO UPDATE SET last_active_at = excluded.last_active_at
+            `).run(chatJid, ts)
+        } catch (err) {
+            logger.error(`[DB] Failed to track owner activity for ${chatJid}:`, err.message)
+            return null
+        }
+    }
+
+    getOwnerGroupActivity(chatJid) {
+        try {
+            return db.prepare('SELECT last_active_at FROM owner_group_activity WHERE chat_jid = ?').get(chatJid)
+        } catch (err) {
+            return null
+        }
+    }
+
+    getAllGroupsWithUnreadForOwner(defaultHours = 24, limit = 500, forceHours = null) {
+        try {
+            const now = Math.floor(Date.now() / 1000)
+            const defaultSince = now - (defaultHours * 3600)
+            const groups = db.prepare(`
+                SELECT DISTINCT m.chat_jid
+                FROM message_store m
+                WHERE m.chat_jid LIKE '%@g.us'
+            `).all()
+
+            const results = []
+
+            for (const g of groups) {
+                let since = defaultSince
+                if (forceHours && !isNaN(forceHours)) {
+                    since = now - (Number(forceHours) * 3600)
+                } else {
+                    const act = this.getOwnerGroupActivity(g.chat_jid)
+                    if (act?.last_active_at) {
+                        since = act.last_active_at
+                    }
+                }
+
+                const rows = db.prepare(`
+                    SELECT push_name, body, created_at 
+                    FROM message_store 
+                    WHERE chat_jid = ? AND created_at > ? AND body IS NOT NULL AND TRIM(body) != ''
+                    ORDER BY created_at ASC 
+                    LIMIT ?
+                `).all(g.chat_jid, since, limit)
+
+                if (rows.length >= 1) {
+                    const formatted = rows.map(r => {
+                        const timeStr = r.created_at ? new Date(r.created_at * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''
+                        const sender = r.push_name || 'Member'
+                        return `[${timeStr}] ${sender}: ${r.body}`
+                    })
+                    results.push({
+                        chatJid: g.chat_jid,
+                        count: rows.length,
+                        since,
+                        dialogue: formatted
+                    })
+                }
+            }
+
+            return results
+        } catch (err) {
+            logger.error('[DB] Failed to get unread groups for owner:', err.message)
+            return []
+        }
+    }
+
+    markAllGroupsAsReadForOwner(groupJids = []) {
+        try {
+            const now = Math.floor(Date.now() / 1000)
+            const stmt = db.prepare(`
+                INSERT INTO owner_group_activity (chat_jid, last_active_at)
+                VALUES (?, ?)
+                ON CONFLICT(chat_jid) DO UPDATE SET last_active_at = excluded.last_active_at
+            `)
+            for (const jid of groupJids) {
+                stmt.run(jid, now)
+            }
+        } catch (err) {
+            logger.error('[DB] Failed to mark groups read for owner:', err.message)
         }
     }
 

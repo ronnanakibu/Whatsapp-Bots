@@ -4,13 +4,13 @@ import { dbService } from '../../services/db.js'
 
 export default {
     name: 'rangkum',
-    aliases: ['tldr', 'recapchat', 'summarizechat', 'rangkuman'],
+    aliases: ['summarize', 'tldr', 'recap', 'recapchat', 'summarizechat', 'rangkuman'],
     category: 'ai',
     description: 'Merangkum percakapan grup/chat terkini (hingga 500 pesan) menggunakan Hermes Agent tanpa sensor.',
-    usage: '.rangkum [jumlah pesan, default: 100, maks: 500]',
+    usage: '.summarize [jumlah pesan, default: 100, maks: 500] atau .rangkum [jumlah pesan]',
     cooldown: 10,
     execute: async (ctx) => {
-        const { reply, react, args, chatId, isGroup } = ctx
+        const { sock, reply, react, args, chatId, isGroup } = ctx
 
         let count = 100
         if (args[0] && !isNaN(args[0])) {
@@ -26,13 +26,22 @@ export default {
             return reply(`⚠️ Belum ada cukup riwayat pesan yang terekam di chat ini (minimal 5 pesan). Bot baru merekam *${messages ? messages.length : 0}* pesan.`)
         }
 
-        const waitMsg = await reply(`⏳ Sedang membaca & merangkum *${messages.length}* pesan terakhir via *Hermes Agent*... Mohon tunggu sebentar.`)
+        await reply(`⏳ Sedang membaca & merangkum *${messages.length}* pesan terakhir via *Hermes Agent*... Mohon tunggu sebentar.`)
+
+        let groupName = ''
+        if (isGroup && sock?.groupMetadata) {
+            try {
+                const meta = await sock.groupMetadata(chatId)
+                if (meta?.subject) groupName = meta.subject
+            } catch (_) {}
+        }
 
         try {
-            const summary = await hermesService.summarize(chatId, messages)
+            const summary = await hermesService.summarize(chatId, messages, groupName)
             await react('✅')
 
-            const responseText = `📋 *RANGKUMAN OBROLAN GRUP (${messages.length} PESAN)*\n` +
+            const title = groupName ? `📋 *RANGKUMAN OBROLAN "${groupName.toUpperCase()}" (${messages.length} PESAN)*\n` : `📋 *RANGKUMAN OBROLAN (${messages.length} PESAN)*\n`
+            const responseText = `${title}` +
                 `🤖 *Powered by Hermes Agent*\n\n` +
                 `${summary}`
 

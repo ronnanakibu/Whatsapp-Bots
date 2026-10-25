@@ -37,6 +37,8 @@ import { startRadioServer, updateBotStatus } from '../server/radio.js'
 import { metricsService } from '../services/metrics.js'
 import { mediaCache } from '../services/mediaCache.js'
 import { sessionSync } from '../services/sessionSync.js'
+import { dbService } from '../services/db.js'
+import { isOwner } from '../utils/permissions.js'
 
 const pinoLogger = logger.child({ module: 'baileys' })
 
@@ -254,6 +256,37 @@ async function startBot() {
     // 8. Revoke handler (Anti-Delete)
     sock.ev.on('messages.update', async (m) => {
         await handleRevokeMessage(sock, m)
+    })
+
+    // 9. Owner Activity tracking on Read Receipts
+    sock.ev.on('message-receipt.update', async (receipts) => {
+        try {
+            if (!Array.isArray(receipts)) return
+            for (const r of receipts) {
+                const chatJid = r.key?.remoteJid
+                if (chatJid && chatJid.endsWith('@g.us')) {
+                    const user = r.receipt?.userJid || r.key?.participant
+                    if (r.key?.fromMe || (user && isOwner(user))) {
+                        const ts = r.receipt?.readTimestamp ? (typeof r.receipt.readTimestamp === 'object' ? r.receipt.readTimestamp.low : Number(r.receipt.readTimestamp)) : Math.floor(Date.now() / 1000)
+                        dbService.trackOwnerGroupActivity(chatJid, ts)
+                    }
+                }
+            }
+        } catch (_) {}
+    })
+
+    // 10. Owner Activity tracking on Chats Update (e.g. unread count reset to 0)
+    sock.ev.on('chats.update', async (chats) => {
+        try {
+            if (!Array.isArray(chats)) return
+            for (const chat of chats) {
+                if (chat.id && chat.id.endsWith('@g.us')) {
+                    if (chat.unreadCount === 0) {
+                        dbService.trackOwnerGroupActivity(chat.id, Math.floor(Date.now() / 1000))
+                    }
+                }
+            }
+        } catch (_) {}
     })
 
     // ─────────────────────────────────────────────
