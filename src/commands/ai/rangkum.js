@@ -4,13 +4,19 @@ import { dbService } from '../../services/db.js'
 
 export default {
     name: 'rangkum',
-    aliases: ['summarize', 'tldr', 'recap', 'recapchat', 'summarizechat', 'rangkuman'],
+    aliases: ['summarize', 'summarizechat', 'recapchat', 'rangkuman'],
     category: 'ai',
     description: 'Merangkum percakapan grup/chat terkini (hingga 500 pesan) menggunakan Hermes Agent tanpa sensor.',
     usage: '.summarize [jumlah pesan, default: 100, maks: 500] atau .rangkum [jumlah pesan]',
     cooldown: 10,
     execute: async (ctx) => {
         const { sock, reply, react, args, chatId, isGroup } = ctx
+
+        // Jika user memberikan URL, teruskan ke pembaca artikel (.baca)
+        if (args[0] && (args[0].startsWith('http://') || args[0].startsWith('https://'))) {
+            const { default: bacaCmd } = await import('../utility/baca.js')
+            return bacaCmd.execute(ctx)
+        }
 
         let count = 100
         if (args[0] && !isNaN(args[0])) {
