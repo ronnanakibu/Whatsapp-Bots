@@ -239,9 +239,10 @@ export function ytdlpGetAudioUrl(youtubeUrl) {
 
         const args = [
             '--no-playlist',
+            '--no-check-certificates',
             '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best',
             '--get-url',
-            '--extractor-args', 'youtube:player_client=ios,android,web',  // ios dulu, lebih reliable
+            '--extractor-args', 'youtube:player_client=android,ios,web;player_skip=js',
             '--buffer-size', '256k',
             ...getCookieArgs(),
             '--no-warnings',
@@ -292,9 +293,10 @@ export function ytdlpStream(youtubeUrl) {
 
     const args = [
         '--no-playlist',
+        '--no-check-certificates',
         '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
         '--output', '-', // stream ke stdout
-        '--extractor-args', 'youtube:player_client=android,web',
+        '--extractor-args', 'youtube:player_client=android,ios,web;player_skip=js',
         '--buffer-size', '256k',
         ...getCookieArgs(),
         '--no-warnings', // Menghilangkan warning bawaan yang tidak perlu

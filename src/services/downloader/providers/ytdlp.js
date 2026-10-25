@@ -3,7 +3,8 @@ import { spawn } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { randomBytes } from 'crypto'
-import { getYtdlpPath } from '../../ytdlp.js'
+import { getYtdlpPath, getCookieArgs } from '../../ytdlp.js'
+import { getFfmpegPath } from '../../media.js'
 import { logger } from '../../../utils/logger.js'
 
 import { fetchBuffer, fetchJson, sanitizeFilename } from '../utils.js'
@@ -35,32 +36,47 @@ export async function downloadYtdlp(url, options = {}) {
     const args = [
         '--no-playlist',
         '--no-warnings',
-        '--write-info-json', // Tulis metadata ke file .info.json, JANGAN pakai --dump-json karena itu mencegah download!
+        '--no-check-certificates',
+        '--write-info-json', // Tulis metadata ke file .info.json
         '-o', outTemplate,
+        '--extractor-args', 'youtube:player_client=android,ios,web;player_skip=js',
+        '--max-filesize', '100M',
     ]
 
-    // Membatasi ukuran file agar WhatsApp tidak menolak (max 50MB, kita set 100MB di yt-dlp sbg safety)
-    args.push('--max-filesize', '100M')
-
-    // Support optional cookies file for Instagram/YouTube authentication
-    const cookiesPath = process.env.YTDLP_COOKIES_PATH || path.resolve('./storage/cookies.txt')
-    if (fs.existsSync(cookiesPath)) {
-        args.push('--cookies', cookiesPath)
-        logger.debug(`[yt-dlp] Using cookies file: ${cookiesPath}`)
+    // Support optional cookies (env var, Netscape/JSON file, or cookies.txt)
+    const cookieArgs = getCookieArgs()
+    if (cookieArgs && cookieArgs.length > 0) {
+        args.push(...cookieArgs)
+    } else {
+        const cookiesPath = process.env.YTDLP_COOKIES_PATH || path.resolve('./storage/cookies.txt')
+        if (fs.existsSync(cookiesPath)) {
+            args.push('--cookies', cookiesPath)
+            logger.debug(`[yt-dlp] Using cookies file: ${cookiesPath}`)
+        }
     }
 
     // Ensure ffmpeg location is passed if custom binary file is present
     const isWindows = process.platform === 'win32'
-    const customFfmpeg = [
-        process.env.FFMPEG_PATH,
-        path.resolve('./storage/bin/ffmpeg' + (isWindows ? '.exe' : '')),
-    ].find(p => {
-        try {
-            return p && fs.existsSync(p) && !fs.statSync(p).isDirectory()
-        } catch (_) {
-            return false
+    let customFfmpeg = null
+    try {
+        const found = getFfmpegPath()
+        if (found && found !== 'ffmpeg') {
+            customFfmpeg = found.replace(/^"|"$/g, '')
         }
-    })
+    } catch (_) {}
+
+    if (!customFfmpeg) {
+        customFfmpeg = [
+            process.env.FFMPEG_PATH,
+            path.resolve('./storage/bin/ffmpeg' + (isWindows ? '.exe' : '')),
+        ].find(p => {
+            try {
+                return p && fs.existsSync(p) && !fs.statSync(p).isDirectory()
+            } catch (_) {
+                return false
+            }
+        })
+    }
 
     if (customFfmpeg) {
         args.push('--ffmpeg-location', customFfmpeg)
@@ -80,14 +96,15 @@ export async function downloadYtdlp(url, options = {}) {
         if (hasFfmpeg) {
             const quality = options.audioQuality === 'normal' ? '128K' : '320K'
             args.push(
+                '-f', 'bestaudio/best',
                 '--extract-audio',
                 '--audio-format', 'mp3',
                 '--audio-quality', quality
             )
         } else {
             // Tanpa ffmpeg, extract-audio akan melempar error postprocessing.
-            // Gunakan format native audio (m4a) yang tidak membutuhkan ffmpeg!
-            args.push('-f', 'bestaudio[ext=m4a]/bestaudio')
+            // Gunakan format native audio yang tidak membutuhkan ffmpeg
+            args.push('-f', 'bestaudio[ext=m4a]/bestaudio/best')
         }
     } else {
         // Video MP4 with target resolution limit

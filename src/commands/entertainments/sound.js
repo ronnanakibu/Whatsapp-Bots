@@ -233,20 +233,24 @@ async function searchMyInstantsList(query) {
 }
 
 /**
- * Cari daftar sound alternatif via YouTube Sound Effect jika soundboard kosong
+ * Cari daftar sound alternatif via YouTube jika soundboard kosong
  */
 async function searchAlternativeSoundList(query) {
     try {
-        const res = await yts(`${query} sound effect`).catch(() => null)
-        const videos = res?.videos || []
-        const shortClips = videos.filter(v => v.seconds >= 1 && v.seconds <= 30).slice(0, 5)
-        return shortClips.map(v => ({
+        let res = await yts(query).catch(() => null)
+        let videos = res?.videos || []
+        if (videos.length === 0) {
+            res = await yts(`${query} sound effect`).catch(() => null)
+            videos = res?.videos || []
+        }
+        const clips = videos.filter(v => v.seconds >= 1 && v.seconds <= 480).slice(0, 10)
+        return clips.map(v => ({
             title: v.title,
             url: v.url,
             duration: v.timestamp
         }))
     } catch (err) {
-        logger.warn(`[Sound/AlternativeSearch] Gagal cari sound effect YouTube: ${err.message}`)
+        logger.warn(`[Sound/AlternativeSearch] Gagal cari sound YouTube: ${err.message}`)
         return []
     }
 }
@@ -255,7 +259,7 @@ async function searchAlternativeSoundList(query) {
  * Cari sound effect meme online secara dinamis
  * 1. Prioritas 1: FreeSound Soundboard (direct MP3, respon 100ms, 100% bebas blokir)
  * 2. Prioritas 2: MyInstants Meme Soundboard (koleksi meme)
- * 3. Prioritas 3: YouTube SFX Engine via downloader service (yt-dlp)
+ * 3. Prioritas 3: YouTube Search Fallback (SFX, anthem, lagu, backsound paling match)
  */
 async function searchOnlineSound(query) {
     // 1. FreeSound Soundboard Search (Paling stabil & cepat di cloud / datacenter)
@@ -302,12 +306,12 @@ async function searchOnlineSound(query) {
         logger.warn(`[Sound/MyInstants] Lookup gagal: ${mErr.message}`)
     }
 
-    // 3. Fallback: YouTube SFX Engine
+    // 3. Fallback: YouTube Search Engine (SFX, Anthem, Lagu, Backsound)
     try {
         const searchTerms = [
-            `${query} sound effect`,
-            `${query} meme sound`,
-            query
+            query,
+            `${query} sound`,
+            `${query} sound effect`
         ]
 
         for (const term of searchTerms) {
@@ -315,9 +319,9 @@ async function searchOnlineSound(query) {
             const videos = res?.videos || []
             if (videos.length === 0) continue
 
-            // Prioritaskan klip pendek sound effect murni (1 sampai 30 detik)
-            const matched = videos.find(v => v.seconds >= 1 && v.seconds <= 30)
-                || videos.find(v => v.seconds >= 1 && v.seconds <= 60)
+            // Prioritaskan klip pendek sound effect jika ada (1 - 60s), jika tidak ada ambil yang paling relevan (1 - 480s / 8 menit)
+            const matched = videos.find(v => v.seconds >= 1 && v.seconds <= 60)
+                || videos.find(v => v.seconds >= 1 && v.seconds <= 480)
 
             if (matched) {
                 logger.info(`[Sound/YouTube] Kandidat ditemukan: "${matched.title}" (${matched.seconds}s) -> ${matched.url}`)
@@ -329,7 +333,7 @@ async function searchOnlineSound(query) {
                             url: matched.url,
                             duration: matched.timestamp,
                             buffer: dl.buffer,
-                            source: 'youtube-sfx',
+                            source: 'youtube',
                             ext: dl.ext || 'mp3'
                         }
                     }
@@ -746,8 +750,8 @@ export default {
                 try {
                     db.prepare(`
                         INSERT OR REPLACE INTO sound_cache (keyword, sound_name, sound_url, audio_data, source, created_at)
-                        VALUES (?, ?, ?, ?, 'online-sfx', unixepoch())
-                    `).run(query, onlineResult.title, onlineResult.url, onlineResult.buffer)
+                        VALUES (?, ?, ?, ?, ?, unixepoch())
+                    `).run(query, onlineResult.title, onlineResult.url, onlineResult.buffer, onlineResult.source || 'online-sfx')
                 } catch (_) {}
 
                 // Kirim langsung sebagai Voice Note
