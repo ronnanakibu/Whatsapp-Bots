@@ -709,14 +709,14 @@ async function nvidiaChatWithModel(chatId, userMessage, model, providerName, ret
     }
 }
 
-async function chat(chatId, userMessage, forcedProvider = null) {
+async function chat(chatId, userMessage, forcedProvider = null, options = {}) {
     const { hermesService } = await import('./hermes.js')
 
     if (!chatId.startsWith('__')) {
         memoryService.addMessage(chatId, 'user', userMessage)
     }
 
-    const result = await hermesService.chat(chatId, userMessage)
+    const result = await hermesService.chat(chatId, userMessage, options)
 
     if (result && result.text) {
         if (!chatId.startsWith('__')) {

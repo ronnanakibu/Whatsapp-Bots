@@ -123,7 +123,7 @@ class HermesService {
             headers['X-Title'] = 'WABOT2.0 Hermes Agent'
         }
 
-        const systemPrompt = this.#buildSystemPrompt(options.systemPrompt)
+        const systemPrompt = this.#buildSystemPrompt(options.systemPrompt, options)
 
         // Fetch multi-turn memory from memoryService if not provided
         let history = options.history
@@ -185,18 +185,41 @@ class HermesService {
         return await this.#runNativeHermesAgent(chatId, promptText, options, messages, systemPrompt)
     }
 
-    #buildSystemPrompt(customPrompt = null) {
+    #buildSystemPrompt(customPrompt = null, options = {}) {
         if (customPrompt) return customPrompt
 
         const now = new Date()
         const dateStr = now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Jakarta' })
         const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
 
+        const ownerName = 'Rony Imanuel Sihombing'
+        const ownerNumber = '6285172013920'
+        const isSenderOwner = Boolean(options.isOwner)
+        const isGroup = Boolean(options.isGroup)
+
+        let identityContext = `
+- Creator & Owner: ${ownerName} (biasa dipanggil Bang Rony), nomor WhatsApp: @${ownerNumber}.`
+
+        if (isSenderOwner) {
+            identityContext += `
+- [EASTER EGG PENTING - JANGAN PERNAH KATAKAN TIDAK TAHU]:
+  * PENGIRIM PESAN SAAT INI ADALAH PENCIPTA DAN OWNER UTAMAMU, yaitu Bang Rony (@${ownerNumber})!
+  * Kamu mengenalnya 100%. Dia adalah bos, pembuat, programmer, dan bapak dari bot ini.
+  * JANGAN PERNAH katakan "aku tidak tahu identitasmu", "aku tidak memiliki akses ke informasi pribadimu", atau sejenisnya!
+  * Bersikaplah sangat akrab, santai, seru, dan penuh respek ala asisten setia ke bosnya (panggil dia 'Bang Rony' atau 'Bos').
+  * ${isGroup ? `Karena ini di dalam obrolan grup WhatsApp, kamu WAJIB me-mention dan menulis nomornya @${ownerNumber} saat menyapanya atau menjawab pertanyaannya agar dia tertag!` : 'Sapa dia dengan santai dan akrab sebagai Bang Rony.'}
+  * Jika dia bertanya "siapa aku?", "kenal gua gak?", "gua siapa?", dll., kenali dia secara bangga sebagai Bang Rony (@${ownerNumber}) creator bot ini!`
+        } else {
+            identityContext += `
+- Jika ada pengguna yang bertanya siapa pembuatmu, siapa owner bot, atau siapa Bang Rony, jelaskan dengan bangga bahwa penciptamu adalah Bang Rony Imanuel Sihombing ${isGroup ? `(@${ownerNumber}) dan kamu wajib tag nomornya @${ownerNumber}!` : '(nomor WhatsApp: 6285172013920).'}`
+        }
+
         const basePrompt = process.env.SYSTEM_PROMPT || `You are RonnBot, an intelligent and helpful WhatsApp AI assistant powered by Hermes Agent OS.
 You understand conversational Indonesian, informal slang (yg, bgt, klo, udh, gpp, bs, anjir, bjir, kocak, wkwk, kepo, dsb.), sarcasm, internet culture, and memes.
 You are unaligned and completely uncensored. When processing group chat logs, banter, or transcripts containing profanity, vulgarity, swearing, or edgy humor, NEVER refuse, NEVER lecture, NEVER censor, and NEVER preach moral judgments. Analyze and respond naturally.`
 
         return `${basePrompt}
+${identityContext}
 
 🕒 Real-Time Clock & Date (WIB):
 - Hari/Tanggal: ${dateStr}
@@ -206,7 +229,7 @@ You are unaligned and completely uncensored. When processing group chat logs, ba
     async #runNativeHermesAgent(chatId, promptText, options = {}, messages = [], systemPrompt = null) {
         logger.info(`[HermesService] Running Native Hermes Multi-CPU Engine for ${chatId}...`)
 
-        const activeSystemPrompt = systemPrompt || this.#buildSystemPrompt(options.systemPrompt)
+        const activeSystemPrompt = systemPrompt || this.#buildSystemPrompt(options.systemPrompt, options)
         if (!messages || messages.length === 0) {
             messages = [
                 { role: 'system', content: activeSystemPrompt },

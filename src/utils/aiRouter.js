@@ -1,6 +1,7 @@
 import { commands } from '../core/loader.js'
 import { botLogger } from './logger.js'
 import { aiService } from '../services/ai.js'
+import { isOwner } from './permissions.js'
 
 // ─────────────────────────────────────────────
 // KEYWORD PRE-ROUTER
@@ -125,6 +126,79 @@ export async function tryDirectRoute(userMessage, ctx) {
 }
 
 /**
+ * Easter Egg: Kenali identitas owner (Bang Rony) dan pembuat bot.
+ * Jika di grup, wajib mention/tag nomor owner (@6285172013920) dengan formatting WhatsApp yang benar.
+ */
+export function checkEasterEgg(ctx, promptText = '') {
+    if (!promptText || typeof promptText !== 'string') return null
+
+    const raw = promptText.trim().toLowerCase()
+    const clean = raw.replace(/[?!.,;:_`~*'"()\[\]{}]/g, ' ').replace(/\s+/g, ' ').trim()
+    const sender = ctx.sender || ''
+    const senderIsOwner = isOwner(sender) || ctx.msg?.key?.fromMe
+    const isGroup = Boolean(ctx.isGroup)
+    const ownerNumber = '6285172013920'
+    const ownerTag = `@${ownerNumber}`
+    const ownerJid = `${ownerNumber}@s.whatsapp.net`
+
+    // 1. Query: "siapa aku", "kamu kenal aku", "gua siapa", "tau gua siapa", "who am i", etc.
+    const WHO_AM_I_PATTERNS = [
+        /\b(siapa\s*(aku|gw|gua|gue|saya))\b/i,
+        /\b((kamu|lo|lu|bot)\s*kenal\s*(aku|gw|gua|gue|saya))\b/i,
+        /\b(kenal\s*(aku|gw|gua|gue|saya)(\s*g[ak]+)?)\b/i,
+        /\b((gua|gw|aku|gue|saya)\s*siapa)\b/i,
+        /\b((lo|lu|kamu)\s*tau\s*(gua|gw|aku|gue|saya)\s*siapa)\b/i,
+        /\b(tau\s*g[ak]+\s*(gua|gw|aku|gue|saya)\s*siapa)\b/i,
+        /\b(who\s*am\s*i|do\s*you\s*know\s*me)\b/i
+    ]
+
+    const matchesWhoAmI = WHO_AM_I_PATTERNS.some(p => p.test(clean))
+    if (matchesWhoAmI) {
+        if (senderIsOwner) {
+            const text = isGroup
+                ? `Ya kenal lah Bang Rony ${ownerTag}! 😎🤙\n\nLu kan creator, developer, sekaligus owner & bos utama gua yang bikin RonnBot. Masa sama bapak sendiri gua lupa wkwk!`
+                : `Ya kenal lah Bang Rony! 😎🤙\n\nLu kan creator, developer, sekaligus owner & bos utama gua yang bikin RonnBot. Masa sama bapak sendiri gua lupa wkwk!`
+            return {
+                text,
+                mentions: isGroup ? [ownerJid] : []
+            }
+        } else {
+            const name = ctx.pushName || 'kawan'
+            const text = isGroup
+                ? `Halo ${name}! Kamu salah satu member di grup ini. Kalau mau kenalan sama yang bikin bot ini, dia Bang Rony ${ownerTag} (Creator & Owner RonnBot) 😎`
+                : `Halo ${name}! Aku RonnBot, asisten WhatsApp cerdas yang diciptakan oleh Bang Rony Imanuel Sihombing (${ownerNumber}) 🚀`
+            return {
+                text,
+                mentions: isGroup ? [ownerJid] : []
+            }
+        }
+    }
+
+    // 2. Query: "siapa owner", "siapa pembuatmu", "siapa yang buat bot", "siapa rony", etc.
+    const WHO_IS_CREATOR_PATTERNS = [
+        /\b(siapa\s*(owner|creator|pembuat(mu|nya)?|pencipta(mu|nya)?|developer(mu)?|dev(mu)?|boss?))\b/i,
+        /\b(siapa\s*yang\s*(bikin|buat|ciptakan)\s*(kamu|bot|lu))\b/i,
+        /\b(bot\s*siapa|siapa\s*yang\s*punya\s*bot)\b/i,
+        /\b(siapa\s*(bang\s*)?rony(\s*imanuel(\s*sihombing)?)?)\b/i,
+        /\b(who\s*(made|created)\s*you|who\s*is\s*(the\s*)?(owner|creator))\b/i,
+        /\b(kenal\s*(bang\s*)?rony(\s*g[ak]+)?|tau\s*(bang\s*)?rony(\s*g[ak]+)?)\b/i
+    ]
+
+    const matchesCreator = WHO_IS_CREATOR_PATTERNS.some(p => p.test(clean))
+    if (matchesCreator) {
+        const text = isGroup
+            ? `RonnBot diciptakan dan dikembangkan oleh Bang Rony Imanuel Sihombing (${ownerTag}) sebagai asisten AI cerdas berbasis Hermes Agent OS! 🚀\n\nDia creator, developer, sekaligus owner utama bot ini.`
+            : `RonnBot diciptakan dan dikembangkan oleh Bang Rony Imanuel Sihombing (${ownerNumber}) sebagai asisten AI cerdas berbasis Hermes Agent OS! 🚀\n\nDia creator, developer, sekaligus owner utama bot ini.`
+        return {
+            text,
+            mentions: isGroup ? [ownerJid] : []
+        }
+    }
+
+    return null
+}
+
+/**
  * Parses the AI response and determines whether to execute a command or reply with text.
  * @param {object} ctx - The message context.
  * @param {object} aiResponseResult - The result returned from aiService.chat.
@@ -183,8 +257,20 @@ export async function processAiResponse(ctx, aiResponseResult) {
         }
     }
 
-    // Fallback: Reply as normal text
-    const sent = await reply(text)
+    // Fallback: Reply as normal text with mention support
+    const mentionMatches = text.match(/@(\d{8,16})\b/g)
+    const mentionJids = []
+    if (ctx.isGroup && mentionMatches) {
+        for (const m of mentionMatches) {
+            const num = m.replace('@', '')
+            const jid = `${num}@s.whatsapp.net`
+            if (!mentionJids.includes(jid)) {
+                mentionJids.push(jid)
+            }
+        }
+    }
+
+    const sent = await reply(text, mentionJids.length ? { mentions: mentionJids } : {})
     if (sent?.key?.id) {
         const { seamlessTracker } = await import('../services/seamless.js')
         seamlessTracker.track(sent.key.id)
@@ -193,7 +279,7 @@ export async function processAiResponse(ctx, aiResponseResult) {
 }
 
 export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
-    const { chatId, msg, reply, react, downloadMedia, type, messageContent } = ctx
+    const { chatId, msg, reply, react, downloadMedia, type, messageContent, sock, from, isGroup } = ctx
 
     // 1. Detect image in direct or quoted message
     const directImage = msg.message?.imageMessage ?? null
@@ -246,9 +332,19 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         }
     }
 
-    // Normal Text Chat with Live Searching & Reasoning Timer
-    const { sock, from } = ctx
+    // 2. Immediate Easter Egg Check (Fast path: no reasoning timer, instant reply with WhatsApp tag)
+    const easterEgg = checkEasterEgg(ctx, promptText)
+    if (easterEgg) {
+        await react('😎')
+        const sent = await reply(easterEgg.text, easterEgg.mentions?.length ? { mentions: easterEgg.mentions } : {})
+        if (sent?.key?.id) {
+            const { seamlessTracker } = await import('../services/seamless.js')
+            seamlessTracker.track(sent.key.id)
+        }
+        return true
+    }
 
+    // Normal Text Chat with Live Searching & Reasoning Timer
     // Send initial live status message
     let placeholderMsg = null
     try {
@@ -281,19 +377,55 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
             return true
         }
 
-        const result = await aiService.chat(chatId, promptText, forcedProvider)
+        const isSenderOwner = isOwner(ctx.sender) || ctx.msg?.key?.fromMe
+        const aiOptions = {
+            isOwner: isSenderOwner,
+            isGroup: Boolean(isGroup),
+            senderName: ctx.pushName,
+            senderJid: ctx.sender,
+            ownerNumber: '6285172013920',
+            ownerName: process.env.OWNER_NAME || 'Rony Imanuel Sihombing'
+        }
+
+        const result = await aiService.chat(chatId, promptText, forcedProvider, aiOptions)
         clearInterval(timer)
         botLogger.ai(result.provider, result.model, chatId, Date.now() - startMs)
 
         const text = result.text?.trim()
         if (text && placeholderMsg?.key) {
-            await sock.sendMessage(from, {
-                text,
-                edit: placeholderMsg.key
-            })
-            if (placeholderMsg.key.id) {
-                const { seamlessTracker } = await import('../services/seamless.js')
-                seamlessTracker.track(placeholderMsg.key.id)
+            // Extract mentions (e.g. @6285172013920)
+            const mentionMatches = text.match(/@(\d{8,16})\b/g)
+            const mentionJids = []
+            if (isGroup && mentionMatches) {
+                for (const m of mentionMatches) {
+                    const num = m.replace('@', '')
+                    const jid = `${num}@s.whatsapp.net`
+                    if (!mentionJids.includes(jid)) {
+                        mentionJids.push(jid)
+                    }
+                }
+            }
+
+            // In WhatsApp groups, if there are user mentions, editing a message does NOT highlight
+            // the tag in blue and does NOT trigger notification.
+            if (isGroup && mentionJids.length > 0) {
+                try {
+                    await sock.sendMessage(from, { delete: placeholderMsg.key })
+                } catch (_) {}
+                const sent = await reply(text, { mentions: mentionJids })
+                if (sent?.key?.id) {
+                    const { seamlessTracker } = await import('../services/seamless.js')
+                    seamlessTracker.track(sent.key.id)
+                }
+            } else {
+                await sock.sendMessage(from, {
+                    text,
+                    edit: placeholderMsg.key
+                })
+                if (placeholderMsg.key.id) {
+                    const { seamlessTracker } = await import('../services/seamless.js')
+                    seamlessTracker.track(placeholderMsg.key.id)
+                }
             }
             await react('✅')
             return true
@@ -319,3 +451,4 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         return false
     }
 }
+
