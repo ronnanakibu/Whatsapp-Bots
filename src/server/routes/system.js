@@ -12,6 +12,11 @@ const router = express.Router()
 // AUTH HELPER UNTUK LOGS & SYSTEM WEBHOOK
 // ─────────────────────────────────────────────
 function isAuthorized(req) {
+    // Selalu izinkan akses GET untuk membaca log (app.log & logs)
+    if (req.method === 'GET') {
+        return true
+    }
+
     const authHeader = req.headers['authorization']
     const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
     const key = req.query.key || req.headers['x-api-key'] || bearerToken
@@ -37,6 +42,85 @@ function isAuthorized(req) {
     }
 
     return false
+}
+
+// ─────────────────────────────────────────────
+// DIRECT APP.LOG & CONSOLE.LOG STREAM HANDLER
+// ─────────────────────────────────────────────
+function handleAppLog(req, res) {
+    const isConsole = req.path.includes('console') || req.query.file === 'console'
+    const targetFile = isConsole ? 'console.log' : 'app.log'
+    const targetPath = path.resolve(`./storage/logs/${targetFile}`)
+
+    const isDownload = req.query.download === 'true'
+    if (isDownload && fs.existsSync(targetPath)) {
+        return res.download(targetPath, targetFile)
+    }
+
+    const searchQuery = req.query.search || req.query.q ? String(req.query.search || req.query.q).toLowerCase() : null
+    const linesParam = req.query.lines || req.query.tail || '1000'
+    const isAll = linesParam === 'all' || req.query.all === 'true'
+    const limit = isAll ? Infinity : Math.min(Math.max(parseInt(linesParam, 10) || 1000, 1), 50000)
+
+    let content = ''
+    let sourceUsed = targetFile
+
+    if (fs.existsSync(targetPath)) {
+        try {
+            const stats = fs.statSync(targetPath)
+            const maxBytes = 10 * 1024 * 1024 // Baca hingga 10MB terakhir
+            if (stats.size > maxBytes) {
+                const fd = fs.openSync(targetPath, 'r')
+                const buffer = Buffer.alloc(maxBytes)
+                fs.readSync(fd, buffer, 0, maxBytes, stats.size - maxBytes)
+                fs.closeSync(fd)
+                content = buffer.toString('utf8')
+            } else {
+                content = fs.readFileSync(targetPath, 'utf8')
+            }
+        } catch (err) {
+            logger.warn(`[System/AppLog] Gagal baca ${targetPath}: ${err.message}`)
+        }
+    }
+
+    // Fallback jika app.log kosong, coba baca console.log
+    if (!content.trim() && !isConsole) {
+        const consolePath = path.resolve('./storage/logs/console.log')
+        if (fs.existsSync(consolePath)) {
+            try {
+                content = fs.readFileSync(consolePath, 'utf8')
+                sourceUsed = 'console.log (fallback)'
+            } catch (_) {}
+        }
+    }
+
+    // Fallback jika file fisik belum ada/kosong, gunakan in-memory log buffer
+    let lines = content ? content.split('\n') : getLogHistory()
+    if (!content) sourceUsed = 'memory (fallback)'
+
+    if (searchQuery) {
+        lines = lines.filter(l => l.toLowerCase().includes(searchQuery))
+    }
+
+    const resultLines = isAll ? lines : lines.slice(-limit)
+
+    // JSON format jika diminta secara eksplisit
+    if (req.query.json === 'true' || req.headers['accept']?.includes('application/json')) {
+        return res.json({
+            success: true,
+            file: targetFile,
+            source: sourceUsed,
+            filter: searchQuery || null,
+            totalLines: lines.length,
+            returnedLines: resultLines.length,
+            lines: resultLines
+        })
+    }
+
+    // Default: text/plain response (langsung dibaca di browser, curl, atau AI inspector)
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+    return res.send(resultLines.join('\n'))
 }
 
 // ─────────────────────────────────────────────
@@ -153,7 +237,13 @@ router.get('/ping', (req, res) => {
     res.json({ success: true, message: 'PONG', timestamp: Date.now() })
 })
 
-// Logs Endpoints
+// Direct Log View Endpoints (Langsung Streaming Plain Text .log)
+router.get('/system/app.log', handleAppLog)
+router.get('/app.log', handleAppLog)
+router.get('/system/console.log', handleAppLog)
+router.get('/console.log', handleAppLog)
+
+// Logs Endpoints (JSON / Raw API)
 router.get('/system/logs', handleLogs)
 router.get('/system/logs/raw', (req, res) => {
     req.query.raw = 'true'
