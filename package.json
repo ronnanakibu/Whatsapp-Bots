@@ -1,6 +1,6 @@
 {
     "name": "wabot2.0",
-    "version": "5.25.20",
+    "version": "5.25.21",
     "description": "WhatsApp Bot Modular Automation based on Baileys.",
     "main": "start.js",
     "type": "module",

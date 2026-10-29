@@ -86,10 +86,10 @@ function triggerYtdlpUpdate(binPath) {
                 try {
                     const ver = execSync(`"${binPath}" --version`, { timeout: 5000 }).toString().trim()
                     botLogger.info('ytdlp', `yt-dlp auto-update check selesai: v${ver}`)
-                } catch (_) {}
+                } catch (_) { }
             }
         })
-    } catch (_) {}
+    } catch (_) { }
 }
 
 // ─────────────────────────────────────────────
@@ -157,13 +157,13 @@ function downloadFile(url, dest) {
 
                 res.pipe(file)
                 file.on('finish', () => { file.close(); resolve() })
-                file.on('error', e => { 
-                    try { fs.unlinkSync(dest) } catch(_) {}
-                    reject(e) 
+                file.on('error', e => {
+                    try { fs.unlinkSync(dest) } catch (_) { }
+                    reject(e)
                 })
 
             }).on('error', e => {
-                try { fs.unlinkSync(dest) } catch(_) {}
+                try { fs.unlinkSync(dest) } catch (_) { }
                 reject(e)
             })
         }

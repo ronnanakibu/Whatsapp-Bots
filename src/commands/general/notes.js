@@ -91,6 +91,55 @@ function formatFileSize(bytes) {
     return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
 }
 
+function getExtensionFromMime(mime = '', defaultExt = 'bin') {
+    const m = (mime || '').toLowerCase()
+    if (m.includes('pdf')) return 'pdf'
+    if (m.includes('wordprocessingml') || m.includes('msword') || m.includes('document')) return 'docx'
+    if (m.includes('presentationml') || m.includes('powerpoint')) return 'pptx'
+    if (m.includes('spreadsheetml') || m.includes('excel')) return 'xlsx'
+    if (m.includes('text/plain') || m.includes('markdown')) return 'txt'
+    if (m.includes('text/csv') || m.includes('csv')) return 'csv'
+    if (m.includes('json')) return 'json'
+    if (m.includes('zip')) return 'zip'
+    if (m.includes('rar')) return 'rar'
+    if (m.includes('7z')) return '7z'
+    if (m.includes('tar') || m.includes('gzip')) return 'tar.gz'
+    if (m.includes('epub')) return 'epub'
+    if (m.includes('jpeg') || m.includes('jpg')) return 'jpg'
+    if (m.includes('png')) return 'png'
+    if (m.includes('webp')) return 'webp'
+    if (m.includes('mp4')) return 'mp4'
+    if (m.includes('mpeg') || m.includes('mp3')) return 'mp3'
+    if (m.includes('ogg')) return 'ogg'
+    if (m.includes('audio')) return 'mp3'
+    if (m.includes('video')) return 'mp4'
+    return defaultExt
+}
+
+function ensureCorrectMimeType(fileName = '', mimeType = '') {
+    const ext = path.extname(fileName || '').toLowerCase()
+    let m = (mimeType || '').toLowerCase()
+
+    if (ext === '.pdf' || m.includes('pdf')) return 'application/pdf'
+    if (ext === '.docx' || ext === '.doc' || m.includes('word') || m.includes('officedocument.wordprocessingml')) {
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    }
+    if (ext === '.pptx' || ext === '.ppt' || m.includes('powerpoint') || m.includes('presentationml')) {
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    }
+    if (ext === '.xlsx' || ext === '.xls' || m.includes('excel') || m.includes('spreadsheetml')) {
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }
+    if (ext === '.txt' && (!m || m === 'application/octet-stream')) return 'text/plain'
+    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
+    if (ext === '.png') return 'image/png'
+    if (ext === '.webp') return 'image/webp'
+    if (ext === '.mp3') return 'audio/mpeg'
+    if (ext === '.mp4') return 'video/mp4'
+
+    return mimeType || 'application/octet-stream'
+}
+
 function getDocBadge(fileName = '', mimeType = '') {
     const ext = path.extname(fileName || '').toLowerCase()
     const mime = (mimeType || '').toLowerCase()
@@ -127,11 +176,17 @@ async function extractAttachmentAndText(ctx) {
         for (const mType of ['documentMessage', 'imageMessage', 'videoMessage', 'audioMessage']) {
             if (directUnwrapped[mType]) {
                 const info = directUnwrapped[mType]
-                const mime = info.mimetype || 'application/octet-stream'
+                const mime = ensureCorrectMimeType(info.fileName || info.title || '', info.mimetype || '')
+                const extFromMime = getExtensionFromMime(mime, mType === 'imageMessage' ? 'jpg' : mType === 'audioMessage' ? 'mp3' : mType === 'videoMessage' ? 'mp4' : 'bin')
+
                 let fileName = info.fileName || info.title || null
                 if (!fileName) {
-                    const ext = mType === 'imageMessage' ? 'jpg' : mType === 'audioMessage' ? 'mp3' : mType === 'videoMessage' ? 'mp4' : 'bin'
-                    fileName = `lampiran_${Date.now()}.${ext}`
+                    fileName = `lampiran_${Date.now()}.${extFromMime}`
+                } else {
+                    const curExt = path.extname(fileName).toLowerCase()
+                    if (!curExt || curExt === '.bin' || curExt === '.tmp') {
+                        fileName = `${path.basename(fileName, curExt)}.${extFromMime}`
+                    }
                 }
 
                 try {
@@ -166,11 +221,17 @@ async function extractAttachmentAndText(ctx) {
             for (const mType of ['documentMessage', 'imageMessage', 'videoMessage', 'audioMessage']) {
                 if (quotedUnwrapped[mType]) {
                     const info = quotedUnwrapped[mType]
-                    const mime = info.mimetype || 'application/octet-stream'
+                    const mime = ensureCorrectMimeType(info.fileName || info.title || '', info.mimetype || '')
+                    const extFromMime = getExtensionFromMime(mime, mType === 'imageMessage' ? 'jpg' : mType === 'audioMessage' ? 'mp3' : mType === 'videoMessage' ? 'mp4' : 'bin')
+
                     let fileName = info.fileName || info.title || null
                     if (!fileName) {
-                        const ext = mType === 'imageMessage' ? 'jpg' : mType === 'audioMessage' ? 'mp3' : mType === 'videoMessage' ? 'mp4' : 'bin'
-                        fileName = `lampiran_${Date.now()}.${ext}`
+                        fileName = `lampiran_${Date.now()}.${extFromMime}`
+                    } else {
+                        const curExt = path.extname(fileName).toLowerCase()
+                        if (!curExt || curExt === '.bin' || curExt === '.tmp') {
+                            fileName = `${path.basename(fileName, curExt)}.${extFromMime}`
+                        }
                     }
 
                     const stanzaId = contextInfo.stanzaId
@@ -403,12 +464,27 @@ export default {
                 }
 
                 await react('⏳')
-                const safeName = sanitizeFileName(attachment.fileName)
+
+                // Tentukan nama berkas yang rapi & ber-ekstensi valid
+                const extFromMime = getExtensionFromMime(attachment.mime, 'bin')
+                let finalFileName = attachment.fileName || 'dokumen'
+
+                if (!attachment.fileName || attachment.fileName.startsWith('lampiran_')) {
+                    const cleanTitle = sanitizeFileName(title || 'dokumen')
+                    finalFileName = `${cleanTitle}.${extFromMime}`
+                } else {
+                    const curExt = path.extname(attachment.fileName).toLowerCase()
+                    if (!curExt || curExt === '.bin' || curExt === '.tmp') {
+                        finalFileName = `${path.basename(attachment.fileName, curExt)}.${extFromMime}`
+                    }
+                }
+
+                const safeName = sanitizeFileName(finalFileName)
                 const diskName = `${Date.now()}_${safeName}`
                 savedFilePath = path.join(DOCS_DIR, diskName)
-                savedFileName = attachment.fileName
+                savedFileName = finalFileName
                 savedFileSize = attachment.size
-                savedMimeType = attachment.mime
+                savedMimeType = ensureCorrectMimeType(finalFileName, attachment.mime)
 
                 try {
                     fs.writeFileSync(savedFilePath, attachment.buffer)
@@ -506,9 +582,34 @@ export default {
                     )
                 }
 
-                const badge = getDocBadge(note.file_name, note.mime_type)
+                let sendFileName = note.file_name || `${note.title || 'dokumen'}`
+                let sendMime = ensureCorrectMimeType(sendFileName, note.mime_type || '')
+
+                const curExt = path.extname(sendFileName).toLowerCase()
+                const properExt = '.' + getExtensionFromMime(sendMime, 'bin')
+
+                // Perbaiki jika nama file yang tersimpan berakhiran .bin, .tmp, atau tanpa ekstensi
+                if (!curExt || curExt === '.bin' || curExt === '.tmp') {
+                    const base = path.basename(sendFileName, curExt)
+                    const cleanTitle = (note.title || (base.startsWith('lampiran_') ? 'dokumen' : base))
+                        .replace(/[^a-zA-Z0-9_\-\s]/g, '')
+                        .trim()
+                        .replace(/\s+/g, '_')
+                    sendFileName = `${cleanTitle || 'dokumen'}${properExt}`
+
+                    // Auto-heal database record jika nama sebelumnya .bin
+                    try {
+                        db.prepare('UPDATE notes SET file_name = ?, mime_type = ? WHERE id = ?').run(sendFileName, sendMime, note.id)
+                    } catch (_) {}
+                }
+
+                if (sendFileName.endsWith('.pdf')) {
+                    sendMime = 'application/pdf'
+                }
+
+                const badge = getDocBadge(sendFileName, sendMime)
                 const caption =
-                    `📁 *[${badge}] ${note.title}*\n` +
+                    `📁 ${badge} *${note.title}*\n` +
                     `━━━━━━━━━━━━━━━━━━━━\n` +
                     `${note.content ? `📝 ${note.content}\n\n` : ''}` +
                     `📦 *Ukuran:* ${formatFileSize(note.file_size || fileBuffer.length)}\n` +
@@ -518,8 +619,8 @@ export default {
 
                 await sock.sendMessage(from, {
                     document: fileBuffer,
-                    fileName: note.file_name || `dokumen_${note.id}.pdf`,
-                    mimetype: note.mime_type || 'application/octet-stream',
+                    fileName: sendFileName,
+                    mimetype: sendMime,
                     caption
                 }, { quoted: msg })
 
@@ -562,9 +663,10 @@ export default {
                 docBuffer = await getNoteFileBuffer(note)
             }
 
-            const mime = (note.mime_type || '').toLowerCase()
             const fileName = (note.file_name || '').toLowerCase()
-            const isPdf = mime.includes('pdf') || fileName.endsWith('.pdf')
+            const mime = ensureCorrectMimeType(fileName, note.mime_type || '').toLowerCase()
+            const ext = path.extname(fileName).toLowerCase()
+            const isPdf = mime.includes('pdf') || ext === '.pdf'
             const isImage = mime.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(fileName)
             const isTextDoc = mime.startsWith('text/') || /\.(txt|md|csv|json|js|py)$/i.test(fileName)
 
