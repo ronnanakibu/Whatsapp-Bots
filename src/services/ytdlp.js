@@ -68,7 +68,6 @@ function isValidBinary(filePath) {
 function ensureExecutable(filePath) {
     try {
         fs.accessSync(filePath, fs.constants.X_OK)
-        // Sudah executable, skip
     } catch (_) {
         try {
             fs.chmodSync(filePath, 0o755)
@@ -79,15 +78,29 @@ function ensureExecutable(filePath) {
     }
 }
 
+function triggerYtdlpUpdate(binPath) {
+    try {
+        const proc = spawn(binPath, ['-U'], { stdio: 'ignore' })
+        proc.on('close', code => {
+            if (code === 0) {
+                try {
+                    const ver = execSync(`"${binPath}" --version`, { timeout: 5000 }).toString().trim()
+                    botLogger.info('ytdlp', `yt-dlp auto-update check selesai: v${ver}`)
+                } catch (_) {}
+            }
+        })
+    } catch (_) {}
+}
+
 // ─────────────────────────────────────────────
 // AUTO DOWNLOAD
 // ─────────────────────────────────────────────
 
 export async function ensureYtdlp() {
-    // Coba dapatkan local binary terlebih dahulu
     let existing = getYtdlpPath(true)
     if (existing) {
         botLogger.info('ytdlp', `yt-dlp local found: ${existing}`)
+        triggerYtdlpUpdate(existing)
         return existing
     }
 
@@ -97,21 +110,18 @@ export async function ensureYtdlp() {
 
     try {
         await downloadFile(YTDLP_URL, BIN_PATH)
-
-        // Chmod +x
         fs.chmodSync(BIN_PATH, 0o755)
 
-        // Verifikasi
         const version = execSync(`"${BIN_PATH}" --version`, { timeout: 10_000 }).toString().trim()
         botLogger.info('ytdlp', `yt-dlp downloaded & ready: v${version}`)
         return BIN_PATH
     } catch (e) {
         botLogger.warn('ytdlp', `Gagal mengunduh yt-dlp dari GitHub: ${e.message}`)
 
-        // Fallback ke system PATH
         existing = getYtdlpPath(false)
         if (existing) {
             botLogger.info('ytdlp', `Menggunakan fallback system yt-dlp: ${existing}`)
+            triggerYtdlpUpdate(existing)
             return existing
         }
 
@@ -126,7 +136,6 @@ function downloadFile(url, dest) {
 
         function doRequest(reqUrl) {
             https.get(reqUrl, (res) => {
-                // Handle redirect
                 if (res.statusCode === 301 || res.statusCode === 302) {
                     return doRequest(res.headers.location)
                 }
@@ -168,55 +177,120 @@ function downloadFile(url, dest) {
 // ─────────────────────────────────────────────
 
 export function getCookieArgs() {
-    // 1. Check YOUTUBE_COOKIE env var (header string)
-    const envCookie = process.env.YOUTUBE_COOKIE
-    if (envCookie && envCookie.length > 20 && !envCookie.startsWith('[')) {
-        return ['--add-header', `Cookie: ${envCookie.trim()}`]
-    }
+    const txtFile = path.resolve('./storage/youtube-cookies.txt')
 
-    // 2. Check cookie file (JSON or Netscape format)
-    const cookieFile = process.env.YOUTUBE_COOKIE_FILE || path.resolve('./storage/youtube-cookies.json')
-    if (fs.existsSync(cookieFile)) {
+    // 1. Cek apakah ada environment variable YOUTUBE_COOKIE
+    const envCookie = (process.env.YOUTUBE_COOKIE || '').trim()
+    if (envCookie.length > 20) {
         try {
-            const raw = fs.readFileSync(cookieFile, 'utf-8').trim()
-            if (raw.startsWith('[')) {
-                // It is JSON. Convert to Netscape format dynamically
-                const txtFile = path.resolve('./storage/youtube-cookies.txt')
-                let needConvert = true
-                if (fs.existsSync(txtFile)) {
-                    const jsonStat = fs.statSync(cookieFile)
-                    const txtStat = fs.statSync(txtFile)
-                    if (txtStat.mtimeMs > jsonStat.mtimeMs) {
-                        needConvert = false
+            if (envCookie.startsWith('[')) {
+                // Format JSON array
+                const arr = JSON.parse(envCookie)
+                const lines = [
+                    '# Netscape HTTP Cookie File',
+                    '# Generated from YOUTUBE_COOKIE JSON env',
+                    ''
+                ]
+                for (const c of arr) {
+                    if (!c.name || !c.value) continue
+                    const domain = c.domain || '.youtube.com'
+                    const sub = domain.startsWith('.') ? 'TRUE' : 'FALSE'
+                    const p = c.path || '/'
+                    const secure = c.secure === false ? 'FALSE' : 'TRUE'
+                    const expiry = c.expirationDate ? Math.round(c.expirationDate) : (c.expiry ? Math.round(c.expiry) : 2147483647)
+                    lines.push([domain, sub, p, secure, expiry, c.name, c.value].join('\t'))
+                }
+                fs.writeFileSync(txtFile, lines.join('\n') + '\n', 'utf-8')
+                return ['--cookies', txtFile]
+            } else if (envCookie.includes('# Netscape') || envCookie.includes('\tTRUE\t')) {
+                // Format Netscape raw text
+                fs.writeFileSync(txtFile, envCookie + '\n', 'utf-8')
+                return ['--cookies', txtFile]
+            } else if (envCookie.includes('=')) {
+                // Format Header String: "SID=xxx; HSID=yyy; ..."
+                const lines = [
+                    '# Netscape HTTP Cookie File',
+                    '# Generated from YOUTUBE_COOKIE header env',
+                    ''
+                ]
+                const pairs = envCookie.split(';')
+                for (const pair of pairs) {
+                    const trimmed = pair.trim()
+                    if (!trimmed) continue
+                    const eqIdx = trimmed.indexOf('=')
+                    if (eqIdx === -1) continue
+                    const name = trimmed.slice(0, eqIdx).trim()
+                    const value = trimmed.slice(eqIdx + 1).trim()
+                    if (name && value) {
+                        lines.push([`.youtube.com`, 'TRUE', '/', 'TRUE', '2147483647', name, value].join('\t'))
                     }
                 }
-
-                if (needConvert) {
-                    const arr = JSON.parse(raw)
-                    const lines = [
-                        '# Netscape HTTP Cookie File',
-                        '# This file is generated automatically from youtube-cookies.json. Do not edit directly.',
-                        ''
-                    ]
-                    for (const c of arr) {
-                        if (!c.name || !c.value) continue
-                        const domain = c.domain || '.youtube.com'
-                        const sub = domain.startsWith('.') ? 'TRUE' : 'FALSE'
-                        const path = c.path || '/'
-                        const secure = c.secure === false ? 'FALSE' : 'TRUE'
-                        const expiry = c.expirationDate ? Math.round(c.expirationDate) : (c.expiry ? Math.round(c.expiry) : 2147483647)
-                        lines.push([domain, sub, path, secure, expiry, c.name, c.value].join('\t'))
-                    }
-                    fs.writeFileSync(txtFile, lines.join('\n') + '\n', 'utf-8')
-                    botLogger.info('ytdlp', `Converted youtube-cookies.json to Netscape format at youtube-cookies.txt`)
-                }
+                fs.writeFileSync(txtFile, lines.join('\n') + '\n', 'utf-8')
                 return ['--cookies', txtFile]
             }
         } catch (e) {
-            botLogger.warn('ytdlp', `Gagal memproses cookie file: ${e.message}`)
+            botLogger.warn('ytdlp', `Gagal memproses YOUTUBE_COOKIE env: ${e.message}`)
         }
-        return ['--cookies', cookieFile]
     }
+
+    // 2. Cek file cookies di disk
+    const candidateFiles = [
+        process.env.YOUTUBE_COOKIE_FILE,
+        process.env.YTDLP_COOKIES_PATH,
+        path.resolve('./storage/youtube-cookies.txt'),
+        path.resolve('./storage/cookies.txt'),
+        path.resolve('./storage/youtube-cookies.json')
+    ].filter(Boolean)
+
+    for (const f of candidateFiles) {
+        if (!fs.existsSync(f)) continue
+        try {
+            const stat = fs.statSync(f)
+            if (stat.size < 10) continue
+
+            // Jika JSON file, otomatis konversi ke Netscape .txt
+            if (f.endsWith('.json')) {
+                const raw = fs.readFileSync(f, 'utf-8').trim()
+                if (raw.startsWith('[')) {
+                    let needConvert = true
+                    if (fs.existsSync(txtFile)) {
+                        const jsonStat = fs.statSync(f)
+                        const txtStat = fs.statSync(txtFile)
+                        if (txtStat.mtimeMs > jsonStat.mtimeMs) {
+                            needConvert = false
+                        }
+                    }
+
+                    if (needConvert) {
+                        const arr = JSON.parse(raw)
+                        const lines = [
+                            '# Netscape HTTP Cookie File',
+                            '# This file is generated automatically from youtube-cookies.json. Do not edit directly.',
+                            ''
+                        ]
+                        for (const c of arr) {
+                            if (!c.name || !c.value) continue
+                            const domain = c.domain || '.youtube.com'
+                            const sub = domain.startsWith('.') ? 'TRUE' : 'FALSE'
+                            const p = c.path || '/'
+                            const secure = c.secure === false ? 'FALSE' : 'TRUE'
+                            const expiry = c.expirationDate ? Math.round(c.expirationDate) : (c.expiry ? Math.round(c.expiry) : 2147483647)
+                            lines.push([domain, sub, p, secure, expiry, c.name, c.value].join('\t'))
+                        }
+                        fs.writeFileSync(txtFile, lines.join('\n') + '\n', 'utf-8')
+                        botLogger.info('ytdlp', `Converted youtube-cookies.json to Netscape format at youtube-cookies.txt`)
+                    }
+                    return ['--cookies', txtFile]
+                }
+            }
+
+            // File txt Netscape
+            return ['--cookies', f]
+        } catch (e) {
+            botLogger.warn('ytdlp', `Gagal membaca cookie file ${f}: ${e.message}`)
+        }
+    }
+
     return []
 }
 
@@ -242,7 +316,8 @@ export function ytdlpGetAudioUrl(youtubeUrl) {
             '--no-check-certificates',
             '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best',
             '--get-url',
-            '--extractor-args', 'youtube:player_client=android',
+            '--js-runtimes', 'node',
+            '--extractor-args', 'youtube:player_client=ios,android,web,mweb',
             '--buffer-size', '256k',
             ...getCookieArgs(),
             '--no-warnings',
@@ -296,23 +371,22 @@ export function ytdlpStream(youtubeUrl) {
         '--no-check-certificates',
         '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
         '--output', '-', // stream ke stdout
-        '--extractor-args', 'youtube:player_client=android',
+        '--js-runtimes', 'node',
+        '--extractor-args', 'youtube:player_client=ios,android,web,mweb',
         '--buffer-size', '256k',
         ...getCookieArgs(),
-        '--no-warnings', // Menghilangkan warning bawaan yang tidak perlu
+        '--no-warnings',
         youtubeUrl
     ]
 
     botLogger.info('ytdlp', `Membuka stream yt-dlp: ${youtubeUrl}`)
     const proc = spawn(ytdlpPath, args)
 
-    // Sediakan properti array internal baru untuk menampung log error
     proc.ytdlpLogs = []
 
     proc.stderr.on('data', d => {
         const msg = d.toString().trim()
         if (msg) {
-            // Naikkan level ke warn agar langsung tercetak di konsol panel kamu
             botLogger.warn('ytdlp-stderr', msg)
             proc.ytdlpLogs.push(msg)
         }

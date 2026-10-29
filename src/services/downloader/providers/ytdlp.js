@@ -39,7 +39,8 @@ export async function downloadYtdlp(url, options = {}) {
         '--no-check-certificates',
         '--write-info-json', // Tulis metadata ke file .info.json
         '-o', outTemplate,
-        '--extractor-args', 'youtube:player_client=android',
+        '--js-runtimes', 'node',
+        '--extractor-args', 'youtube:player_client=ios,android,web,mweb',
         '--max-filesize', '100M',
     ]
 
@@ -47,12 +48,6 @@ export async function downloadYtdlp(url, options = {}) {
     const cookieArgs = getCookieArgs()
     if (cookieArgs && cookieArgs.length > 0) {
         args.push(...cookieArgs)
-    } else {
-        const cookiesPath = process.env.YTDLP_COOKIES_PATH || path.resolve('./storage/cookies.txt')
-        if (fs.existsSync(cookiesPath)) {
-            args.push('--cookies', cookiesPath)
-            logger.debug(`[yt-dlp] Using cookies file: ${cookiesPath}`)
-        }
     }
 
     // Ensure ffmpeg location is passed if custom binary file is present
@@ -130,7 +125,7 @@ export async function downloadYtdlp(url, options = {}) {
 
         proc.stderr.on('data', d => stderr += d.toString())
 
-        proc.on('close', code => {
+        proc.on('close', async code => {
             if (code !== 0) {
                 // Hapus sisa file jika ada error
                 cleanupTempFiles(sessionId)
@@ -140,7 +135,21 @@ export async function downloadYtdlp(url, options = {}) {
                         reject(new Error(`yt-dlp error (${code}): ${stderr.slice(0, 200)} | HF fallback: ${hfErr.message}`))
                     })
                 }
-                return reject(new Error(`yt-dlp error (${code}): ${stderr.slice(0, 200)}`))
+
+                let errorMsg = stderr.slice(0, 300).trim()
+                if (errorMsg.includes('Sign in to confirm') || errorMsg.includes('bot verification') || errorMsg.includes('--cookies')) {
+                    errorMsg =
+                        `⚠️ *Verifikasi Bot YouTube Terdeteksi*\n\n` +
+                        `IP server bot dibatasi oleh YouTube ("Sign in to confirm you’re not a bot").\n\n` +
+                        `💡 *Solusi untuk Owner:*\n` +
+                        `1. Buka YouTube di browser & pasang ekstensi "Get cookies.txt LOCALLY".\n` +
+                        `2. Simpan cookies ke file "storage/youtube-cookies.txt" atau set env "YOUTUBE_COOKIE".\n` +
+                        `3. Bot akan otomatis menggunakan cookie tersebut untuk bypass verifikasi bot.`
+                } else {
+                    errorMsg = `yt-dlp error (${code}): ${errorMsg}`
+                }
+
+                return reject(new Error(errorMsg))
             }
 
             try {

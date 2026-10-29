@@ -250,6 +250,11 @@ async function sendMedia(sock, chatId, quotedMsg, result) {
 // ─────────────────────────────────────────────
 
 function formatError(message = '', platform = '') {
+    // Verifikasi bot YouTube terdeteksi
+    if (message.includes('Verifikasi Bot YouTube Terdeteksi') || message.includes('Sign in to confirm')) {
+        return message
+    }
+
     // File terlalu besar
     if (message.includes('terlalu besar') || message.includes('MB')) {
         return `File terlalu besar untuk dikirim via WhatsApp (max 50MB).`
