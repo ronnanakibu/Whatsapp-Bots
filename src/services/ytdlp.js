@@ -10,6 +10,7 @@ import { botLogger } from '../utils/logger.js'
 
 const isWindows = process.platform === 'win32'
 const BIN_DIR = path.resolve('./storage/bin')
+const BIN_PATH = path.resolve('./storage/bin/yt-dlp' + (isWindows ? '.exe' : ''))
 const YTDLP_URL = `https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp${isWindows ? '.exe' : ''}`
 
 // ─────────────────────────────────────────────

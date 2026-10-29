@@ -1,16 +1,35 @@
 // src/commands/general/notes.js
-// !notes — Simpan & ambil catatan personal per user
-// Alias: !note, !catatan, !memo
+// !notes — Simpan, kelola, & ambil catatan personal serta dokumen materi kuliah (PDF, DOCX, PPTX, gambar, teks)
+// Dilengkapi AI Study Summarizer untuk persiapan UTS/UAS & integrasi Cloud Vault.
 
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
+import { unwrapMessage } from '../../utils/message.js'
+import { logger } from '../../utils/logger.js'
+import { tgStorage } from '../../services/tgStorage.js'
+import { hermesService } from '../../services/hermes.js'
+import { isOwner } from '../../utils/permissions.js'
+
+let genAI = null
+if (process.env.GEMINI_API_KEY) {
+    try {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai')
+        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+    } catch (_) {}
+}
 
 // ─────────────────────────────────────────────
-// DB SETUP — pakai SQLite yang sama dengan memory
+// DB SETUP & STORAGE DIRECTORY
 // ─────────────────────────────────────────────
 
 const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db')
+const DOCS_DIR = path.resolve('./storage/documents')
+
+if (!fs.existsSync(DOCS_DIR)) {
+    fs.mkdirSync(DOCS_DIR, { recursive: true })
+}
 
 function getDb() {
     const db = new Database(DB_PATH)
@@ -22,11 +41,30 @@ function getDb() {
             user_jid    TEXT    NOT NULL,
             title       TEXT    NOT NULL,
             content     TEXT    NOT NULL,
+            file_path   TEXT,
+            file_name   TEXT,
+            file_size   INTEGER DEFAULT 0,
+            mime_type   TEXT,
+            tg_file_id  TEXT,
+            tag         TEXT    DEFAULT 'general',
+            is_public   INTEGER DEFAULT 0,
             created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
             updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
         );
         CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_jid, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_notes_public ON notes(is_public, created_at DESC);
     `)
+
+    // Safe migration
+    const columns = db.pragma('table_info(notes)').map(col => col.name)
+    if (!columns.includes('file_path')) db.exec('ALTER TABLE notes ADD COLUMN file_path TEXT;')
+    if (!columns.includes('file_name')) db.exec('ALTER TABLE notes ADD COLUMN file_name TEXT;')
+    if (!columns.includes('file_size')) db.exec('ALTER TABLE notes ADD COLUMN file_size INTEGER DEFAULT 0;')
+    if (!columns.includes('mime_type')) db.exec('ALTER TABLE notes ADD COLUMN mime_type TEXT;')
+    if (!columns.includes('tg_file_id')) db.exec('ALTER TABLE notes ADD COLUMN tg_file_id TEXT;')
+    if (!columns.includes('tag')) db.exec("ALTER TABLE notes ADD COLUMN tag TEXT DEFAULT 'general';")
+    if (!columns.includes('is_public')) db.exec('ALTER TABLE notes ADD COLUMN is_public INTEGER DEFAULT 0;')
+
     return db
 }
 
@@ -41,197 +79,746 @@ function formatDate(unixTs) {
     })
 }
 
+function formatFileSize(bytes) {
+    if (!bytes || isNaN(bytes)) return '0 B'
+    const units = ['B', 'KB', 'MB', 'GB']
+    let size = Number(bytes)
+    let unitIndex = 0
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024
+        unitIndex++
+    }
+    return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function getDocBadge(fileName = '', mimeType = '') {
+    const ext = path.extname(fileName || '').toLowerCase()
+    const mime = (mimeType || '').toLowerCase()
+
+    if (ext === '.pdf' || mime.includes('pdf')) return '📕 [PDF]'
+    if (ext === '.doc' || ext === '.docx' || mime.includes('word') || mime.includes('officedocument.wordprocessingml')) return '📘 [DOCX]'
+    if (ext === '.ppt' || ext === '.pptx' || mime.includes('powerpoint') || mime.includes('presentationml')) return '📙 [PPTX]'
+    if (ext === '.xls' || ext === '.xlsx' || mime.includes('excel') || mime.includes('spreadsheetml')) return '📗 [XLSX]'
+    if (ext === '.zip' || ext === '.rar' || ext === '.7z' || ext === '.tar' || ext === '.gz') return '🗜️ [ARCHIVE]'
+    if (ext === '.txt' || ext === '.md' || mime.includes('text/plain') || mime.includes('markdown')) return '📝 [TXT]'
+    if (ext === '.csv') return '📊 [CSV]'
+    if (['.js', '.ts', '.py', '.java', '.cpp', '.c', '.cs', '.html', '.css', '.json', '.php'].includes(ext)) return '💻 [CODE]'
+    if (mime.startsWith('image/')) return '🖼️ [IMG]'
+    if (mime.startsWith('audio/')) return '🎵 [AUDIO]'
+    if (mime.startsWith('video/')) return '🎬 [VIDEO]'
+    return '📁 [DOC]'
+}
+
+function sanitizeFileName(name) {
+    return (name || 'document')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_+/g, '_')
+}
+
+/**
+ * Ekstrak lampiran dokumen/media atau teks dari pesan langsung atau pesan yang dibalas (quoted)
+ */
+async function extractAttachmentAndText(ctx) {
+    const { msg, messageContent, from, sock } = ctx
+
+    // 1. Cek lampiran pada pesan saat ini (misal file dikirim dengan caption command)
+    const directUnwrapped = unwrapMessage(msg.message || messageContent)
+    if (directUnwrapped) {
+        for (const mType of ['documentMessage', 'imageMessage', 'videoMessage', 'audioMessage']) {
+            if (directUnwrapped[mType]) {
+                const info = directUnwrapped[mType]
+                const mime = info.mimetype || 'application/octet-stream'
+                let fileName = info.fileName || info.title || null
+                if (!fileName) {
+                    const ext = mType === 'imageMessage' ? 'jpg' : mType === 'audioMessage' ? 'mp3' : mType === 'videoMessage' ? 'mp4' : 'bin'
+                    fileName = `lampiran_${Date.now()}.${ext}`
+                }
+
+                try {
+                    const buffer = await downloadMediaMessage(
+                        msg,
+                        'buffer',
+                        {},
+                        { logger, reuploadRequest: sock?.updateMediaMessage }
+                    )
+                    if (buffer) {
+                        return {
+                            attachment: { buffer, fileName, mime, size: buffer.length },
+                            quotedText: null
+                        }
+                    }
+                } catch (e) {
+                    logger.warn('[Notes] Gagal download media langsung:', e.message)
+                }
+            }
+        }
+    }
+
+    // 2. Cek pesan yang dibalas (quoted message)
+    const firstKey = Object.keys(messageContent || {})[0]
+    const contextInfo = messageContent?.[firstKey]?.contextInfo ||
+                        messageContent?.extendedTextMessage?.contextInfo
+    const quotedRaw = contextInfo?.quotedMessage
+
+    if (quotedRaw) {
+        const quotedUnwrapped = unwrapMessage(quotedRaw)
+        if (quotedUnwrapped) {
+            for (const mType of ['documentMessage', 'imageMessage', 'videoMessage', 'audioMessage']) {
+                if (quotedUnwrapped[mType]) {
+                    const info = quotedUnwrapped[mType]
+                    const mime = info.mimetype || 'application/octet-stream'
+                    let fileName = info.fileName || info.title || null
+                    if (!fileName) {
+                        const ext = mType === 'imageMessage' ? 'jpg' : mType === 'audioMessage' ? 'mp3' : mType === 'videoMessage' ? 'mp4' : 'bin'
+                        fileName = `lampiran_${Date.now()}.${ext}`
+                    }
+
+                    const stanzaId = contextInfo.stanzaId
+                    const participant = contextInfo.participant
+                    const targetMsg = {
+                        key: {
+                            remoteJid: from,
+                            id: stanzaId ?? msg.key.id,
+                            fromMe: participant ? (participant === sock.user?.id || participant === sock.user?.lid) : false,
+                            participant: participant || undefined
+                        },
+                        message: quotedUnwrapped
+                    }
+
+                    try {
+                        const buffer = await downloadMediaMessage(
+                            targetMsg,
+                            'buffer',
+                            {},
+                            { logger, reuploadRequest: sock?.updateMediaMessage }
+                        )
+                        if (buffer) {
+                            return {
+                                attachment: { buffer, fileName, mime, size: buffer.length },
+                                quotedText: null
+                            }
+                        }
+                    } catch (e) {
+                        logger.warn('[Notes] Gagal download media quoted:', e.message)
+                    }
+                }
+            }
+        }
+
+        // Jika tidak ada media, periksa teks kutipan
+        const quotedText = quotedRaw?.conversation ||
+            quotedRaw?.extendedTextMessage?.text ||
+            quotedUnwrapped?.conversation ||
+            quotedUnwrapped?.extendedTextMessage?.text ||
+            null
+
+        if (quotedText) {
+            return { attachment: null, quotedText }
+        }
+    }
+
+    return { attachment: null, quotedText: null }
+}
+
+/**
+ * Mengambil buffer file catatan, baik dari disk lokal maupun Telegram Vault fallback
+ */
+async function getNoteFileBuffer(note) {
+    if (note.file_path && fs.existsSync(note.file_path)) {
+        try {
+            return fs.readFileSync(note.file_path)
+        } catch (e) {
+            logger.warn(`[Notes] Gagal membaca file lokal ${note.file_path}:`, e.message)
+        }
+    }
+
+    // Fallback: Restore dari Telegram Vault
+    if (note.tg_file_id && tgStorage.isConfigured) {
+        try {
+            logger.info(`[Notes] Mengunduh ulang file dari Telegram Vault (fileId: ${note.tg_file_id})...`)
+            const buf = await tgStorage.getFileBuffer(note.tg_file_id)
+            if (buf) {
+                try {
+                    const targetPath = note.file_path || path.join(DOCS_DIR, `${Date.now()}_${sanitizeFileName(note.file_name)}`)
+                    fs.writeFileSync(targetPath, buf)
+                } catch (_) {}
+                return buf
+            }
+        } catch (err) {
+            logger.error(`[Notes] Gagal restore dari Telegram Vault:`, err.message)
+        }
+    }
+
+    return null
+}
+
 // ─────────────────────────────────────────────
-// COMMAND
+// COMMAND DEFINITION
 // ─────────────────────────────────────────────
 
 export default {
     name: 'notes',
-    aliases: ['note', 'catatan', 'memo', 'n'],
+    aliases: ['note', 'catatan', 'memo', 'materi', 'doc', 'dokumen', 'kuliah', 'n'],
     category: 'general',
-    description: 'Simpan & ambil catatan personal.',
-    usage: '.notes add <judul> | <isi> | .notes list | !notes get <id> | !notes delete <id>',
-    example: '.notes add Ide Project | Bikin bot WA dengan Baileys',
+    description: 'Simpan & ambil catatan personal serta dokumen materi kuliah (PDF/DOCX/PPTX) dengan AI Summarizer.',
+    usage: '.notes add <judul> | <keterangan> (atau balas file/dokumen) | .notes list | .notes get <id> | .notes ringkas <id>',
+    example: '.materi add Kalkulus 2 | Pertemuan Integral Lipat (sambil balas file PDF)',
     cooldown: 2,
     permissions: ['user'],
 
     async execute(ctx) {
-        const { args, reply, react, sender } = ctx
+        const { args, reply, react, sender, from, msg, sock, commandName } = ctx
         const db = getDb()
+        const cmdAlias = (commandName || 'notes').toLowerCase()
 
         const sub = args[0]?.toLowerCase()
 
-        // ─── !notes list ───────────────────────────────
+        // ─── 1. LIST NOTES & MATERI ───────────────────
         if (!sub || sub === 'list' || sub === 'ls') {
-            const notes = db.prepare(`
-                SELECT id, title, created_at FROM notes
-                WHERE user_jid = ?
-                ORDER BY created_at DESC
-                LIMIT 20
-            `).all(sender)
+            const filter = args[1]?.toLowerCase()
+            let query = `SELECT * FROM notes WHERE (user_jid = ? OR is_public = 1)`
+            const params = [sender]
+
+            if (filter === 'materi' || filter === 'kuliah') {
+                query += ` AND (tag = 'materi' OR tag = 'kuliah')`
+            } else if (filter === 'doc' || filter === 'dokumen') {
+                query += ` AND file_name IS NOT NULL`
+            } else if (filter === 'public' || filter === 'publik') {
+                query += ` AND is_public = 1`
+            } else if (filter === 'my' || filter === 'pribadi') {
+                query += ` AND user_jid = ?`
+                params.push(sender)
+            }
+
+            query += ` ORDER BY created_at DESC LIMIT 25`
+            const notes = db.prepare(query).all(...params)
 
             if (!notes.length) {
                 return reply(
-                    `📝 *Catatan kamu kosong.*\n\n` +
-                    `Tambah dengan:\n*!notes add Judul | Isi catatan*`
+                    `📚 *Belum ada catatan atau dokumen materi tersimpan.*\n\n` +
+                    `*Cara Menyimpan:*\n` +
+                    `• Balas file PDF/Word/PPT dengan:\n  *!notes add <Judul> | <Keterangan>*\n` +
+                    `• Simpan materi kuliah bersama (publik):\n  *!materi add Struktur Data | Pertemuan 1*\n` +
+                    `• Simpan catatan teks biasa:\n  *!notes add Ide Projek | Bikin bot cerdas*`
                 )
             }
 
-            const list = notes.map((n, i) =>
-                `${i + 1}. [#${n.id}] *${n.title}*\n   _${formatDate(n.created_at)}_`
-            ).join('\n\n')
+            const listText = notes.map((n, i) => {
+                const isOwnerNote = n.user_jid === sender
+                const badge = n.file_name ? getDocBadge(n.file_name, n.mime_type) : '📝 [TEXT]'
+                const sizeInfo = n.file_size ? ` • ${formatFileSize(n.file_size)}` : ''
+                const publicBadge = n.is_public ? ' 🌐' : ''
+                const ownerLabel = isOwnerNote ? '' : ' _(Publik)_'
+                return `${i + 1}. [#${n.id}] ${badge} *${n.title}*${publicBadge}${ownerLabel}\n   📦 ${n.file_name || 'Catatan Teks'}${sizeInfo} • _${formatDate(n.created_at)}_`
+            }).join('\n\n')
 
-            return reply(`📝 *Catatan kamu (${notes.length}):*\n\n${list}\n\n_Ketik !notes get <id> untuk baca_`)
-        }
-
-        // ─── !notes add <judul> | <isi> ───────────────
-        if (sub === 'add' || sub === 'save' || sub === 'baru') {
-            const rawInput = args.slice(1).join(' ')
-
-            if (!rawInput) {
-                return reply(
-                    `❌ Format salah.\n\n` +
-                    `*!notes add Judul | Isi catatan*\n\n` +
-                    `Contoh:\n!notes add Meeting hari ini | Bahas fitur baru bot, deploy jam 3`
-                )
-            }
-
-            // Split judul & isi pakai separator "|"
-            const separatorIdx = rawInput.indexOf('|')
-            let title, content
-
-            if (separatorIdx === -1) {
-                // Kalau tidak ada "|", judul = kata pertama, isi = sisanya
-                const words = rawInput.trim().split(' ')
-                title = words[0]
-                content = words.length > 1 ? words.slice(1).join(' ') : words[0]
-            } else {
-                title = rawInput.slice(0, separatorIdx).trim()
-                content = rawInput.slice(separatorIdx + 1).trim()
-            }
-
-            if (!title || !content) {
-                return reply(`❌ Judul dan isi catatan tidak boleh kosong.`)
-            }
-
-            // Cek limit per user (max 50 notes)
-            const count = db.prepare('SELECT COUNT(*) as n FROM notes WHERE user_jid = ?').get(sender)?.n ?? 0
-            if (count >= 50) {
-                return reply(`⚠️ Catatan kamu sudah penuh (50/50).\nHapus dulu yang lama: *!notes delete <id>*`)
-            }
-
-            const result = db.prepare(`
-                INSERT INTO notes (user_jid, title, content) VALUES (?, ?, ?)
-            `).run(sender, title, content)
-
-            await react('✅')
             return reply(
-                `✅ *Catatan disimpan!*\n\n` +
-                `📌 *[#${result.lastInsertRowid}] ${title}*\n` +
-                `${content}\n\n` +
-                `_Ambil lagi dengan: !notes get ${result.lastInsertRowid}_`
+                `📚 *DAFTAR CATATAN & DOKUMEN MATERI (${notes.length}):*\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n\n` +
+                `${listText}\n\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n` +
+                `💡 *Navigasi:*\n` +
+                `• Unduh/Ambil: *!notes get <id>*\n` +
+                `• Rangkum AI: *!notes ringkas <id>*\n` +
+                `• Filter: *!notes list materi* | *!notes list doc*`
             )
         }
 
-        // ─── !notes get <id> ──────────────────────────
-        if (sub === 'get' || sub === 'read' || sub === 'baca') {
-            const id = parseInt(args[1])
-            if (!id) return reply(`❌ Kasih ID catatan.\nContoh: !notes get 3`)
+        // ─── 2. ADD / SAVE NOTE ATAU DOKUMEN ──────────
+        if (['add', 'save', 'simpan', 'upload', 'baru'].includes(sub)) {
+            let rawInput = args.slice(1).join(' ').trim()
+            const isMateriCmd = ['materi', 'doc', 'dokumen', 'kuliah'].includes(cmdAlias)
 
-            const note = db.prepare(`
-                SELECT * FROM notes WHERE id = ? AND user_jid = ?
-            `).get(id, sender)
+            let isPublic = isMateriCmd ? 1 : 0
+            let customTag = isMateriCmd ? 'materi' : 'general'
 
-            if (!note) return reply(`❌ Catatan #${id} tidak ditemukan.`)
+            if (rawInput.includes('--public') || rawInput.includes('#public') || rawInput.includes('--share')) {
+                isPublic = 1
+                rawInput = rawInput.replace(/--public|#public|--share/gi, '').trim()
+            }
+            if (rawInput.includes('--materi') || rawInput.includes('#materi')) {
+                customTag = 'materi'
+                rawInput = rawInput.replace(/--materi|#materi/gi, '').trim()
+            }
+
+            const { attachment, quotedText } = await extractAttachmentAndText(ctx)
+
+            if (!rawInput && !attachment && !quotedText) {
+                return reply(
+                    `❌ *Format Penyimpanan Dokumen / Catatan:*\n\n` +
+                    `• *Simpan Dokumen:* Balas/kirim file dengan caption:\n` +
+                    `  *!notes add <Judul> | <Keterangan>*\n` +
+                    `  _Contoh: !notes add Modul UTS Kimia | Rangkuman rumus bab 1-4_\n\n` +
+                    `• *Simpan Materi Kuliah Bersama (Publik):*\n` +
+                    `  *!materi add Kalkulus 2 | Pertemuan Integral Lipat*\n\n` +
+                    `• *Simpan Catatan Teks Biasa:*\n` +
+                    `  *!notes add Jadwal Ujian | Senin 10 Nov jam 08.00*`
+                )
+            }
+
+            const sepIdx = rawInput.indexOf('|')
+            let title = ''
+            let content = ''
+
+            if (sepIdx !== -1) {
+                title = rawInput.slice(0, sepIdx).trim()
+                content = rawInput.slice(sepIdx + 1).trim()
+            } else {
+                if (attachment) {
+                    title = rawInput || attachment.fileName
+                    content = quotedText || 'Dokumen materi/catatan tersimpan.'
+                } else if (quotedText) {
+                    title = rawInput || 'Catatan Kutipan'
+                    content = quotedText
+                } else {
+                    const words = rawInput.split(' ')
+                    title = words[0]
+                    content = words.length > 1 ? words.slice(1).join(' ') : words[0]
+                }
+            }
+
+            if (!title) {
+                title = attachment?.fileName || 'Catatan Baru'
+            }
+            if (!content) {
+                content = attachment ? `File lampiran: ${attachment.fileName}` : title
+            }
+
+            // Cek kuota penyimpanan per user (maks 100 catatan, owner unmetered)
+            const isUserOwner = isOwner(sender)
+            const count = db.prepare('SELECT COUNT(*) as n FROM notes WHERE user_jid = ?').get(sender)?.n ?? 0
+            if (count >= 100 && !isUserOwner) {
+                return reply(`⚠️ Catatan kamu sudah mencapai batas maksimal (100 catatan).\nHapus catatan lama dengan: *!notes delete <id>*`)
+            }
+
+            let savedFilePath = null
+            let savedFileName = null
+            let savedFileSize = 0
+            let savedMimeType = null
+            let tgFileId = null
+
+            if (attachment) {
+                if (attachment.size > 50 * 1024 * 1024) {
+                    return reply(`❌ File terlalu besar (${formatFileSize(attachment.size)}). Batas maksimal unggahan adalah 50 MB.`)
+                }
+
+                await react('⏳')
+                const safeName = sanitizeFileName(attachment.fileName)
+                const diskName = `${Date.now()}_${safeName}`
+                savedFilePath = path.join(DOCS_DIR, diskName)
+                savedFileName = attachment.fileName
+                savedFileSize = attachment.size
+                savedMimeType = attachment.mime
+
+                try {
+                    fs.writeFileSync(savedFilePath, attachment.buffer)
+                } catch (writeErr) {
+                    logger.error('[Notes] Gagal menulis file ke disk lokal:', writeErr.message)
+                    return reply(`❌ Gagal menyimpan berkas ke penyimpanan server: ${writeErr.message}`)
+                }
+
+                // Cloud backup ke Telegram Vault bila aktif
+                if (tgStorage.isConfigured) {
+                    try {
+                        const tgRes = await tgStorage.uploadMedia(attachment.buffer, savedFileName, {
+                            caption: `[VAULT-DOC] #${title} (${savedFileName})`,
+                            mimetype: savedMimeType,
+                            type: 'document'
+                        })
+                        if (tgRes?.fileId) {
+                            tgFileId = tgRes.fileId
+                        }
+                    } catch (tgErr) {
+                        logger.warn('[Notes] Telegram Vault backup error (non-fatal):', tgErr.message)
+                    }
+                }
+            }
+
+            const insertStmt = db.prepare(`
+                INSERT INTO notes (
+                    user_jid, title, content, file_path, file_name, file_size, mime_type, tg_file_id, tag, is_public
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `)
+
+            const result = insertStmt.run(
+                sender,
+                title,
+                content,
+                savedFilePath,
+                savedFileName,
+                savedFileSize,
+                savedMimeType,
+                tgFileId,
+                customTag,
+                isPublic
+            )
+
+            await react('✅')
+
+            const newId = result.lastInsertRowid
+            const badge = savedFileName ? getDocBadge(savedFileName, savedMimeType) : '📝 [TEXT]'
+            const fileDetails = savedFileName
+                ? `\n📎 *Berkas:* ${savedFileName} (${formatFileSize(savedFileSize)})\n` +
+                  `☁️ *Penyimpanan:* Terenkripsi & Terarsip ${tgFileId ? 'di Cloud Vault' : 'di Sistem'}`
+                : ''
+
+            const publicNote = isPublic ? '\n🌐 *Status:* Terbuka untuk umum / grup' : ''
 
             return reply(
-                `📌 *[#${note.id}] ${note.title}*\n\n` +
+                `✅ *Catatan & Materi Berhasil Disimpan!*\n\n` +
+                `📌 *[#${newId}] ${badge} ${title}*${publicNote}\n` +
+                `📝 ${content}${fileDetails}\n\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n` +
+                `💡 *Aksi Cepat:*\n` +
+                `• Ambil / Unduh: *!notes get ${newId}*\n` +
+                `${savedFileName ? `• Ringkas AI: *!notes ringkas ${newId}*\n` : ''}` +
+                `• Hapus: *!notes delete ${newId}*`
+            )
+        }
+
+        // ─── 3. GET / UNDUH / AMBIL DOKUMEN / CATATAN ─
+        if (['get', 'unduh', 'kirim', 'download'].includes(sub)) {
+            const id = parseInt(args[1], 10)
+            if (!id) return reply(`❌ Berikan ID catatan/materi.\nContoh: *!notes get 3*`)
+
+            const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(id)
+            if (!note) return reply(`❌ Catatan/materi #${id} tidak ditemukan.`)
+
+            const isUserOwner = isOwner(sender)
+            const canAccess = note.user_jid === sender || note.is_public === 1 || isUserOwner
+
+            if (!canAccess) {
+                return reply(`🔒 Catatan #${id} bersifat pribadi milik pengguna lain.`)
+            }
+
+            // Jika memiliki lampiran berkas fisik
+            if (note.file_name || note.file_path) {
+                await react('⏳')
+                const fileBuffer = await getNoteFileBuffer(note)
+
+                if (!fileBuffer) {
+                    return reply(
+                        `⚠️ *Berkas fisik tidak ditemukan di server.*\n\n` +
+                        `📌 *[#${note.id}] ${note.title}*\n` +
+                        `📝 ${note.content}\n` +
+                        `📎 *Nama Berkas:* ${note.file_name || 'Tidak diketahui'}\n\n` +
+                        `_Berkas mungkin telah dibersihkan dari penyimpanan lokal dan Cloud Vault sedang tidak tersedia._`
+                    )
+                }
+
+                const badge = getDocBadge(note.file_name, note.mime_type)
+                const caption =
+                    `📁 *[${badge}] ${note.title}*\n` +
+                    `━━━━━━━━━━━━━━━━━━━━\n` +
+                    `${note.content ? `📝 ${note.content}\n\n` : ''}` +
+                    `📦 *Ukuran:* ${formatFileSize(note.file_size || fileBuffer.length)}\n` +
+                    `📅 *Disimpan:* ${formatDate(note.created_at)}\n` +
+                    `━━━━━━━━━━━━━━━━━━━━\n` +
+                    `_Ketik !notes ringkas ${note.id} untuk rangkuman studi AI materi ini_`
+
+                await sock.sendMessage(from, {
+                    document: fileBuffer,
+                    fileName: note.file_name || `dokumen_${note.id}.pdf`,
+                    mimetype: note.mime_type || 'application/octet-stream',
+                    caption
+                }, { quoted: msg })
+
+                await react('✅')
+                return
+            }
+
+            // Catatan teks biasa
+            const publicLabel = note.is_public ? ' 🌐 (Publik)' : ''
+            return reply(
+                `📌 *[#${note.id}] ${note.title}*${publicLabel}\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n\n` +
                 `${note.content}\n\n` +
-                `_Dibuat: ${formatDate(note.created_at)}_\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n` +
+                `📅 *Dibuat:* ${formatDate(note.created_at)}\n` +
                 `_Edit: !notes edit ${note.id} | konten baru_`
             )
         }
 
-        // ─── !notes edit <id> | <konten baru> ────────
+        // ─── 4. RINGKAS / BACA MATERI DENGAN AI ──────
+        if (['ringkas', 'summary', 'baca', 'analisis', 'rekap'].includes(sub)) {
+            const id = parseInt(args[1], 10)
+            if (!id) return reply(`❌ Berikan ID catatan/materi.\nContoh: *!notes ringkas 3*`)
+
+            const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(id)
+            if (!note) return reply(`❌ Catatan/materi #${id} tidak ditemukan.`)
+
+            const isUserOwner = isOwner(sender)
+            const canAccess = note.user_jid === sender || note.is_public === 1 || isUserOwner
+
+            if (!canAccess) {
+                return reply(`🔒 Catatan #${id} bersifat pribadi milik pengguna lain.`)
+            }
+
+            await react('⏳')
+            const startTime = Date.now()
+
+            let docBuffer = null
+            if (note.file_name || note.file_path) {
+                docBuffer = await getNoteFileBuffer(note)
+            }
+
+            const mime = (note.mime_type || '').toLowerCase()
+            const fileName = (note.file_name || '').toLowerCase()
+            const isPdf = mime.includes('pdf') || fileName.endsWith('.pdf')
+            const isImage = mime.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(fileName)
+            const isTextDoc = mime.startsWith('text/') || /\.(txt|md|csv|json|js|py)$/i.test(fileName)
+
+            let summaryResult = ''
+
+            // Kasus 1: Dokumen PDF via Gemini Document API
+            if (isPdf && docBuffer && genAI) {
+                try {
+                    let model
+                    try {
+                        model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+                    } catch (_) {
+                        model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+                    }
+
+                    const base64Doc = docBuffer.toString('base64')
+                    const studyPrompt =
+                        `Kamu adalah asisten dosen dan tutor akademik pintar untuk persiapan ujian UTS/UAS.\n` +
+                        `Analisis isi dokumen materi kuliah/catatan "${note.title}" ini dan buat ringkasan komprehensif dalam bahasa Indonesia.\n\n` +
+                        `Format Jawaban Terstruktur:\n` +
+                        `1. 🎯 *Topik Utama & Esensi Materi*\n` +
+                        `2. 🔑 *Konsep-Konsep Kunci & Teori Krusial*\n` +
+                        `3. 📐 *Rumus / Definisi / Prosedur Penting*\n` +
+                        `4. 💡 *Takeaways & Tips Menghadapi Ujian*\n` +
+                        `5. ❓ *3 Contoh Pertanyaan Prediksi Ujian beserta Jawabannya Singkat*\n\n` +
+                        `Gunakan format WhatsApp markdown rapi dengan bullet points, tanpa kata pembuka basa-basi.`
+
+                    const result = await model.generateContent([
+                        {
+                            inlineData: {
+                                mimeType: 'application/pdf',
+                                data: base64Doc
+                            }
+                        },
+                        { text: studyPrompt }
+                    ])
+                    summaryResult = result.response?.text()?.trim() || ''
+                } catch (geminiErr) {
+                    logger.error('[Notes] Gemini PDF analysis error:', geminiErr.message)
+                }
+            }
+
+            // Kasus 2: Gambar Slide / Papan Tulis
+            if (!summaryResult && isImage && docBuffer && genAI) {
+                try {
+                    let model
+                    try {
+                        model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+                    } catch (_) {
+                        model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+                    }
+
+                    const base64Img = docBuffer.toString('base64')
+                    const imgPrompt =
+                        `Kamu adalah tutor akademik cerdas. Bacalah isi catatan gambar/slide/papan tulis ini secara cermat.\n` +
+                        `Transkripsikan isi teks/rumus/bagan, jelaskan konsep intinya, dan buatkan rangkuman terstruktur untuk persiapan belajar/ujian mahasiswa.`
+
+                    const result = await model.generateContent([
+                        {
+                            inlineData: {
+                                mimeType: note.mime_type || 'image/jpeg',
+                                data: base64Img
+                            }
+                        },
+                        { text: imgPrompt }
+                    ])
+                    summaryResult = result.response?.text()?.trim() || ''
+                } catch (imgErr) {
+                    logger.error('[Notes] Gemini Image analysis error:', imgErr.message)
+                }
+            }
+
+            // Kasus 3: Dokumen Teks atau Catatan Teks Biasa via Hermes Agent
+            if (!summaryResult) {
+                let textSource = note.content || ''
+                if (isTextDoc && docBuffer) {
+                    textSource = docBuffer.toString('utf-8').slice(0, 15000)
+                }
+
+                if (textSource.trim().length > 0) {
+                    const hermesPrompt =
+                        `Judul Materi: "${note.title}"\n\n` +
+                        `Isi Materi/Catatan:\n"""\n${textSource}\n"""\n\n` +
+                        `Sebagai tutor akademik cerdas, tolong rangkum materi ini dengan rapi, berikan poin-poin penting serta prediksi soal latihan untuk bahan belajar/ujian.`
+
+                    try {
+                        const hermesRes = await hermesService.chat({
+                            chatId: ctx.chatId,
+                            prompt: hermesPrompt,
+                            systemPrompt: 'Kamu adalah asisten akademik cerdas. Rangkumlah materi kuliah/catatan secara terstruktur, komprehensif, dan mudah dipahami mahasiswa.'
+                        })
+                        summaryResult = hermesRes.text?.trim() || ''
+                    } catch (hermesErr) {
+                        logger.error('[Notes] Hermes summarization error:', hermesErr.message)
+                    }
+                }
+            }
+
+            if (!summaryResult) {
+                await react('❌')
+                return reply(`❌ Gagal merangkum catatan #${id}. Pastikan format file didukung (PDF, gambar slide, atau teks).`)
+            }
+
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+            await react('✅')
+
+            return reply(
+                `🎓 *[STUDY GUIDE & RANGKUMAN: ${note.title.toUpperCase()}]*\n` +
+                `⚡ *Diproses dalam:* ${elapsed}s | *ID:* #${note.id}\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n\n` +
+                `${summaryResult}\n\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n` +
+                `_Unduh file materi lengkap dengan: !notes get ${note.id}_`
+            )
+        }
+
+        // ─── 5. EDIT CATATAN ──────────────────────────
         if (sub === 'edit' || sub === 'update') {
             const rawInput = args.slice(1).join(' ')
             const sepIdx = rawInput.indexOf('|')
 
             if (sepIdx === -1) {
-                return reply(`❌ Format: *!notes edit <id> | konten baru*`)
+                return reply(`❌ Format: *!notes edit <id> | keterangan baru*`)
             }
 
-            const id = parseInt(rawInput.slice(0, sepIdx).trim())
+            const id = parseInt(rawInput.slice(0, sepIdx).trim(), 10)
             const newContent = rawInput.slice(sepIdx + 1).trim()
 
-            if (!id || !newContent) return reply(`❌ ID atau konten tidak valid.`)
+            if (!id || !newContent) return reply(`❌ ID atau keterangan baru tidak valid.`)
 
-            const note = db.prepare('SELECT id FROM notes WHERE id = ? AND user_jid = ?').get(id, sender)
+            const note = db.prepare('SELECT id, user_jid FROM notes WHERE id = ?').get(id)
             if (!note) return reply(`❌ Catatan #${id} tidak ditemukan.`)
+
+            const isUserOwner = isOwner(sender)
+            if (note.user_jid !== sender && !isUserOwner) {
+                return reply(`🚫 Kamu hanya bisa mengedit catatan milikmu sendiri.`)
+            }
 
             db.prepare(`
-                UPDATE notes SET content = ?, updated_at = unixepoch() WHERE id = ? AND user_jid = ?
-            `).run(newContent, id, sender)
+                UPDATE notes SET content = ?, updated_at = unixepoch() WHERE id = ?
+            `).run(newContent, id)
 
             await react('✅')
-            return reply(`✅ Catatan #${id} diupdate!`)
+            return reply(`✅ Catatan #${id} berhasil diupdate!`)
         }
 
-        // ─── !notes delete <id> ───────────────────────
-        if (sub === 'delete' || sub === 'del' || sub === 'hapus' || sub === 'rm') {
-            const id = parseInt(args[1])
-            if (!id) return reply(`❌ Kasih ID catatan.\nContoh: !notes delete 3`)
+        // ─── 6. DELETE / HAPUS CATATAN ────────────────
+        if (['delete', 'del', 'hapus', 'rm'].includes(sub)) {
+            const id = parseInt(args[1], 10)
+            if (!id) return reply(`❌ Berikan ID catatan yang ingin dihapus.\nContoh: *!notes delete 3*`)
 
-            const note = db.prepare('SELECT id, title FROM notes WHERE id = ? AND user_jid = ?').get(id, sender)
+            const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(id)
             if (!note) return reply(`❌ Catatan #${id} tidak ditemukan.`)
 
-            db.prepare('DELETE FROM notes WHERE id = ? AND user_jid = ?').run(id, sender)
+            const isUserOwner = isOwner(sender)
+            if (note.user_jid !== sender && !isUserOwner) {
+                return reply(`🚫 Kamu hanya bisa menghapus catatan milikmu sendiri.`)
+            }
+
+            // Hapus berkas fisik bila ada di disk
+            if (note.file_path && fs.existsSync(note.file_path)) {
+                try {
+                    fs.unlinkSync(note.file_path)
+                } catch (e) {
+                    logger.warn(`[Notes] Gagal menghapus berkas fisik ${note.file_path}:`, e.message)
+                }
+            }
+
+            db.prepare('DELETE FROM notes WHERE id = ?').run(id)
 
             await react('🗑️')
-            return reply(`🗑️ Catatan #${id} *"${note.title}"* dihapus.`)
+            return reply(`🗑️ Catatan #${id} *"${note.title}"* berhasil dihapus.`)
         }
 
-        // ─── !notes clear ─────────────────────────────
+        // ─── 7. CLEAR SEMUA CATATAN PRIBADI ──────────
         if (sub === 'clear' || sub === 'reset') {
-            const count = db.prepare('SELECT COUNT(*) as n FROM notes WHERE user_jid = ?').get(sender)?.n ?? 0
-            if (count === 0) return reply(`📝 Catatan kamu sudah kosong.`)
+            const userNotes = db.prepare('SELECT * FROM notes WHERE user_jid = ?').all(sender)
+            if (!userNotes.length) return reply(`📝 Catatan kamu sudah kosong.`)
+
+            for (const n of userNotes) {
+                if (n.file_path && fs.existsSync(n.file_path)) {
+                    try { fs.unlinkSync(n.file_path) } catch (_) {}
+                }
+            }
 
             db.prepare('DELETE FROM notes WHERE user_jid = ?').run(sender)
             await react('🗑️')
-            return reply(`🗑️ Semua ${count} catatan dihapus.`)
+            return reply(`🗑️ Berhasil menghapus semua *${userNotes.length}* catatan pribadi milikmu.`)
         }
 
-        // ─── !notes search <keyword> ──────────────────
+        // ─── 8. SEARCH / CARI CATATAN & MATERI ────────
         if (sub === 'search' || sub === 'cari') {
             const keyword = args.slice(1).join(' ').trim()
-            if (!keyword) return reply(`❌ Kasih keyword.\nContoh: !notes search meeting`)
+            if (!keyword) return reply(`❌ Berikan kata kunci pencarian.\nContoh: *!notes search kalkulus*`)
 
-            const results = db.prepare(`
-                SELECT id, title, content, created_at FROM notes
-                WHERE user_jid = ? AND (title LIKE ? OR content LIKE ?)
-                ORDER BY created_at DESC LIMIT 10
-            `).all(sender, `%${keyword}%`, `%${keyword}%`)
+            const isUserOwner = isOwner(sender)
+            const baseWhere = isUserOwner ? '1=1' : '(user_jid = ? OR is_public = 1)'
+            const params = isUserOwner ? [] : [sender]
 
-            if (!results.length) return reply(`🔍 Tidak ada catatan yang cocok dengan "*${keyword}*"`)
+            const query = `
+                SELECT * FROM notes
+                WHERE ${baseWhere} AND (
+                    title LIKE ? OR content LIKE ? OR file_name LIKE ? OR tag LIKE ?
+                )
+                ORDER BY created_at DESC LIMIT 15
+            `
+            const term = `%${keyword}%`
+            params.push(term, term, term, term)
 
-            const list = results.map(n =>
-                `[#${n.id}] *${n.title}*\n_${n.content.slice(0, 80)}${n.content.length > 80 ? '...' : ''}_`
-            ).join('\n\n')
+            const results = db.prepare(query).all(...params)
 
-            return reply(`🔍 *Hasil pencarian "${keyword}":*\n\n${list}`)
+            if (!results.length) {
+                return reply(`🔍 Tidak ada catatan atau dokumen yang cocok dengan kata kunci "*${keyword}*".`)
+            }
+
+            const list = results.map(n => {
+                const badge = n.file_name ? getDocBadge(n.file_name, n.mime_type) : '📝 [TEXT]'
+                const sizeInfo = n.file_size ? ` (${formatFileSize(n.file_size)})` : ''
+                return `[#${n.id}] ${badge} *${n.title}*${sizeInfo}\n_${n.content.slice(0, 80)}${n.content.length > 80 ? '...' : ''}_`
+            }).join('\n\n')
+
+            return reply(
+                `🔍 *HASIL PENCARIAN "${keyword.toUpperCase()}" (${results.length}):*\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n\n` +
+                `${list}\n\n` +
+                `━━━━━━━━━━━━━━━━━━━━\n` +
+                `_Gunakan !notes get <id> untuk mengunduh atau membaca._`
+            )
         }
 
-        // ─── Help fallback ────────────────────────────
+        // ─── 9. PANDUAN LENGKAP (HELP FALLBACK) ───────
         return reply(
-            `📝 *!notes — Catatan Personal*\n\n` +
-            `*!notes list* — Lihat semua catatan\n` +
-            `*!notes add Judul | Isi* — Tambah catatan\n` +
-            `*!notes get <id>* — Baca catatan\n` +
-            `*!notes edit <id> | konten baru* — Edit\n` +
-            `*!notes delete <id>* — Hapus satu\n` +
-            `*!notes search <kata>* — Cari catatan\n` +
-            `*!notes clear* — Hapus semua\n\n` +
-            `_Max 50 catatan per user_`
+            `📚 *PANDUAN CATATAN & DOKUMEN MATERI KULIAH*\n` +
+            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `Simpan dokumen materi kuliah (PDF, Word, PPTX, gambar) atau catatan personal langsung di bot:\n\n` +
+            `📌 *1. Menyimpan Berkas / Materi:*\n` +
+            `• Balas file PDF/Word/PPT dengan:\n` +
+            `  *!notes add <Judul> | <Keterangan>*\n` +
+            `• Atau materi bersama (publik):\n` +
+            `  *!materi add Struktur Data | Bab Pohon Biner*\n` +
+            `• Atau simpan catatan teks biasa:\n` +
+            `  *!notes add Ide Projek | Rancang Bot Cerdas*\n\n` +
+            `📥 *2. Mengambil & Mengunduh Berkas:*\n` +
+            `• *!notes get <id>* atau *!materi get <id>*\n\n` +
+            `🎓 *3. Rangkuman & Bedah Materi AI (UTS/UAS Mode):*\n` +
+            `• *!notes ringkas <id>* atau *!materi ringkas <id>*\n\n` +
+            `📋 *4. Navigasi & Pengelolaan:*\n` +
+            `• *!notes list* — Lihat semua catatan & dokumen\n` +
+            `• *!notes list materi* — Filter hanya materi kuliah\n` +
+            `• *!notes search <kata>* — Cari materi berdasarkan topik\n` +
+            `• *!notes edit <id> | teks baru* — Edit keterangan\n` +
+            `• *!notes delete <id>* — Hapus dokumen/catatan\n` +
+            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `_Kapasitas hingga 100 catatan per user, berkas fisik terarsip aman._`
         )
     }
 }
