@@ -11,10 +11,25 @@ const __dirname = path.dirname(__filename)
 export default {
     name: 'uploadmusic',
     aliases: ['musicupload', 'manualmusic'],
-    category: 'entertainments',
+    category: 'entertainment',
+    cooldown: 30,
     description: 'Upload lagu manual & generate thumbnail otomatis, lalu upload ke YouTube.',
-    usage: '!uploadmusic [prompt] (sambil mereply audio/MP3)',
-    permissions: ['owner'], // Hanya owner
+    usage: '.uploadmusic [prompt] (sambil mereply audio/MP3)',
+    example: '.uploadmusic epic battle song with heavy bass (reply audio)',
+    permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['uploadmusic', 'musicupload', 'youtube', 'suno', 'audio', 'entertainment', 'owner'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Prompt atau vibe untuk metadata dan cover art lagu',
+                required: true
+            }
+        },
+        required: ['prompt']
+    },
     
     async execute(ctx) {
         const { msg, args, reply, react, chatId, sock } = ctx

@@ -15,6 +15,19 @@ export default {
     example: '.fact astronomi',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['fact', 'fakta', 'knowledge', 'edukasi', 'sains', 'trivia'],
+    params: {
+        type: 'object',
+        properties: {
+            topik: {
+                type: 'string',
+                description: 'Topik fakta yang diinginkan (sains, teknologi, sejarah, alam, psikologi, matematika, fisika, biologi, astronomi, kimia)',
+                enum: ['sains', 'teknologi', 'sejarah', 'alam', 'psikologi', 'matematika', 'fisika', 'biologi', 'astronomi', 'kimia']
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react } = ctx

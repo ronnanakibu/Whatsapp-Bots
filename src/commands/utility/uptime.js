@@ -4,8 +4,8 @@
 export default {
     name: 'uptime',
     aliases: ['cekweb', 'isdown', 'checksite'],
-    category: 'utility',
-    description: 'Cek apakah sebuah website sedang up atau down',
+    category: 'tools',
+    description: 'Cek apakah website/URL sedang up atau down (HTTP check). Untuk status bot, gunakan .aboutbots.',
     usage: '.uptime [url]',
     example: '.uptime https://google.com',
     cooldown: 5,

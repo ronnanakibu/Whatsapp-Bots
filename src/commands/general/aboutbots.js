@@ -7,8 +7,16 @@ export default {
     category: 'general',
     description: 'Menampilkan detail profil developer serta mindmap arsitektur sistem WABOT 2.0',
     usage: '.aboutbots',
+    example: '.aboutbots',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['aboutbots', 'about', 'botinfo', 'profil', 'arsitektur', 'mindmap', 'developer', 'uptime'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply } = ctx

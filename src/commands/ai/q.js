@@ -13,6 +13,19 @@ export default {
     example: '.ask siapa penemu listrik?',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['q', 'ai', 'ask', 'tanya', 'chat', 'hermes', 'llm', 'reasoning'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Pertanyaan atau pesan obrolan untuk AI',
+                required: true
+            }
+        },
+        required: ['prompt']
+    },
 
     async execute(ctx) {
         const { args, reply, react, chatId, msg, messageContent } = ctx

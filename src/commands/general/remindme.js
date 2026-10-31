@@ -365,6 +365,22 @@ export default {
     example: '.remindme 30m Minum obat | .remindme besok jam 9 Meeting | .remindme --reset',
     cooldown: 2,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['remindme', 'remind', 'ingatkan', 'alarm', 'pengingat', 'jadwal', 'general'],
+    params: {
+        type: 'object',
+        properties: {
+            waktu: {
+                type: 'string',
+                description: 'Durasi atau waktu alarm (contoh: "30m", "besok jam 9", "5/06/2026 15:00", atau "--reset")'
+            },
+            pesan: {
+                type: 'string',
+                description: 'Isi pesan pengingat'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sender, chatId, sock, messageContent } = ctx

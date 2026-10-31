@@ -70,6 +70,18 @@ export default {
     example: '.changelogs\n.changelogs list\n.changelogs v2.1.0\n.changelogs git',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['changelogs', 'changelog', 'update', 'releases', 'versi', 'fitur', 'general'],
+    params: {
+        type: 'object',
+        properties: {
+            option: {
+                type: 'string',
+                description: 'Opsi tampilan changelog: "list", versi tertentu (contoh: "v5.26.0"), atau "git"'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply } = ctx

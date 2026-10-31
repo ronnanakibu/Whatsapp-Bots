@@ -30,8 +30,16 @@ export default {
     category: 'entertainment',
     description: 'Random dare challenge untuk game Truth or Dare',
     usage: '.dare',
+    example: '.dare',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['dare', 'tantangan', 'game', 'fun', 'tod', 'truthordare', 'entertainment'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react } = ctx

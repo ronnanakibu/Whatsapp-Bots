@@ -9,6 +9,18 @@ export default {
     example: '.template drake',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['template', 'meme', 'mentahan', 'imgflip', 'drake', 'entertainment'],
+    params: {
+        type: 'object',
+        properties: {
+            nama_meme: {
+                type: 'string',
+                description: 'Nama atau kata kunci template meme yang dicari (contoh: "drake", "distracted boyfriend")'
+            }
+        },
+        required: []
+    },
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx
 

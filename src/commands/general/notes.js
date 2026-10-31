@@ -401,6 +401,22 @@ export default {
     example: '.materi add Kalkulus 2 | Pertemuan Integral Lipat (sambil balas file PDF)',
     cooldown: 2,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['notes', 'catatan', 'memo', 'materi', 'dokumen', 'kuliah', 'pdf', 'summarizer', 'general'],
+    params: {
+        type: 'object',
+        properties: {
+            action: {
+                type: 'string',
+                description: 'Aksi: "add", "list", "get", "ringkas", "search", "edit", "delete"'
+            },
+            query: {
+                type: 'string',
+                description: 'Argumen atau judul/keterangan catatan'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sender, from, msg, sock, commandName } = ctx

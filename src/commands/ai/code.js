@@ -13,6 +13,23 @@ export default {
     example: '.code console.log("hello"',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['code', 'debug', 'fix', 'review', 'coding', 'program', 'developer'],
+    params: {
+        type: 'object',
+        properties: {
+            code: {
+                type: 'string',
+                description: 'Kode pemrograman yang ingin di-review atau diperbaiki',
+                required: true
+            },
+            language: {
+                type: 'string',
+                description: 'Bahasa pemrograman (opsional)'
+            }
+        },
+        required: ['code']
+    },
 
     async execute(ctx) {
         const { args, reply, react, msg } = ctx

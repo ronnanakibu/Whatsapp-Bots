@@ -10,6 +10,18 @@ export default {
     example: '.cook tampilkan 5 member yang paling sering kirim pesan di grup',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['cook', 'skill', 'dynamicskill', 'chef', 'racik', 'autonomous', 'function'],
+    params: {
+        type: 'object',
+        properties: {
+            instruksi: {
+                type: 'string',
+                description: 'Instruksi atau query fitur yang ingin diracik (kosongkan untuk melihat daftar skill)'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react } = ctx

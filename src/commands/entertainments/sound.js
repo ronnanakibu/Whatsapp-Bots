@@ -410,6 +410,18 @@ export default {
     example: '.sound bruh | .sound metal pipe | .sound search anime | .sound add rizz (reply VN)',
     cooldown: 2,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['sound', 'soundboard', 'vn', 'voicenote', 'meme', 'audio', 'sfx', 'entertainment'],
+    params: {
+        type: 'object',
+        properties: {
+            query: {
+                type: 'string',
+                description: 'Nama sound, pencarian soundboard, atau sub-command (search/add/del/list)'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg, sender, messageContent } = ctx

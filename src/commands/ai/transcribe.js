@@ -79,8 +79,16 @@ export default {
     category: 'ai',
     description: 'Transkripsikan Voice Note atau Audio menjadi teks & ringkasan AI',
     usage: '.transcribe (balas voice note / audio)',
+    example: '.transcribe (reply pesan audio/voice note)',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['transcribe', 'stt', 'voicenote', 'audio', 'speechtotext', 'ai', 'transkrip'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react } = ctx

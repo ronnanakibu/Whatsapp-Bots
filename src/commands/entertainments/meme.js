@@ -9,6 +9,18 @@ export default {
     example: '.meme programmerhumor',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['meme', 'reddit', 'humor', 'lucu', 'dankmemes', 'entertainment'],
+    params: {
+        type: 'object',
+        properties: {
+            subreddit: {
+                type: 'string',
+                description: 'Nama subreddit meme (contoh: "memes", "ProgrammerHumor", "indonesia")'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx

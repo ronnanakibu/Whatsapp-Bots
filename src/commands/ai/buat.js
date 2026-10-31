@@ -13,6 +13,19 @@ export default {
     example: '.buat kucing astronot di bulan, digital art',
     cooldown: 15,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['buat', 'generate', 'image', 'ai', 'gambar', 'art', 'gemini'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Deskripsi gambar yang ingin dibuat oleh AI',
+                required: true
+            }
+        },
+        required: ['prompt']
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, chatId, msg } = ctx

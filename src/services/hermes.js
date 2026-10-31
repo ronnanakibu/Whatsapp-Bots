@@ -1,3 +1,4 @@
+import { generatePromptToolDefinitions } from '../core/registry.js'
 // src/services/hermes.js
 // Dedicated service to interface with NousResearch Hermes Agent / Cloud API (HF Space / OpenRouter / Hosted Hermes)
 import axios from 'axios'
@@ -236,6 +237,13 @@ class HermesService {
         }
 
         const introspectionSection = options.introspectionPrompt || ''
+        if (!options.dynamicToolsPrompt) {
+            try {
+                options.dynamicToolsPrompt = generatePromptToolDefinitions({
+                    role: isSenderOwner ? 'owner' : 'user'
+                })
+            } catch (_) {}
+        }
 
         return `You are RonnBot Agent OS, an elite, highly knowledgeable, and autonomous WhatsApp AI assistant powered by Hermes Agent OS architecture.
 You operate live inside a production Node.js environment powered by the Baileys Multi-Device WhatsApp engine, backed by a persistent SQLite database (main.db / message_store).
@@ -257,70 +265,18 @@ Instead, YOUR RESPONSE MUST BE SOLELY A VALID RAW JSON OBJECT with NO conversati
   "args": ["arg1", "arg2", ...]
 }
 
-### 🛠️ ACTIVE MODULAR SKILLS:
-1. 'rangkum' (aliases: 'summarize', 'recap', 'rangkuman'):
-   - DESCRIPTION: Reads and summarizes dialogue directly from the bot's local SQLite 'message_store' database (up to 500 messages) for either the current chat or ANY specified group by subject/name.
-   - CRITICAL SYSTEM CAPABILITY: RonnBot HAS DIRECT ACCESS to live message history stored in SQLite! NEVER apologize or claim you cannot read group chats. NEVER tell the user to copy-paste the chat.
-   - ARGS: ["<count_number>", "<optional_target_group_name_or_subject>"]
-   - EXAMPLES:
-     * User: "coba ringkas 100 percakapan terakhir di grup learning C.St"
-       Output: { "executeCommand": true, "command": "rangkum", "args": ["100", "learning C.St"] }
-     * User: "rangkum 50 pesan terakhir di grup ini"
-       Output: { "executeCommand": true, "command": "rangkum", "args": ["50"] }
-     * User: "rekap obrolan tadi dong"
-       Output: { "executeCommand": true, "command": "rangkum", "args": ["100"] }
+### 🛠️ ACTIVE AGENT CAPABILITIES & LIVE ARSENAL:
+${options.dynamicToolsPrompt || ''}
 
-2. 'cook' (aliases: 'dynamicskills', 'buatskill'):
-   - DESCRIPTION: Autonomous AI skill chef. Generates, compiles, and registers a brand new executable JavaScript skill on the fly when the user asks for a new automated tool or custom bot functionality.
-   - ARGS: ["<detailed instruction of the feature/skill to create>"]
-   - EXAMPLE:
-     * User: "bikinin bot fungsi buat cek kurs dollar ke rupiah otomatis dong"
-       Output: { "executeCommand": true, "command": "cook", "args": ["cek kurs USD ke IDR otomatis via API publik"] }
+- CRITICAL SYSTEM RULE ON 'rangkum' (SUMMARIZATION):
+  * RonnBot HAS DIRECT SYSTEM ACCESS to live group message history stored in SQLite (message_store)!
+  * NEVER apologize, NEVER claim you cannot read group chats, and NEVER tell the user to copy-paste the chat.
+  * If the user asks to summarize any group (e.g. "coba ringkas 100 percakapan terakhir di grup learning C.St"), IMMEDIATELY emit:
+    {"executeCommand": true, "command": "rangkum", "args": ["100", "learning C.St"]}
 
-3. 'cuaca' (aliases: 'aqi', 'weather', 'kualitasudara'):
-   - DESCRIPTION: Checks real-time weather conditions, forecasts, and Air Quality Index (AQI, PM2.5, PM10) for any city worldwide.
-   - ARGS: ["<city_name>"]
-   - EXAMPLE:
-     * User: "gimana cuaca dan kualitas udara di Jakarta sekarang?"
-       Output: { "executeCommand": true, "command": "cuaca", "args": ["Jakarta"] }
-
-4. 'buat' (aliases: 'image', 'generate'):
-   - DESCRIPTION: Generates ultra-high quality images using FLUX / Krea AI engine.
-   - ARGS: ["<detailed visual prompt in English>"]
-   - EXAMPLE:
-     * User: "buatin gambar astronot naik kuda di bulan 4k"
-       Output: { "executeCommand": true, "command": "buat", "args": ["cinematic photograph of astronaut riding a horse on the lunar surface earth visible in background 4k highly detailed"] }
-
-5. 'dl' (aliases: 'download', 'unduh'):
-   - DESCRIPTION: Downloads media (video/audio) from social media URLs (TikTok, Instagram, YouTube, Facebook, Twitter/X).
-   - ARGS: ["<media_url>"]
-   - EXAMPLE:
-     * User: "unduh video ini dong https://vt.tiktok.com/ZSjabc/"
-       Output: { "executeCommand": true, "command": "dl", "args": ["https://vt.tiktok.com/ZSjabc/"] }
-
-6. 'sticker' (aliases: 'stiker'):
-   - DESCRIPTION: Converts direct image/video or quoted media into a WhatsApp sticker.
-   - ARGS: Optional caption. If top and bottom: ["<top_text>", "|", "<bottom_text>"]
-
-7. 'anomali' (aliases: 'brat', 'quote'):
-   - DESCRIPTION: Creates minimalist typography text stickers (brat style).
-   - ARGS: ["<text>"]
-
-8. 'cekhoax' (aliases: 'cekfakta', 'factcheck'):
-   - DESCRIPTION: Fact-checks a news claim or topic against MAFINDO TurnBackHoax & internet verification sources.
-   - ARGS: ["<claim_or_topic>"]
-
-9. 'kalkulator':
-   - DESCRIPTION: Solves complex mathematical computations.
-   - ARGS: ["<math_expression>"]
-
-10. 'stalk':
-    - DESCRIPTION: Gathers public profile data (Instagram, TikTok, GitHub) for a given handle.
-    - ARGS: ["<username>"]
-
-11. 'uptime' / 'ping':
-    - DESCRIPTION: Reports bot server uptime, latency, and system health.
-    - ARGS: []
+- CRITICAL SYSTEM RULE ON 'cook' (DYNAMIC SKILLS):
+  * If the user asks to create, invent, or add a new skill/functionality to the bot, emit:
+    {"executeCommand": true, "command": "cook", "args": ["<instruction>"]}
 
 # OPERATIONAL RULES:
 - When user intent clearly matches a skill above: OUTPUT ONLY THE EXACT JSON OBJECT.
@@ -342,48 +298,10 @@ Instead, YOUR RESPONSE MUST BE SOLELY A VALID RAW JSON OBJECT with NO conversati
             ]
         }
 
-        // CPU Core 1: Google Gemini 2.5 Flash (Super fast, unaligned, zero censorship with BLOCK_NONE)
-        const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
-        if (geminiKey) {
-            const geminiModels = ['gemini-2.5-flash', 'gemini-1.5-flash']
-            for (const gModel of geminiModels) {
-                try {
-                    const { GoogleGenerativeAI } = await import('@google/generative-ai')
-                    const genAI = new GoogleGenerativeAI(geminiKey)
-                    const model = genAI.getGenerativeModel({
-                        model: gModel,
-                        systemInstruction: activeSystemPrompt,
-                        safetySettings: [
-                            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-                            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-                            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-                            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-                            { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' }
-                        ]
-                    })
-
-                    let reply = ''
-                    if (messages.length > 2) {
-                        const history = this.#formatGeminiHistory(messages.slice(1, -1))
-                        const chat = model.startChat({ history })
-                        const result = await chat.sendMessage(promptText)
-                        reply = result.response.text()?.trim()
-                    } else {
-                        const result = await model.generateContent(promptText)
-                        reply = result.response.text()?.trim()
-                    }
-
-                    if (reply) return { text: reply, provider: `hermes-agent (${gModel})`, model: gModel }
-                } catch (e) {
-                    logger.warn(`[HermesService] Gemini ${gModel} call failed: ${e.message}`)
-                }
-            }
-        }
-
-        // CPU Core 2: Groq Cloud (GPT-OSS 120B / Qwen 3.8 27B / GPT-OSS 20B)
+        // CPU Core 1: Groq Cloud (Ultra-fast Llama 3.3 / GPT-OSS / Qwen)
         const groqKey = process.env.GROQ_API_KEY
         if (groqKey) {
-            const groqModels = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b']
+            const groqModels = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b']
             for (const grqModel of groqModels) {
                 try {
                     const { default: Groq } = await import('groq-sdk')
@@ -402,7 +320,7 @@ Instead, YOUR RESPONSE MUST BE SOLELY A VALID RAW JSON OBJECT with NO conversati
             }
         }
 
-        // CPU Core 3: OpenRouter with Nous Hermes 3 70B (if configured)
+        // CPU Core 2: OpenRouter (Nous Hermes 3 70B)
         const openrouterKey = process.env.OPENROUTER_API_KEY
         if (openrouterKey) {
             try {
@@ -426,10 +344,10 @@ Instead, YOUR RESPONSE MUST BE SOLELY A VALID RAW JSON OBJECT with NO conversati
             }
         }
 
-        // CPU Core 4: NVIDIA NIM / Foundry
+        // CPU Core 3: NVIDIA NIM (Nemotron 70B / Llama 3.3 / DeepSeek V4)
         const nvidiaKey = process.env.NVIDIA_API_KEY
         if (nvidiaKey) {
-            const nvidiaModels = ['deepseek-ai/deepseek-v4.1-flash', '01-ai/yi-large']
+            const nvidiaModels = ['nvidia/llama-3.1-nemotron-70b-instruct', 'meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-v4.1-flash']
             for (const nvModel of nvidiaModels) {
                 try {
                     const { default: OpenAI } = await import('openai')
@@ -448,6 +366,28 @@ Instead, YOUR RESPONSE MUST BE SOLELY A VALID RAW JSON OBJECT with NO conversati
                 } catch (e) {
                     logger.warn(`[HermesService] NVIDIA ${nvModel} call failed: ${e.message}`)
                 }
+            }
+        }
+
+        // CPU Core 4: DeepSeek API (deepseek-chat)
+        const deepseekKey = process.env.DEEPSEEK_API_KEY
+        if (deepseekKey) {
+            try {
+                const { default: OpenAI } = await import('openai')
+                const deepseek = new OpenAI({
+                    apiKey: deepseekKey,
+                    baseURL: 'https://api.deepseek.com'
+                })
+                const res = await deepseek.chat.completions.create({
+                    model: 'deepseek-chat',
+                    messages,
+                    temperature: 0.7,
+                    max_tokens: 4096
+                })
+                const text = res.choices?.[0]?.message?.content?.trim()
+                if (text) return { text, provider: 'hermes-agent (DeepSeek)', model: 'deepseek-chat' }
+            } catch (e) {
+                logger.warn(`[HermesService] DeepSeek API call failed: ${e.message}`)
             }
         }
 
@@ -470,7 +410,7 @@ Instead, YOUR RESPONSE MUST BE SOLELY A VALID RAW JSON OBJECT with NO conversati
             }
         }
 
-        throw new Error('Semua backend CPU Hermes Agent (Gemini, Groq, OpenRouter, NVIDIA, OpenAI) gagal merespon atau kuota habis.')
+        throw new Error('Semua backend CPU Hermes Agent (Groq, OpenRouter, NVIDIA, DeepSeek, OpenAI) gagal merespon atau kuota habis.')
     }
 
     #formatGeminiHistory(rawMessages) {

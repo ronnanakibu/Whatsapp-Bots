@@ -30,8 +30,16 @@ export default {
     category: 'entertainment',
     description: 'Random truth question untuk game Truth or Dare',
     usage: '.truth',
+    example: '.truth',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['truth', 'jujur', 'game', 'fun', 'tod', 'truthordare', 'entertainment'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react } = ctx

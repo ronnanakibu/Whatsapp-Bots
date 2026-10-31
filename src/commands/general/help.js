@@ -12,24 +12,47 @@ export default {
     aliases: [
         'menu', 'h',
         'aimenu',
-        'audiomenu', 'radiomenu',
+        'mediamenu', 'imagemenu',
         'downloadmenu', 'downloadermenu',
-        'imagemenu', 'mediamenu',
         'toolsmenu', 'utilitymenu',
-        'ownermenu',
-        'adminmenu', 'groupmenu',
-        'generalmenu'
+        'audiomenu', 'radiomenu', 'musicmenu',
+        'groupmenu', 'adminmenu',
+        'generalmenu',
+        'entertainmentmenu', 'funmenu',
+        'ownermenu'
     ],
     category: 'general',
     description: 'Tampilkan daftar semua command dan panduan penggunaan bot.',
     usage: '.help [kategori | command]',
+    example: '.help ai',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['help', 'menu', 'panduan', 'commands', 'bantuan', 'general'],
+    params: {
+        type: 'object',
+        properties: {
+            kategoriOrCommand: {
+                type: 'string',
+                description: 'Nama kategori menu atau nama command spesifik untuk melihat panduan detail'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply } = ctx
-        const { commands } = await import('../../core/loader.js')
-        const prefix = process.env.BOT_PREFIX ?? '!'
+        const prefix = process.env.BOT_PREFIX ?? '.'
+
+        // Resolve commands from Unified Registry or fallback to loader
+        let commandsMap = new Map()
+        try {
+            const { getAllCommands } = await import('../../core/registry.js')
+            commandsMap = getAllCommands()
+        } catch (_) {
+            const { commands } = await import('../../core/loader.js')
+            commandsMap = commands
+        }
 
         // 1. Resolve active category if any
         let activeMenu = null
@@ -40,13 +63,14 @@ export default {
 
         const numberMap = {
             '1': 'ai',
-            '2': 'downloader',
-            '3': 'image',
+            '2': 'media',
+            '3': 'downloader',
             '4': 'tools',
             '5': 'audio',
-            '6': 'admin',
+            '6': 'group',
             '7': 'general',
-            '8': 'owner'
+            '8': 'entertainment',
+            '9': 'owner'
         }
 
         if (!activeMenu && args.length) {
@@ -60,97 +84,114 @@ export default {
             }
         }
 
-        let targetCategory = null
-        if (activeMenu) {
-            if (activeMenu === 'ai') targetCategory = 'ai'
-            else if (activeMenu === 'audio' || activeMenu === 'radio' || activeMenu === 'music') targetCategory = 'audio'
-            else if (activeMenu === 'downloader' || activeMenu === 'download' || activeMenu === 'dl') targetCategory = 'downloader'
-            else if (activeMenu === 'image' || activeMenu === 'media' || activeMenu === 'stiker' || activeMenu === 'sticker') targetCategory = 'image'
-            else if (activeMenu === 'tools' || activeMenu === 'utility' || activeMenu === 'util') targetCategory = 'tools'
-            else if (activeMenu === 'owner') targetCategory = 'owner'
-            else if (activeMenu === 'admin' || activeMenu === 'group') targetCategory = 'admin'
-            else if (activeMenu === 'general' || activeMenu === 'info') targetCategory = 'general'
+        const categoryAliases = {
+            ai: 'ai',
+            assistant: 'ai',
+            media: 'media',
+            image: 'media',
+            video: 'media',
+            stiker: 'media',
+            sticker: 'media',
+            downloader: 'downloader',
+            download: 'downloader',
+            dl: 'downloader',
+            tools: 'tools',
+            utility: 'tools',
+            util: 'tools',
+            audio: 'audio',
+            music: 'audio',
+            radio: 'audio',
+            group: 'group',
+            admin: 'group',
+            general: 'general',
+            info: 'general',
+            entertainment: 'entertainment',
+            fun: 'entertainment',
+            hiburan: 'entertainment',
+            game: 'entertainment',
+            games: 'entertainment',
+            owner: 'owner'
         }
 
-        // !help [nama command] — detail satu command
+        let targetCategory = activeMenu ? (categoryAliases[activeMenu] || null) : null
+
+        // .help [nama command] — detail satu command
         if (args.length && !targetCategory) {
-            const cmd = commands.get(args[0].toLowerCase())
+            const cleanArg = args[0].toLowerCase().replace(/^[.!/]+/, '')
+            let cmd = commandsMap.get(cleanArg)
+            if (!cmd) {
+                // Search aliases
+                for (const [, c] of commandsMap) {
+                    if (c.aliases && c.aliases.includes(cleanArg)) {
+                        cmd = c
+                        break
+                    }
+                }
+            }
+
             if (!cmd) return reply(`❌ Command *${args[0]}* tidak ditemukan.`)
 
             return reply(
                 `📊 *COMMAND DETAILS: ${cmd.name.toUpperCase()}*\n` +
                 `────────────────────────\n` +
                 `📌 *Name:*  \`${cmd.name}\`\n` +
-                `📝 *Description:*  ${cmd.description}\n` +
-                `💡 *Usage:*  \`${cmd.usage ?? '—'}\`\n` +
-                `🔗 *Aliases:*  ${cmd.aliases?.map(a => `\`${a}\``).join(', ') ?? '—'}\n` +
+                `📝 *Description:*  ${cmd.description || '—'}\n` +
+                `💡 *Usage:*  \`${cmd.usage ?? `.${cmd.name}`}\`\n` +
+                `🔗 *Aliases:*  ${cmd.aliases?.map(a => `\`${a}\``).join(', ') || '—'}\n` +
                 `⏳ *Cooldown:*  *${cmd.cooldown ?? 0}s*\n` +
-                `📁 *Category:*  *${cmd.category ?? '—'}*\n` +
+                `📁 *Category:*  *${cmd.category ?? 'general'}*\n` +
+                `🔒 *Permissions:*  *${(cmd.permissions || ['user']).join(', ')}*\n` +
                 `────────────────────────`
             )
         }
 
-        // Group commands by category
-        const categories = {
-            ai: [],
-            downloader: [],
-            image: [],
-            tools: [],
-            audio: [],
-            admin: [],
-            general: [],
-            owner: [],
-            misc: []
+        // Group commands by canonical categories
+        const CANONICAL_ORDER = [
+            'ai',
+            'media',
+            'downloader',
+            'tools',
+            'audio',
+            'group',
+            'general',
+            'entertainment',
+            'owner'
+        ]
+
+        const categories = {}
+        for (const cat of CANONICAL_ORDER) {
+            categories[cat] = []
         }
 
-        for (const [, cmd] of commands) {
+        for (const [, cmd] of commandsMap) {
             if (!cmd.name) continue
+            let cat = cmd.category || 'general'
+            if (cat === 'utility') cat = 'tools'
+            if (cat === 'entertainments') cat = 'entertainment'
+            if (cat === 'admin') cat = 'group'
+            if (cat === 'radio') cat = 'audio'
 
-            let menuGroup = cmd.category ?? 'misc'
-
-            if (menuGroup === 'media') {
-                if (cmd.name === 'dl' || cmd.aliases?.includes('dl')) {
-                    menuGroup = 'downloader'
-                } else {
-                    menuGroup = 'image'
-                }
-            } else if (menuGroup === 'radio') {
-                menuGroup = 'audio'
-            } else if (menuGroup === 'utility') {
-                menuGroup = 'tools'
-            } else if (menuGroup === 'admin') {
-                menuGroup = 'admin'
-            } else if (menuGroup === 'general') {
-                menuGroup = 'general'
-            } else if (menuGroup === 'owner') {
-                menuGroup = 'owner'
-            } else if (menuGroup === 'ai') {
-                menuGroup = 'ai'
-            } else {
-                menuGroup = 'misc'
-            }
-
-            if (!categories[menuGroup]) categories[menuGroup] = []
-            if (!categories[menuGroup].find(c => c.name === cmd.name)) {
-                categories[menuGroup].push(cmd)
+            if (!categories[cat]) categories[cat] = []
+            if (!categories[cat].find(c => c.name === cmd.name)) {
+                categories[cat].push(cmd)
             }
         }
 
         const categoryMeta = {
             ai: { title: '🤖 AI & ASSISTANT', emoji: '🤖' },
+            media: { title: '🎨 IMAGE & MEDIA', emoji: '🎨' },
             downloader: { title: '📥 DOWNLOADER', emoji: '📥' },
-            image: { title: '🎨 IMAGE & MEDIA', emoji: '🎨' },
             tools: { title: '🛠️ TOOLS & UTILITY', emoji: '🛠️' },
-            audio: { title: '🎵 AUDIO & RADIO', emoji: '🎵' },
-            admin: { title: '🛡️ ADMIN & GROUP', emoji: '🛡️' },
+            audio: { title: '🎵 AUDIO & MUSIC', emoji: '🎵' },
+            group: { title: '🛡️ GROUP & ADMIN', emoji: '🛡️' },
             general: { title: '🔧 GENERAL & INFO', emoji: '🔧' },
-            owner: { title: '👑 OWNER SUITE', emoji: '👑' },
-            misc: { title: '📦 MISC', emoji: '📦' }
+            entertainment: { title: '🎉 ENTERTAINMENT & FUN', emoji: '🎉' },
+            owner: { title: '👑 OWNER SUITE', emoji: '👑' }
         }
 
         // Render specific submenu if requested
-        if (targetCategory) {
-            const meta = categoryMeta[targetCategory] || categoryMeta.misc
+        if (targetCategory && categoryMeta[targetCategory]) {
+            const meta = categoryMeta[targetCategory]
             const cmdList = categories[targetCategory] || []
 
             let text = `╭───〔 ${meta.title} 〕───⬣\n`
@@ -163,7 +204,7 @@ export default {
                 text += `┌〔 DAFTAR PERINTAH 〕\n`
                 for (const cmd of cmdList) {
                     text += `│ ${meta.emoji} *${prefix}${cmd.name}*\n`
-                    text += `│   └─ ${cmd.description}\n`
+                    text += `│   └─ ${cmd.description || 'Tidak ada deskripsi'}\n`
                 }
                 text += `└──────────────\n\n`
             }
@@ -228,10 +269,10 @@ export default {
         const runtimeStr = runtimeParts.join(' ')
 
         // Get bot version from package.json
-        let botVersion = '5.18.12'
+        let botVersion = '5.26.0'
         try {
             const pkg = JSON.parse(fs.readFileSync(path.resolve('./package.json'), 'utf-8'))
-            botVersion = pkg.version || '5.18.12'
+            botVersion = pkg.version || '5.26.0'
         } catch (_) { }
 
         const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
@@ -248,23 +289,21 @@ export default {
         menuText += `│ 🔗 *Dashboard:* ${dashboardUrl}\n`
         menuText += `╰───────────────────────────────⬣\n\n`
 
-        const displayGroups = ['ai', 'downloader', 'image', 'tools', 'audio', 'admin', 'general', 'owner']
-
-        for (const catKey of displayGroups) {
+        for (const catKey of CANONICAL_ORDER) {
             const meta = categoryMeta[catKey]
             const list = categories[catKey] || []
             if (list.length === 0) continue
 
             menuText += `┌〔 ${meta.title} 〕\n`
             for (const cmd of list) {
-                menuText += `│ ▫️ *${prefix}${cmd.name}* — ${cmd.description}\n`
+                menuText += `│ ▫️ *${prefix}${cmd.name}* — ${cmd.description || '—'}\n`
             }
             menuText += `└──────────────────────────────\n\n`
         }
 
         menuText += `💡 *Tips Penggunaan:*\n`
-        menuText += `• Ketik *${prefix}help [command]* untuk melihat panduan spesifik.\n`
-        menuText += `• Contoh: *${prefix}help ai* atau *${prefix}help sticker*\n\n`
+        menuText += `• Ketik *${prefix}help [kategori]* (misal: *${prefix}help ai* atau *${prefix}help media*)\n`
+        menuText += `• Ketik *${prefix}help [command]* (misal: *${prefix}help ping*)\n\n`
         menuText += `_Powered by Ronn Bot Automation_`
 
         return reply(menuText.trim())

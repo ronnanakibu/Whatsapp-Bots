@@ -1,3 +1,4 @@
+import { dispatchCommand } from '../core/dispatcher.js'
 import { commands } from '../core/loader.js'
 import { botLogger } from './logger.js'
 import { aiService } from '../services/ai.js'
@@ -168,20 +169,14 @@ export async function tryDirectRoute(userMessage, ctx) {
     const detected = detectCommandFromText(userMessage, ctx)
     if (!detected) return false
 
-    const command = commands.get(detected.command)
-    if (!command) return false
-
     botLogger.info('agent', `[AIRouter] Direct routing to "${detected.command}" args: ${JSON.stringify(detected.args)}`)
 
-    const newCtx = {
-        ...ctx,
-        args: detected.args,
-        commandName: detected.command
-    }
-
     try {
-        await command.execute(newCtx)
-        return true
+        const result = await dispatchCommand(detected.command, detected.args, ctx, {
+            source: 'ai',
+            sendToChat: true
+        })
+        return result.success
     } catch (err) {
         botLogger.err('agent', err, `Direct route to "${detected.command}" failed`)
         return false
@@ -291,29 +286,20 @@ export async function processAiResponse(ctx, aiResponseResult) {
 
                 if (parsed.executeCommand && parsed.command) {
                     const cmdName = parsed.command.toLowerCase()
-                    const command = commands.get(cmdName)
+                    botLogger.info('agent', `[AIRouter] Autonomous tool dispatch: "${cmdName}" args: ${JSON.stringify(parsed.args)}`)
 
-                    if (command) {
-                        botLogger.info('agent', `[AIRouter] Executing command "${cmdName}" args: ${JSON.stringify(parsed.args)}`)
-
-                        let targetArgs = []
-                        if (Array.isArray(parsed.args)) {
-                            targetArgs = parsed.args.map(arg => String(arg))
-                        } else if (parsed.args !== undefined && parsed.args !== null) {
-                            targetArgs = [String(parsed.args)]
-                        }
-
-                        const newCtx = {
-                            ...ctx,
-                            args: targetArgs,
-                            commandName: cmdName
-                        }
-
-                        await command.execute(newCtx)
-                        return true
-                    } else {
-                        botLogger.warn('agent', `[AIRouter] Unknown command from AI: "${cmdName}"`)
+                    let targetArgs = []
+                    if (Array.isArray(parsed.args)) {
+                        targetArgs = parsed.args.map(arg => String(arg))
+                    } else if (parsed.args !== undefined && parsed.args !== null) {
+                        targetArgs = [String(parsed.args)]
                     }
+
+                    const dispatchResult = await dispatchCommand(cmdName, targetArgs, ctx, {
+                        source: 'ai',
+                        sendToChat: true
+                    })
+                    return dispatchResult.success
                 }
             }
         } catch (e) {

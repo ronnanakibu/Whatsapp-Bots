@@ -3,12 +3,24 @@ import { getAutoCategory, setAutoCategory } from '../../services/storySync.js'
 export default {
     name: 'setkategori',
     aliases: ['setcategory', 'kategoriauto'],
-    category: 'admin',
+    category: 'group',
     description: 'Mengubah kategori default untuk story Instagram yang diarsipkan otomatis.',
     usage: '.setkategori [nama_kategori]',
     example: '.setkategori Praktikum',
     cooldown: 5,
     permissions: ['admin', 'owner'],
+    requireBotAdmin: false,
+    tags: ['kategori', 'category', 'story', 'arsip', 'group', 'admin'],
+    params: {
+        type: 'object',
+        properties: {
+            nama_kategori: {
+                type: 'string',
+                description: 'Nama kategori baru untuk arsip story otomatis (kosongkan untuk cek kategori saat ini)'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react } = ctx

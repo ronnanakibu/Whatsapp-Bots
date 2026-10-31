@@ -8,7 +8,25 @@ export default {
     category: 'ai',
     description: 'Merangkum percakapan grup/chat terkini (hingga 500 pesan) menggunakan Hermes Agent tanpa sensor.',
     usage: '.summarize [jumlah pesan, default: 100, maks: 500] atau .rangkum [jumlah pesan] [nama grup opsional]',
-    cooldown: 10,
+    example: '.rangkum 50',
+    permissions: ['user'],
+    cooldown: 5,
+    requireBotAdmin: false,
+    tags: ['rangkum', 'summarize', 'recap', 'chat', 'percakapan', 'ringkasan'],
+    params: {
+        type: 'object',
+        properties: {
+            count: {
+                type: 'number',
+                description: 'Jumlah pesan terakhir yang ingin dirangkum (default: 100, maks: 500)'
+            },
+            groupName: {
+                type: 'string',
+                description: 'Nama grup tertentu jika ingin merangkum grup spesifik'
+            }
+        },
+        required: []
+    },
     execute: async (ctx) => {
         const { sock, reply, react, args, chatId, isGroup } = ctx
 

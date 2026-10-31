@@ -1,10 +1,13 @@
 // src/services/moderator.js
 import Groq from 'groq-sdk'
 import { memoryService } from './memory.js'
-import { isGroupAdmin, isOwner } from '../middleware/permission.js'
+import { isGroupAdmin, isOwner, isBotAdmin } from '../middleware/permission.js'
 import { logger } from '../utils/logger.js'
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+// Safe optional initialization — avoids crashing if GROQ_API_KEY is missing or empty
+const groq = (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim())
+    ? new Groq({ apiKey: process.env.GROQ_API_KEY.trim() })
+    : null
 
 class ModeratorService {
     /**
@@ -140,6 +143,14 @@ class ModeratorService {
      * Memeriksa toxic menggunakan Groq.
      */
     async checkMessage(body) {
+        if (!groq) {
+            return { isToxic: false, reason: '', confidence: 0.0 }
+        }
+
+        if (!body || typeof body !== 'string' || !body.trim()) {
+            return { isToxic: false, reason: '', confidence: 0.0 }
+        }
+
         const systemPrompt = `Kamu adalah AI Group Moderator. Tugasmu adalah menganalisis pesan obrolan grup dan mendeteksi apakah pesan tersebut melanggar aturan kesopanan.
 Deteksi hal-hal berikut:
 1. Ujaran kebencian (SARA, rasisme berat, pelecehan seksual/verbal parah).
@@ -206,7 +217,6 @@ Jawab dengan format JSON murni:
                 await this.resetWarnings(chatId, userJid)
 
                 // Cek bot admin
-                const { isBotAdmin } = await import('./permission.js')
                 const botAdmin = await isBotAdmin(sock, chatId)
 
                 if (!botAdmin) {

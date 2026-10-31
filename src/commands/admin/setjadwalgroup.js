@@ -5,11 +5,19 @@ import path from 'path'
 export default {
     name: 'setjadwalgroup',
     aliases: ['jadwalgroup', 'setcegroup'],
-    category: 'admin',
+    category: 'group',
     description: 'Set grup saat ini sebagai target pengiriman reminder otomatis Jadwal Kuliah.',
     usage: '.setjadwalgroup',
-    cooldown: 0,
+    example: '.setjadwalgroup',
     permissions: ['admin', 'owner'],
+    cooldown: 0,
+    requireBotAdmin: false,
+    tags: ['jadwal', 'schedule', 'kuliah', 'reminder', 'group', 'admin'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
     async execute(ctx) {
         const { reply, react, chatId, isGroup } = ctx
 

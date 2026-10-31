@@ -5,9 +5,11 @@ import { aiService } from '../../services/ai.js'
 export default {
     name: 'cekhoax',
     aliases: ['turnbackhoax', 'hoax', 'fitnah', 'cekfakta'],
-    category: 'utility',
-    desc: 'Mencari kebenaran suatu berita di database TurnBackHoax (MAFINDO).',
-    use: '<kata kunci berita>',
+    category: 'tools',
+    description: 'Mencari kebenaran suatu berita di database TurnBackHoax (MAFINDO).',
+    usage: '.cekhoax <kata kunci berita>',
+    permissions: ['user'],
+    cooldown: 5,
 
     async execute(ctx) {
         const { sock, msg: m, args, reply } = ctx

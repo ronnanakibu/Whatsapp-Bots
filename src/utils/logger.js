@@ -331,7 +331,13 @@ function rawLog(level, module, ...args) {
 // ─────────────────────────────────────────────
 
 export const logger = isProduction
-    ? pino({ level: LOG_LEVEL }, pino.destination('./storage/logs/app.log'))
+    ? pino({ level: LOG_LEVEL }, pinoPretty({
+        colorize: false,
+        translateTime: 'yyyy-mm-dd HH:MM:ss',
+        ignore: 'pid,hostname',
+        messageFormat: '{msg}',
+        destination: './storage/logs/app.log'
+    }))
     : pino({ level: LOG_LEVEL }, pinoPretty({
         colorize: true,
         translateTime: 'SYS:HH:MM:ss',

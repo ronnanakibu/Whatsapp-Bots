@@ -6,8 +6,27 @@ export default {
     aliases: ['hermesagent', 'agentmemory', 'hermesmem'],
     category: 'ai',
     description: 'Mengecek status, arsitektur model, memori & pengaturan reasoning Hermes Agent untuk chat ini.',
-    usage: '!hermes [memory|reasoning|status]',
+    usage: '.hermes [memory|reasoning|status]',
+    example: '.hermes status',
+    permissions: ['user'],
     cooldown: 3,
+    requireBotAdmin: false,
+    tags: ['hermes', 'agent', 'reasoning', 'memory', 'status', 'ai', 'deepseek'],
+    params: {
+        type: 'object',
+        properties: {
+            action: {
+                type: 'string',
+                description: 'Aksi yang dipilih: "memory", "reasoning", atau "status"',
+                enum: ['memory', 'reasoning', 'status']
+            },
+            value: {
+                type: 'string',
+                description: 'Nilai parameter untuk reasoning (on/off)'
+            }
+        },
+        required: []
+    },
     execute: async (ctx) => {
         const { reply, react, args, chatId, pushName, isGroup, sock } = ctx
         await react('🤖')

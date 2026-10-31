@@ -15,6 +15,18 @@ export default {
     example: '.lihat apa yang ada di gambar ini?',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['lihat', 'vision', 'analisa', 'describe', 'image', 'gemini', 'foto'],
+    params: {
+        type: 'object',
+        properties: {
+            pertanyaan: {
+                type: 'string',
+                description: 'Pertanyaan atau instruksi tentang gambar yang dikirim/direply'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, msg, sock, from } = ctx

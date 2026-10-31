@@ -7,12 +7,25 @@ import { startSunoPipeline } from '../../services/suno.js'
 export default {
     name: 'bikinlagu',
     aliases: ['musicgen', 'suno'],
-    category: 'entertainments',
+    category: 'entertainment',
     description: 'Bikin lagu instrumental otomatis via Suno & upload ke YouTube.',
-    usage: '!bikinlagu [genre atau vibe lagu]',
-    example: '!bikinlagu lofi chillhop sore hari santai',
+    usage: '.bikinlagu [genre atau vibe lagu]',
+    example: '.bikinlagu lofi chillhop sore hari santai',
     cooldown: 30,
-    permissions: ['owner'], // Hanya owner yang boleh agar tidak menghabiskan kuota YouTube/Suno
+    permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['bikinlagu', 'musicgen', 'suno', 'lagu', 'music', 'ai', 'entertainment'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Genre atau vibe musik instrumental yang ingin dibuat (contoh: "lofi chillhop santai")',
+                required: true
+            }
+        },
+        required: ['prompt']
+    },
 
     async execute(ctx) {
         const { args, reply, react, chatId } = ctx

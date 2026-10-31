@@ -1,21 +1,14 @@
 // src/handlers/message.js
 import fs from 'fs' // Tambahkan import fs di paling atas
-import { commands } from '../core/loader.js'
+import { dispatchCommand } from '../core/dispatcher.js'
 import { logger, botLogger } from '../utils/logger.js'
-import { aiService } from '../services/ai.js'
 import { memoryService } from '../services/memory.js'
 import { seamlessTracker } from '../services/seamless.js'
-import { checkPermission } from '../middleware/permission.js'
 import { isSpamming } from '../middleware/antispam.js'
-import { checkCooldown } from '../middleware/cooldown.js'
-import { validateArgs } from '../middleware/validator.js'
-import { groupGuard } from '../middleware/groupGuard.js'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { normalizeNumber, isOwner } from '../utils/permissions.js'
 import { dbService } from '../services/db.js'
-import { metricsService } from '../services/metrics.js'
 import { interactiveService } from '../services/interactive.js'
-import { processAiResponse, tryDirectRoute } from '../utils/aiRouter.js'
 import { unwrapMessage, getCleanQuoted } from '../utils/message.js'
 import { mediaCache } from '../services/mediaCache.js'
 import { handleIncomingViewOnce } from './viewOnce.js'
@@ -135,8 +128,10 @@ async function processSingleMessage(sock, msg) {
             return norm && botNumbers.has(norm)
         })
 
-        const prefix = process.env.BOT_PREFIX || '!'
-        const isCommand = body.startsWith(prefix)
+        const prefixes = [process.env.BOT_PREFIX, '.', '!'].filter(Boolean)
+        const matchedPrefix = prefixes.find(p => body.startsWith(p))
+        const isCommand = Boolean(matchedPrefix)
+        const prefix = matchedPrefix || process.env.BOT_PREFIX || '.'
         const isDMTrigger = isDM && !isCommand && body.trim().length > 0
 
         // ── 😴 GLOBAL SLEEP / DEAFEN MODE INTERCEPTOR ──
@@ -239,91 +234,7 @@ async function processSingleMessage(sock, msg) {
             const rawArgs = body.slice(prefix.length).trim().split(/ +/)
             const commandName = rawArgs.shift().toLowerCase()
 
-            ctx.args = rawArgs
-            ctx.commandName = commandName
-
-            const command = commands.get(commandName)
-
-            if (!command) {
-                botLogger.warn('handler', `Unknown command: "${commandName}" from ${sender}`)
-                return
-            }
-
-            if (command.enabled === false) {
-                await react('🚫')
-                await reply(`🚫 Command *!${commandName}* sedang dinonaktifkan oleh owner secara realtime.`)
-                botLogger.warn('handler', `Attempted to use disabled command "${commandName}" from ${sender}`)
-                return
-            }
-
-            // ── VALIDATOR MIDDLEWARE ──
-            const valResult = validateArgs(rawArgs)
-            if (!valResult.valid) {
-                await react('⚠️')
-                await reply(`⚠️ *Gagal Validasi:* ${valResult.reason}`)
-                botLogger.warn('handler', `Validation failed for cmd "${commandName}" from ${sender}: ${valResult.reason}`)
-                return
-            }
-
-            // ── PERMISSION CHECK ──
-            const permResult = await checkPermission(ctx, command)
-            if (!permResult.allowed) {
-                await react('🚫')
-                await reply(permResult.reason ?? '🚫 Akses ditolak.')
-                botLogger.warn('handler', `Permission denied: ${commandName} for ${sender}`)
-                return
-            }
-
-            // ── GROUP GUARD MIDDLEWARE ──
-            if (command.requireBotAdmin) {
-                const guardResult = await groupGuard(ctx, {
-                    requireBotAdmin: true,
-                    requireSenderAdmin: false // Already checked by permission middleware
-                })
-                if (!guardResult.ok) return
-            }
-
-            // ── COOLDOWN CHECK ──
-            const cooldownSecs = command.cooldown ?? 3
-            const cooldownRemaining = checkCooldown(sender, command.name, cooldownSecs)
-            if (cooldownRemaining !== null) {
-                await react('⏳')
-                await reply(`⏳ *Cooldown!* Mohon tunggu *${cooldownRemaining}* detik sebelum menggunakan command *${commandName}* kembali.`)
-                botLogger.warn('handler', `Cooldown active for cmd "${commandName}" from ${sender}`)
-                return
-            }
-
-            // ── EXECUTE ──
-            botLogger.command(commandName, sender, rawArgs)
-            const startMs = Date.now()
-
-            try {
-                metricsService.incrementCommands(commandName)
-
-                try {
-                    const db = memoryService.db
-                    if (db) {
-                        db.prepare(`
-                            INSERT INTO users (jid, name, commands_count, last_seen)
-                            VALUES (?, ?, 1, ?)
-                            ON CONFLICT(jid) DO UPDATE SET 
-                                name = excluded.name,
-                                commands_count = commands_count + 1,
-                                last_seen = excluded.last_seen
-                        `).run(sender, pushName, Date.now())
-                    }
-                } catch (dbErr) {
-                    logger.error('[Memory/Users] Failed to track user stats:', dbErr.message)
-                }
-
-                await command.execute(ctx)
-                botLogger.commandDone(commandName, Date.now() - startMs)
-            } catch (err) {
-                botLogger.err('handler', err, `cmd:${commandName}`)
-                await react('❌')
-                await reply(`❌ Error di command *${commandName}*:\n${err.message}`)
-            }
-
+            await dispatchCommand(commandName, rawArgs, ctx, { source: 'manual' })
             return
         }
 
