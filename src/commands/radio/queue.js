@@ -4,11 +4,33 @@ import { radioService } from '../../services/radio.js'
 export default {
     name: 'queue',
     aliases: ['rq', 'antrian', 'daftar'],
-    category: 'radio',
+    category: 'audio',
     description: 'Lihat atau hapus antrian lagu radio',
     usage: '.queue [remove/hapus/r <angka/batch>]',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "queue",
+        "rq",
+        "antrian",
+        "daftar",
+        "music",
+        "radio",
+        "audio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Kosongkan untuk melihat daftar antrean, atau \"remove <no>\" untuk menghapus lagu dari antrean"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, args } = ctx

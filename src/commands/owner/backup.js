@@ -13,6 +13,19 @@ export default {
     example: '.backup now\n.backup restore\n.backup clearsession\n.backup status',
     cooldown: 5,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['backup', 'syncstorage', 'cloudsync', 'savecloud', 'database', 'owner'],
+    params: {
+        type: 'object',
+        properties: {
+            action: {
+                type: 'string',
+                description: 'Aksi backup: "now", "restore", "clearsession", "status"',
+                enum: ['now', 'restore', 'clearsession', 'status']
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sender } = ctx

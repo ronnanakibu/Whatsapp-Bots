@@ -10,6 +10,30 @@ export default {
     example: '.uptime https://google.com',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "uptime",
+        "cekweb",
+        "isdown",
+        "checksite",
+        "pingweb",
+        "status",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "Alamat URL website yang ingin diperiksa status online/offline-nya"
+            }
+        },
+        "required": [
+            "url"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react } = ctx

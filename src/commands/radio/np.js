@@ -4,11 +4,28 @@ import { radioService } from '../../services/radio.js'
 export default {
     name: 'np',
     aliases: ['nowplaying', 'laguapa', 'current'],
-    category: 'radio',
+    category: 'audio',
     description: 'Info lagu yang sedang diputar',
     usage: '.np',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "np",
+        "nowplaying",
+        "laguapa",
+        "current",
+        "song",
+        "radio",
+        "audio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, sock, from, msg } = ctx

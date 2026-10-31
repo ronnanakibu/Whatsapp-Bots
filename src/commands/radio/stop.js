@@ -4,11 +4,28 @@ import { radioService } from '../../services/radio.js'
 export default {
     name: 'stop',
     aliases: ['radiooff', 'matiin'],
-    category: 'radio',
+    category: 'audio',
     description: 'Stop radio dan bersihkan queue',
     usage: '.stop',
     cooldown: 5,
     permissions: ['admin'],
+    requireBotAdmin: false,
+    tags: [
+        "stop",
+        "radiooff",
+        "matiin",
+        "hentikan",
+        "music",
+        "radio",
+        "audio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, react } = ctx

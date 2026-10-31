@@ -9,8 +9,22 @@ export default {
     category: 'owner',
     description: 'Kirim broadcast pengumuman ke grup bot.',
     usage: '.bc [pesan]',
+    example: '.bc Bot akan maintenance jam 12 malam!',
     cooldown: 0,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['broadcast', 'bc', 'announce', 'pengumuman', 'owner'],
+    params: {
+        type: 'object',
+        properties: {
+            pesan: {
+                type: 'string',
+                description: 'Teks pesan pengumuman broadcast yang ingin dikirim ke grup-grup',
+                required: true
+            }
+        },
+        required: ['pesan']
+    },
     async execute(ctx) {
         const { msg, args, reply, react, sock, chatId, sender } = ctx
 

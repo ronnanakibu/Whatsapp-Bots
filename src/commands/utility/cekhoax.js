@@ -10,6 +10,30 @@ export default {
     usage: '.cekhoax <kata kunci berita>',
     permissions: ['user'],
     cooldown: 5,
+    requireBotAdmin: false,
+    tags: [
+        "cekhoax",
+        "turnbackhoax",
+        "hoax",
+        "fitnah",
+        "cekfakta",
+        "fakta",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Judul atau topik berita yang ingin dicek kebenarannya"
+            }
+        },
+        "required": [
+            "query"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { sock, msg: m, args, reply } = ctx

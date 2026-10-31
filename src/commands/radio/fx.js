@@ -4,11 +4,32 @@ import { radioService, AVAILABLE_FX } from '../../services/radio.js'
 export default {
     name: 'fx',
     aliases: ['effect', 'efek'],
-    category: 'radio',
+    category: 'audio',
     description: 'Ubah efek suara audio radio',
     usage: '.fx [nama_efek]',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "fx",
+        "effect",
+        "efek",
+        "sound",
+        "audio",
+        "radio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "effect": {
+                "type": "string",
+                "description": "Nama efek suara: nightcore, 8d, vaporwave, reverb, bassboost, normal"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, args } = ctx

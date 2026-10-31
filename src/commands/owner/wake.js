@@ -10,8 +10,16 @@ export default {
     category: 'owner',
     description: '[OWNER] Membangunkan bot dari mode tidur (silent mode).',
     usage: '.wake',
+    example: '.wake',
     cooldown: 0,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['wake', 'bangun', 'pagi', 'resume', 'aktifkan', 'owner'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react, sender, args } = ctx

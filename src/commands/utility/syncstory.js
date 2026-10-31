@@ -6,11 +6,27 @@ import { syncInstagramStories } from '../../services/storySync.js'
 export default {
     name: 'syncstory',
     aliases: ['cekstory', 'igstory', 'archivestory', 'syncig'],
-    category: 'utility',
+    category: 'tools',
     description: 'Cek story terbaru Instagram @comeinone.f dan arsipkan otomatis ke website kelas.',
     usage: '!syncstory',
     cooldown: 15,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "syncstory",
+        "cekstory",
+        "igstory",
+        "archivestory",
+        "instagram",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, react, sock, chatId } = ctx

@@ -8,9 +8,17 @@ export default {
     aliases: ['setlog'],
     category: 'owner',
     description: 'Set channel penampungan log bot (forward pesan dari channel ke bot pakai command ini)',
-    usage: 'Forward pesan channel ke bot lalu ketik .setlogchannel',
+    usage: '.setlogchannel (forward pesan channel)',
+    example: '.setlogchannel (forward pesan channel)',
     cooldown: 0,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['setlogchannel', 'setlog', 'channel', 'newsletter', 'logger', 'owner'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
     async execute(ctx) {
         const { msg, messageContent, type, reply } = ctx
 

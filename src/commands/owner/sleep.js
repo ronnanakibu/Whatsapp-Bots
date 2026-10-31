@@ -10,8 +10,16 @@ export default {
     category: 'owner',
     description: '[OWNER] Mengubah status bot menjadi mode tidur (silent/deafen).',
     usage: '.sleep',
+    example: '.sleep',
     cooldown: 0,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['sleep', 'tidur', 'pause', 'silent', 'deafen', 'owner'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react, sender, args } = ctx

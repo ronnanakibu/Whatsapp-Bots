@@ -14,12 +14,24 @@ const MAX_BULK = 50 // Batas atas bulk delete biar aman
 export default {
     name: 'delete',
     aliases: ['del', 'unsend', 'hapus'],
-    category: 'admin',
+    category: 'owner',
     description: 'Hapus pesan bot atau pesan member grup (jika bot admin). Dapat digunakan oleh Owner & Admin grup.',
     usage: '.delete [1-50] | .delete (reply pesan)',
     example: '.delete 5  →  hapus 5 pesan terbaru bot di chat ini',
     cooldown: 2,
-    permissions: ['admin'],
+    permissions: ['admin', 'owner'],
+    requireBotAdmin: false,
+    tags: ['delete', 'del', 'unsend', 'hapus', 'moderasi', 'admin', 'owner'],
+    params: {
+        type: 'object',
+        properties: {
+            count: {
+                type: 'number',
+                description: 'Jumlah pesan bot terbaru yang ingin dihapus (1-50), atau kosongkan jika me-reply pesan spesifik'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg, sender, messageContent, isGroup } = ctx

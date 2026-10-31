@@ -6,11 +6,28 @@ import { aiService } from '../../services/ai.js'
 export default {
     name: 'ocr',
     aliases: ['scan', 'bacagambar', 'extract'],
-    category: 'utility',
+    category: 'tools',
     description: 'Extract teks dari gambar (foto struk, dokumen, screenshot, dll)',
     usage: '.ocr (kirim/reply gambar)',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "ocr",
+        "scan",
+        "bacagambar",
+        "extract",
+        "teks",
+        "image2text",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { msg, messageContent, type, reply, react, downloadMedia } = ctx

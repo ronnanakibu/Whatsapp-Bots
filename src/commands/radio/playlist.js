@@ -12,11 +12,49 @@ import {
 export default {
     name: 'playlist',
     aliases: ['pl'],
-    category: 'radio',
+    category: 'audio',
     description: 'Kelola daftar putar musik pribadi Anda (.pl / .playlist)',
     usage: '.pl create <nama> | .pl add <nama> | .pl remove <nama> <no> | .pl list | .pl show <nama> | .pl play <nama> [random] | .pl delete <nama>',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "playlist",
+        "pl",
+        "daftarputar",
+        "music",
+        "audio",
+        "radio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Subcommand playlist: \"create\", \"add\", \"remove\", \"list\", \"show\", \"play\", \"delete\"",
+                "enum": [
+                    "create",
+                    "add",
+                    "remove",
+                    "list",
+                    "show",
+                    "play",
+                    "delete"
+                ]
+            },
+            "name": {
+                "type": "string",
+                "description": "Nama playlist"
+            },
+            "value": {
+                "type": "string",
+                "description": "Argumen lanjutan seperti judul lagu atau nomor urut lagu"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, args, sender, pushName, react } = ctx

@@ -977,12 +977,45 @@ export function initWeatherScheduler(sock) {
 export default {
     name: 'cuaca',
     aliases: ['weather', 'aqi', 'kualitasudara', 'airquality', 'polusi'],
-    category: 'utility',
+    category: 'tools',
     description: 'Cek cuaca & kualitas udara (AQI) realtime kota manapun, atau langganan laporan cuaca harian otomatis setiap 12 malam',
     usage: '.cuaca [kota] | .aqi [kota] | subscribe [kota] | unsubscribe',
     example: '.cuaca Jakarta\n!aqi Jakarta\n!cuaca subscribe Medan\n!cuaca unsubscribe',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "cuaca",
+        "weather",
+        "aqi",
+        "kualitasudara",
+        "polusi",
+        "suhu",
+        "forecast",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "Nama kota (contoh: Jakarta, Medan, Surabaya, Tokyo)"
+            },
+            "action": {
+                "type": "string",
+                "description": "Aksi cuaca: \"check\" (default), \"aqi\", \"subscribe\", \"unsubscribe\"",
+                "enum": [
+                    "check",
+                    "aqi",
+                    "subscribe",
+                    "unsubscribe"
+                ]
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react, chatId, sock, commandName } = ctx

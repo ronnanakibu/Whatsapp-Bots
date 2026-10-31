@@ -8,12 +8,37 @@ const notifiedUsers = new Set()
 export default {
     name: 'play',
     aliases: ['request', 'req', 'putar'],
-    category: 'radio',
+    category: 'audio',
     description: 'Request lagu ke radio. Batch: pisahkan dengan koma.',
     usage: '.play [judul/URL]',
     example: '.play Sheila on 7 - Melompat Lebih Tinggi, Peterpan - Ada Apa Denganmu',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "play",
+        "request",
+        "req",
+        "putar",
+        "music",
+        "song",
+        "audio",
+        "radio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Judul lagu, nama artis, link YouTube, atau daftar lagu dipisahkan koma untuk batch request"
+            }
+        },
+        "required": [
+            "query"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react, sender, from } = ctx

@@ -9,12 +9,34 @@ import { isGroupAdmin, isOwner } from '../../middleware/permission.js'
 export default {
     name: 'poststory',
     aliases: ['uploadstory', 'kirimstory', 'arsipstory'],
-    category: 'utility',
+    category: 'tools',
     description: 'Upload foto atau video ke arsip story website kelas (bisa langsung atau reply media).',
     usage: '!poststory [keterangan/caption]',
     example: '!poststory Suasana praktikum IoT sore ini',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "poststory",
+        "uploadstory",
+        "kirimstory",
+        "arsipstory",
+        "website",
+        "kelas",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "caption": {
+                "type": "string",
+                "description": "Keterangan atau caption untuk arsip story"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { msg, messageContent, args, reply, react, from, isGroup, sender, sock } = ctx

@@ -4,12 +4,36 @@
 export default {
     name: 'kalkulator',
     aliases: ['calc', 'hitung', 'math'],
-    category: 'utility',
+    category: 'tools',
     description: 'Evaluasi ekspresi matematika',
     usage: '.kalkulator [ekspresi]',
     example: '.kalkulator (25 * 4) + sqrt(16) . 2',
     cooldown: 2,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "kalkulator",
+        "calc",
+        "hitung",
+        "math",
+        "rumus",
+        "matematika",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "expression": {
+                "type": "string",
+                "description": "Ekspresi matematika yang ingin dihitung (contoh: (25 * 4) + sqrt(16))"
+            }
+        },
+        "required": [
+            "expression"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react } = ctx

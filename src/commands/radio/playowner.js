@@ -4,11 +4,28 @@ import { radioService } from '../../services/radio.js'
 export default {
     name: 'playowner',
     aliases: ['listensync', 'syncowner'],
-    category: 'radio',
+    category: 'audio',
     description: 'Sinkronisasikan radio dengan Spotify Owner secara realtime.',
     usage: '.playowner',
     cooldown: 5,
     permissions: ['owner'], // Hanya owner yang bisa menjalankan
+    requireBotAdmin: false,
+    tags: [
+        "playowner",
+        "listensync",
+        "syncowner",
+        "spotify",
+        "owner",
+        "radio",
+        "audio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, react, sender } = ctx

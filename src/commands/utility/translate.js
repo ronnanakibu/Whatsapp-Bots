@@ -53,13 +53,6 @@ const LANG_NAMES = {
 async function translateText(text, targetLang, sourceLang = 'auto') {
     const url = 'https://translate.googleapis.com/translate_a/single'
     const res = await axios.get(url, {
-        params: {
-            client: 'gtx',
-            sl: sourceLang,
-            tl: targetLang,
-            dt: 't',
-            q: text
-        },
         headers: { 'User-Agent': 'Mozilla/5.0' },
         timeout: 10000
     })
@@ -75,12 +68,40 @@ async function translateText(text, targetLang, sourceLang = 'auto') {
 export default {
     name: 'translate',
     aliases: ['tr', 'terjemah', 'terjemahkan'],
-    category: 'utility',
+    category: 'tools',
     description: 'Terjemahkan teks ke bahasa lain.',
     usage: '.tr [bahasa] [teks] | .tr [bahasa] (reply pesan)',
     example: '.tr en Selamat pagi dunia | .tr japan (reply pesan)',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "translate",
+        "tr",
+        "terjemah",
+        "terjemahkan",
+        "bahasa",
+        "kamus",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "targetLang": {
+                "type": "string",
+                "description": "Kode bahasa tujuan (contoh: en, id, ja, ko, ar, de, es, fr)"
+            },
+            "text": {
+                "type": "string",
+                "description": "Teks yang ingin diterjemahkan (atau kosongkan jika me-reply pesan teks)"
+            }
+        },
+        "required": [
+            "targetLang"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react, messageContent } = ctx

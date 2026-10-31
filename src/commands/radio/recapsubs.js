@@ -4,11 +4,27 @@ import { initRecapScheduler } from './recap.js'
 export default {
     name: 'recapsubs',
     aliases: ['subrecap', 'langgananrekap'],
-    category: 'radio',
+    category: 'audio',
     description: 'Langganan atau berhenti berlangganan laporan rekap radio mingguan otomatis.',
     usage: '.recapsubs',
     cooldown: 5,
     permissions: ['owner'], // Hanya owner yang boleh mendaftarkan grup langganan
+    requireBotAdmin: false,
+    tags: [
+        "recapsubs",
+        "subrecap",
+        "langgananrekap",
+        "subscription",
+        "radio",
+        "audio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {},
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, react, chatId, sock } = ctx

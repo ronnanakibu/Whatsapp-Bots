@@ -56,9 +56,27 @@ export default {
     aliases: ['source', 'fs', 'code-owner'],
     category: 'owner',
     description: '[OWNER] Baca, list, atau edit source code bot.',
-    usage: '.src list | .src read <path> | !src write <path>',
+    usage: '.src list | .src read <path> | .src write <path>',
+    example: '.src read src/handlers/message.js',
     cooldown: 2,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['src', 'source', 'fs', 'code-owner', 'developer', 'owner'],
+    params: {
+        type: 'object',
+        properties: {
+            action: {
+                type: 'string',
+                description: 'Aksi: "list", "read", "write"',
+                enum: ['list', 'read', 'write']
+            },
+            path: {
+                type: 'string',
+                description: 'Path file relatif ke src/'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, msg, sender } = ctx

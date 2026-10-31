@@ -8,8 +8,16 @@ export default {
     category: 'owner',
     description: '[OWNER] Mematikan server bot lewat Pterodactyl API.',
     usage: '.shutdown',
+    example: '.shutdown',
     cooldown: 0,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['shutdown', 'off', 'matikan', 'stop', 'pterodactyl', 'power', 'owner'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react, sender, args } = ctx

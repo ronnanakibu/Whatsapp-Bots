@@ -6,12 +6,35 @@ import QRCode from 'qrcode'
 export default {
     name: 'qr',
     aliases: ['qrcode', 'buatqr'],
-    category: 'utility',
+    category: 'tools',
     description: 'Generate QR code dari teks atau URL',
     usage: '.qr [teks/URL]',
     example: '.qr https://github.com/ronnanakibu',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "qr",
+        "qrcode",
+        "buatqr",
+        "barcode",
+        "generator",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "Teks atau link URL yang ingin diubah menjadi gambar QR Code"
+            }
+        },
+        "required": [
+            "text"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx

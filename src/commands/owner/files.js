@@ -28,8 +28,26 @@ export default {
     category: 'owner',
     description: '[OWNER] Akses filesystem bot — lihat, baca, edit source code',
     usage: '.files [ls|cat|edit|tree] [path] [content?]',
+    example: '.files ls src/commands | .files cat package.json',
     cooldown: 2,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['files', 'file', 'filesystem', 'cat', 'ls', 'edit', 'sourcecode', 'owner'],
+    params: {
+        type: 'object',
+        properties: {
+            command: {
+                type: 'string',
+                description: 'Subcommand: "ls", "cat", "edit", "tree"',
+                enum: ['ls', 'cat', 'edit', 'tree']
+            },
+            path: {
+                type: 'string',
+                description: 'Path file atau direktori'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sender, from, msg, messageContent, sock } = ctx

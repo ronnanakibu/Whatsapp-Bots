@@ -13,11 +13,47 @@ const execPromise = util.promisify(exec)
 export default {
     name: 'pdf',
     aliases: ['mergepdf', 'splitpdf', 'img2pdf', 'pdf2img', 'doc2pdf', 'compresspdf', 'pdfhelp'],
-    category: 'utility',
+    category: 'tools',
     description: 'PDF Utility Suite (merge, split, image to pdf, pdf to image, doc to pdf, compress)',
     usage: '.pdf | .mergepdf | .splitpdf <halaman> | .img2pdf | .pdf2img | .doc2pdf | .compresspdf',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "pdf",
+        "mergepdf",
+        "splitpdf",
+        "img2pdf",
+        "pdf2img",
+        "compresspdf",
+        "dokumen",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Subcommand PDF: \"merge\", \"split\", \"img2pdf\", \"pdf2img\", \"doc2pdf\", \"compress\", \"help\"",
+                "enum": [
+                    "merge",
+                    "split",
+                    "img2pdf",
+                    "pdf2img",
+                    "doc2pdf",
+                    "compress",
+                    "help"
+                ]
+            },
+            "pages": {
+                "type": "string",
+                "description": "Nomor atau rentang halaman untuk pemisahan PDF (contoh: 1-5)"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const cmdName = ctx.commandName ? ctx.commandName.toLowerCase() : 'pdf'

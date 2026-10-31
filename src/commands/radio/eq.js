@@ -4,11 +4,32 @@ import { radioService, AVAILABLE_EQ } from '../../services/radio.js'
 export default {
     name: 'eq',
     aliases: ['equalizer'],
-    category: 'radio',
+    category: 'audio',
     description: 'Ubah preset equalizer audio radio',
     usage: '.eq [nama_preset]',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "eq",
+        "equalizer",
+        "audio",
+        "preset",
+        "sound",
+        "radio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "preset": {
+                "type": "string",
+                "description": "Nama preset equalizer (misal: flat, bass, vocal, rock, pop)"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, args } = ctx

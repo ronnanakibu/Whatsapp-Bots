@@ -10,8 +10,22 @@ export default {
     category: 'owner',
     description: '[OWNER] Jalankan kode JavaScript dinamis.',
     usage: '.eval [kode]',
+    example: '.eval 1 + 1',
     cooldown: 0,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['eval', 'javascript', 'execute', 'developer', 'owner'],
+    params: {
+        type: 'object',
+        properties: {
+            code: {
+                type: 'string',
+                description: 'Ekspresi atau script JavaScript yang ingin dievaluasi',
+                required: true
+            }
+        },
+        required: ['code']
+    },
 
     async execute(ctx) {
         const { args, reply, react, sender, msg, sock, chatId } = ctx

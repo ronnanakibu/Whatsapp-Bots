@@ -4,12 +4,36 @@
 export default {
     name: 'ceklink',
     aliases: ['safebrowse', 'phishing', 'cekurl'],
-    category: 'utility',
+    category: 'tools',
     description: 'Cek apakah sebuah URL aman atau berbahaya (phishing/malware)',
     usage: '.ceklink [URL]',
     example: '.ceklink https://suspicious-site.com',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "ceklink",
+        "safebrowse",
+        "phishing",
+        "cekurl",
+        "keamanan",
+        "security",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "Alamat URL situs web yang ingin diperiksa keamanannya"
+            }
+        },
+        "required": [
+            "url"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react } = ctx

@@ -4,12 +4,34 @@ import { radioService } from '../../services/radio.js'
 export default {
     name: 'lyrics',
     aliases: ['lirik', 'ly'],
-    category: 'utility',
+    category: 'tools',
     description: 'Cari lirik lagu yang sedang diputar atau cari judul tertentu.',
     usage: '.lyrics [judul lagu] atau .lyrics',
     example: '.lyrics Miguel - Remember Me',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "lyrics",
+        "lirik",
+        "ly",
+        "song",
+        "musik",
+        "lagu",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Judul lagu dan artis yang ingin dicari liriknya (opsional jika radio sedang memutar lagu)"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react } = ctx

@@ -7,12 +7,43 @@ import { logger } from '../../utils/logger.js'
 export default {
     name: 'poll',
     aliases: ['vote', 'polling', 'voting', 'votasi'],
-    category: 'utility',
+    category: 'tools',
     description: 'Buat voting / polling resmi WhatsApp interaktif di grup atau chat',
     usage: '.poll Judul Pertanyaan | Opsi 1 | Opsi 2 | Opsi 3...',
     example: '.poll Mau nongkrong di mana? | Cafe A | Kopi Kenangan | Warkop',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "poll",
+        "vote",
+        "polling",
+        "voting",
+        "votasi",
+        "survei",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "question": {
+                "type": "string",
+                "description": "Judul pertanyaan polling"
+            },
+            "options": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Daftar pilihan opsi yang dipisahkan karakter pipa |"
+            }
+        },
+        "required": [
+            "question"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, from, sock, msg, react } = ctx

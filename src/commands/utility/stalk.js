@@ -4,12 +4,35 @@
 export default {
     name: 'stalk',
     aliases: ['github', 'ghprofile'],
-    category: 'utility',
+    category: 'tools',
     description: 'Cek profil publik GitHub seseorang',
     usage: '.stalk [username]',
     example: '.stalk torvalds',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "stalk",
+        "github",
+        "ghprofile",
+        "developer",
+        "profil",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "username": {
+                "type": "string",
+                "description": "Username akun GitHub yang ingin dicek profilnya"
+            }
+        },
+        "required": [
+            "username"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx

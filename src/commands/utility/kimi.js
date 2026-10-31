@@ -3,12 +3,36 @@ import { aiService } from '../../services/ai.js'
 export default {
     name: 'kimi',
     aliases: ['kimik2', 'askkimi'],
-    category: 'utility',
+    category: 'tools',
     description: 'Tanyakan sesuatu ke Moonshot AI Kimi K2.6 (NVIDIA NIM) dengan penalaran logika (reasoning) tinggi.',
     usage: '.kimi [pertanyaan]',
     example: '.kimi berikan saya 5 teka-teki logika yang sulit beserta jawabannya.',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "kimi",
+        "kimik2",
+        "askkimi",
+        "reasoning",
+        "moonshot",
+        "nvidia",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "prompt": {
+                "type": "string",
+                "description": "Pertanyaan atau masalah logika/pemrograman yang memerlukan penalaran tinggi"
+            }
+        },
+        "required": [
+            "prompt"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react } = ctx

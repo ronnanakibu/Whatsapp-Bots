@@ -9,8 +9,16 @@ export default {
     category: 'owner',
     description: '[OWNER] Memicu restart server container via Pterodactyl API.',
     usage: '.restart',
+    example: '.restart',
     cooldown: 0,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['restart', 'reboot', 'pterodactyl', 'container', 'server', 'owner'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react, sender, chatId, args } = ctx

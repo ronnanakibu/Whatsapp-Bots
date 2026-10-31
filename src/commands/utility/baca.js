@@ -110,11 +110,33 @@ async function extractDocumentData(ctx) {
 export default {
     name: 'baca',
     aliases: ['bacaweb', 'readweb', 'ringkasweb', 'summaryweb', 'bacalink'],
-    category: 'utility',
+    category: 'tools',
     description: 'Baca isi web artikel/berita atau dokumen PDF dan buat ringkasan eksekutif AI',
     usage: '.baca <link web> atau balas dokumen dengan .baca',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "baca",
+        "bacaweb",
+        "readweb",
+        "ringkasweb",
+        "webreader",
+        "summarize",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "URL situs berita/artikel yang ingin dibaca dan diringkas"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react, messageContent } = ctx

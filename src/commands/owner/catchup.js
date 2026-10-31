@@ -135,8 +135,21 @@ export default {
     category: 'owner',
     description: '[OWNER] Merangkum seluruh obrolan grup WhatsApp yang belum dibaca sejak owner terakhir aktif.',
     usage: '.catchup [opsional: jam, contoh: .catchup atau .catchup 12]',
+    example: '.catchup 12',
     cooldown: 5,
     permissions: ['owner'],
+    requireBotAdmin: false,
+    tags: ['catchup', 'whatmissed', 'recapall', 'summarizeall', 'ketinggalan', 'missed', 'owner'],
+    params: {
+        type: 'object',
+        properties: {
+            jam: {
+                type: 'number',
+                description: 'Jumlah jam ke belakang untuk merangkum obrolan grup (contoh: 12)'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         await handleOwnerCatchup(ctx)

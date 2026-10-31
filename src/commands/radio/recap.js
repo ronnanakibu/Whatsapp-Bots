@@ -191,11 +191,33 @@ export function initRecapScheduler(sock) {
 export default {
     name: 'recap',
     aliases: ['wrapped', 'rekap', 'weeklyrecap'],
-    category: 'radio',
+    category: 'audio',
     description: 'Tampilkan rekapitulasi & Spotify-style Wrapped mingguan radio',
     usage: '.recap [me] [last]',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "recap",
+        "wrapped",
+        "rekap",
+        "weeklyrecap",
+        "stats",
+        "radio",
+        "audio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "scope": {
+                "type": "string",
+                "description": "Cakupan rekap: \"me\" untuk statistik pribadi, \"last\" untuk minggu lalu"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, args, sender, pushName, react, sock } = ctx

@@ -14,11 +14,44 @@ import { parseTargetJid } from '../../utils/group.js'
 export default {
     name: 'fav',
     aliases: ['myfav', 'favlist', 'playfav', 'unfav', 'unlike', 'like', 'likes'],
-    category: 'radio',
+    category: 'audio',
     description: 'Kelola daftar lagu favorit Anda (.fav / .myfav / .playfav / .unfav)',
     usage: '.fav (sukai lagu sekarang) | .myfav (daftar lagu) | .playfav <nomor/random/all> | .unfav <nomor>',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "fav",
+        "myfav",
+        "favorite",
+        "playfav",
+        "unfav",
+        "lagufavorit",
+        "audio",
+        "radio"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Aksi favorit: \"like\" (sukai lagu saat ini), \"list\" (lihat daftar), \"play\" (putar favorit), \"unlike\" (hapus favorit)",
+                "enum": [
+                    "like",
+                    "list",
+                    "play",
+                    "unlike"
+                ]
+            },
+            "target": {
+                "type": "string",
+                "description": "Nomor indeks lagu pada daftar favorit, atau \"all\" / \"random\" untuk memutar"
+            }
+        },
+        "required": []
+    },
+
+
 
     async execute(ctx) {
         const { reply, args, sender, commandName, pushName, react, mentionedJids } = ctx

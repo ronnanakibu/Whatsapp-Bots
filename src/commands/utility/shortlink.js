@@ -4,12 +4,36 @@
 export default {
     name: 'shortlink',
     aliases: ['short', 'shorten', 'tinyurl'],
-    category: 'utility',
+    category: 'tools',
     description: 'Perpendek URL panjang',
     usage: '.shortlink [URL]',
     example: '.shortlink https://github.com/ronnanakibu/BOTWA2.0',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: [
+        "shortlink",
+        "short",
+        "shorten",
+        "tinyurl",
+        "link",
+        "url",
+        "tools"
+    ],
+    params: {
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "URL panjang yang ingin diperpendek"
+            }
+        },
+        "required": [
+            "url"
+        ]
+    },
+
+
 
     async execute(ctx) {
         const { args, reply, react } = ctx
