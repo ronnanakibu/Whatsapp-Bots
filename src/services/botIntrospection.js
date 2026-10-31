@@ -94,7 +94,7 @@ class BotIntrospectionService {
         const rawUser = sock?.user?.id || process.env.BOT_NUMBER || ''
         const botNumber = rawUser.split(':')[0].replace(/[^0-9]/g, '')
 
-        let version = '5.25.24'
+        let version = '6.0.0'
         try {
             const pkgPath = path.resolve('./package.json')
             if (fs.existsSync(pkgPath)) {

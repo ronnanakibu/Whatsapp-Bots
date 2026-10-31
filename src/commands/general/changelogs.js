@@ -2,11 +2,17 @@
 
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 // Helper to locate changelogs directory across different run environments
 function getChangelogDir() {
     const cwd = process.cwd()
     const candidates = [
+        path.resolve(__dirname, '../../../changelogs'), // Root of project from src/commands/general/
+        path.resolve(__dirname, '../../changelogs'),
         path.resolve(cwd, 'changelogs'),
         path.resolve('./changelogs'),
         path.resolve(cwd, 'JavaScript/BOTS/WABOT2.0/changelogs'),
@@ -20,8 +26,10 @@ function getChangelogDir() {
             }
         } catch (_) {}
     }
-    const fallback = path.resolve(cwd, 'changelogs')
-    if (!fs.existsSync(fallback)) fs.mkdirSync(fallback, { recursive: true })
+    const fallback = path.resolve(__dirname, '../../../changelogs')
+    if (!fs.existsSync(fallback)) {
+        try { fs.mkdirSync(fallback, { recursive: true }) } catch (_) {}
+    }
     return fallback
 }
 
@@ -159,11 +167,15 @@ export default {
         let isSpecific = false
 
         if (subCommand) {
-            // Find if subCommand matches any filename (e.g. v2.1.0, 2.1.0, etc.)
+            // Find if subCommand matches any filename (e.g. v6, 6, v6.0.0, 6.0.0, etc.)
             const query = subCommand.toLowerCase().replace(/\.md$/, '').replace(/^v/, '')
             const match = files.find(f => {
                 const fClean = f.toLowerCase().replace(/\.md$/, '').replace(/^v/, '')
-                return fClean === query || f.toLowerCase() === subCommand.toLowerCase() || f.toLowerCase() === `${subCommand.toLowerCase()}.md`
+                return fClean === query 
+                    || fClean.startsWith(query + '.')
+                    || f.toLowerCase() === subCommand.toLowerCase() 
+                    || f.toLowerCase() === `${subCommand.toLowerCase()}.md`
+                    || f.toLowerCase() === `v${subCommand.toLowerCase()}.md`
             })
             if (match) {
                 targetFile = match
