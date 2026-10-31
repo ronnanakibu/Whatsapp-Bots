@@ -91,6 +91,61 @@ function formatFileSize(bytes) {
     return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
 }
 
+/**
+ * Detect MIME type from file buffer magic bytes (file signature).
+ * Supports PDF, Office Open XML (DOCX/PPTX/XLSX), images, audio, video, and archives.
+ */
+function getMimeFromBuffer(buf) {
+    if (!buf || buf.length < 8) return null
+    const b = buf
+
+    // PDF: %PDF
+    if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'application/pdf'
+
+    // PNG
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'image/png'
+
+    // JPEG
+    if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return 'image/jpeg'
+
+    // GIF
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif'
+
+    // WEBP: RIFF....WEBP
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+        b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp'
+
+    // ZIP-based (Office Open XML: DOCX, PPTX, XLSX are all ZIP)
+    if (b[0] === 0x50 && b[1] === 0x4B && b[2] === 0x03 && b[3] === 0x04) {
+        // Try to peek content type from ZIP central directory header string
+        const str = buf.slice(0, Math.min(buf.length, 512)).toString('latin1')
+        if (str.includes('word/')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        if (str.includes('ppt/')) return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        if (str.includes('xl/')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        return 'application/zip'
+    }
+
+    // RAR: Rar!
+    if (b[0] === 0x52 && b[1] === 0x61 && b[2] === 0x72 && b[3] === 0x21) return 'application/x-rar-compressed'
+
+    // 7z: 7z\xBC\xAF\x27\x1C
+    if (b[0] === 0x37 && b[1] === 0x7A && b[2] === 0xBC && b[3] === 0xAF) return 'application/x-7z-compressed'
+
+    // MP3: ID3 or sync frame
+    if ((b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) || (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0)) return 'audio/mpeg'
+
+    // OGG
+    if (b[0] === 0x4F && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53) return 'audio/ogg'
+
+    // MP4/M4A: ftyp
+    if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) return 'video/mp4'
+
+    // EPUB: same as ZIP but with epub content
+    // (already handled above via ZIP signature)
+
+    return null
+}
+
 function getExtensionFromMime(mime = '', defaultExt = 'bin') {
     const m = (mime || '').toLowerCase()
     if (m.includes('pdf')) return 'pdf'
@@ -197,6 +252,16 @@ async function extractAttachmentAndText(ctx) {
                         { logger, reuploadRequest: sock?.updateMediaMessage }
                     )
                     if (buffer) {
+                        const sniffedMime = getMimeFromBuffer(buffer)
+                        if (sniffedMime) {
+                            mime = sniffedMime
+                            const properExt = '.' + getExtensionFromMime(sniffedMime)
+                            const curExt = path.extname(fileName || '').toLowerCase()
+                            if (!curExt || curExt === '.bin' || curExt === '.tmp' || curExt !== properExt) {
+                                const base = (fileName && curExt) ? path.basename(fileName, curExt) : (fileName || `lampiran_${Date.now()}`)
+                                fileName = `${base}${properExt}`
+                            }
+                        }
                         return {
                             attachment: { buffer, fileName, mime, size: buffer.length },
                             quotedText: null
@@ -254,6 +319,16 @@ async function extractAttachmentAndText(ctx) {
                             { logger, reuploadRequest: sock?.updateMediaMessage }
                         )
                         if (buffer) {
+                            const sniffedMime = getMimeFromBuffer(buffer)
+                            if (sniffedMime) {
+                                mime = sniffedMime
+                                const properExt = '.' + getExtensionFromMime(sniffedMime)
+                                const curExt = path.extname(fileName || '').toLowerCase()
+                                if (!curExt || curExt === '.bin' || curExt === '.tmp' || curExt !== properExt) {
+                                    const base = (fileName && curExt) ? path.basename(fileName, curExt) : (fileName || `lampiran_${Date.now()}`)
+                                    fileName = `${base}${properExt}`
+                                }
+                            }
                             return {
                                 attachment: { buffer, fileName, mime, size: buffer.length },
                                 quotedText: null
@@ -466,7 +541,9 @@ export default {
                 await react('⏳')
 
                 // Tentukan nama berkas yang rapi & ber-ekstensi valid
-                const extFromMime = getExtensionFromMime(attachment.mime, 'bin')
+                const sniffedMime = getMimeFromBuffer(attachment.buffer)
+                const effectiveMime = sniffedMime || ensureCorrectMimeType(attachment.fileName || '', attachment.mime)
+                const extFromMime = getExtensionFromMime(effectiveMime, 'bin')
                 let finalFileName = attachment.fileName || 'dokumen'
 
                 if (!attachment.fileName || attachment.fileName.startsWith('lampiran_')) {
@@ -474,8 +551,9 @@ export default {
                     finalFileName = `${cleanTitle}.${extFromMime}`
                 } else {
                     const curExt = path.extname(attachment.fileName).toLowerCase()
-                    if (!curExt || curExt === '.bin' || curExt === '.tmp') {
-                        finalFileName = `${path.basename(attachment.fileName, curExt)}.${extFromMime}`
+                    if (!curExt || curExt === '.bin' || curExt === '.tmp' || (extFromMime !== 'bin' && curExt !== `.${extFromMime}`)) {
+                        const base = curExt ? path.basename(attachment.fileName, curExt) : attachment.fileName
+                        finalFileName = `${base}.${extFromMime}`
                     }
                 }
 
@@ -484,7 +562,7 @@ export default {
                 savedFilePath = path.join(DOCS_DIR, diskName)
                 savedFileName = finalFileName
                 savedFileSize = attachment.size
-                savedMimeType = ensureCorrectMimeType(finalFileName, attachment.mime)
+                savedMimeType = effectiveMime
 
                 try {
                     fs.writeFileSync(savedFilePath, attachment.buffer)
@@ -585,11 +663,17 @@ export default {
                 let sendFileName = note.file_name || `${note.title || 'dokumen'}`
                 let sendMime = ensureCorrectMimeType(sendFileName, note.mime_type || '')
 
+                // Auto-sniff fileBuffer magic bytes to rescue older records stored with generic .bin/octet-stream
+                const sniffedMime = getMimeFromBuffer(fileBuffer)
+                if (sniffedMime) {
+                    sendMime = sniffedMime
+                }
+
                 const curExt = path.extname(sendFileName).toLowerCase()
                 const properExt = '.' + getExtensionFromMime(sendMime, 'bin')
 
-                // Perbaiki jika nama file yang tersimpan berakhiran .bin, .tmp, atau tanpa ekstensi
-                if (!curExt || curExt === '.bin' || curExt === '.tmp') {
+                // Perbaiki jika nama file yang tersimpan berakhiran .bin, .tmp, tanpa ekstensi, atau tidak cocok dengan tipe aslinya
+                if (!curExt || curExt === '.bin' || curExt === '.tmp' || (properExt !== '.bin' && curExt !== properExt)) {
                     const base = path.basename(sendFileName, curExt)
                     const cleanTitle = (note.title || (base.startsWith('lampiran_') ? 'dokumen' : base))
                         .replace(/[^a-zA-Z0-9_\-\s]/g, '')
@@ -597,9 +681,10 @@ export default {
                         .replace(/\s+/g, '_')
                     sendFileName = `${cleanTitle || 'dokumen'}${properExt}`
 
-                    // Auto-heal database record jika nama sebelumnya .bin
+                    // Auto-heal database record jika nama sebelumnya .bin atau tipe MIME kadaluarsa
                     try {
                         db.prepare('UPDATE notes SET file_name = ?, mime_type = ? WHERE id = ?').run(sendFileName, sendMime, note.id)
+                        logger.info(`[Notes] Auto-healed note #${note.id}: ${sendFileName} (${sendMime})`)
                     } catch (_) {}
                 }
 

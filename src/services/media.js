@@ -326,9 +326,9 @@ export class MediaService {
         }
 
         const maxLineLen = Math.max(...lines.map(l => l.length))
-        // Tighter & narrow margins: sisakan hanya beberapa pixel di kanan-kiri (~10-15px)
-        let fontSize = Math.floor(492 / (maxLineLen * 0.448))
-        fontSize = Math.max(18, Math.min(82, fontSize))
+        // Ukuran font proporsional, sedikit lebih kecil (~20-25%) agar estetis dan tidak menutupi gambar
+        let fontSize = Math.floor(450 / (maxLineLen * 0.49))
+        fontSize = Math.max(16, Math.min(62, fontSize))
 
         const lineSpacing = fontSize * 1.10
         // Posisi vertikal mepet ke batas atas/bawah kanvas (~7-10px margin)
@@ -570,10 +570,10 @@ export class MediaService {
                 return [...l].reduce((n, ch) => n + (ch.codePointAt(0) > 0x2000 ? 2 : 1), 0)
             }))
 
-            let fontSize = Math.floor(460 / (maxVisualLen * 0.44))
-            const maxVerticalFontSize = Math.floor(390 / (lines.length * 1.10))
+            let fontSize = Math.floor(420 / (maxVisualLen * 0.48))
+            const maxVerticalFontSize = Math.floor(340 / (lines.length * 1.10))
             fontSize = Math.min(fontSize, maxVerticalFontSize)
-            fontSize = Math.max(42, Math.min(160, fontSize))
+            fontSize = Math.max(28, Math.min(105, fontSize))
 
             const lineSpacing = fontSize * 1.10
             const totalTextHeight = lines.length * lineSpacing
@@ -703,7 +703,7 @@ export class MediaService {
                     fontWeight: 'bold',
                     fill: 'white',
                     stroke: 'black',
-                    strokeWidth: topData.fontSize > 50 ? '6' : (topData.fontSize > 32 ? '4' : '3'),
+                    strokeWidth: topData.fontSize > 45 ? '5' : (topData.fontSize > 28 ? '3.5' : '2.5'),
                     emojiMap,
                     letterSpacing: '0px'
                 })
@@ -718,7 +718,7 @@ export class MediaService {
                     fontWeight: 'bold',
                     fill: 'white',
                     stroke: 'black',
-                    strokeWidth: bottomData.fontSize > 50 ? '6' : (bottomData.fontSize > 32 ? '4' : '3'),
+                    strokeWidth: bottomData.fontSize > 45 ? '5' : (bottomData.fontSize > 28 ? '3.5' : '2.5'),
                     emojiMap,
                     letterSpacing: '0px'
                 })
@@ -792,7 +792,7 @@ export class MediaService {
                     fontWeight: 'bold',
                     fill: 'white',
                     stroke: 'black',
-                    strokeWidth: topData.fontSize > 50 ? '6' : (topData.fontSize > 32 ? '4' : '3'),
+                    strokeWidth: topData.fontSize > 45 ? '5' : (topData.fontSize > 28 ? '3.5' : '2.5'),
                     emojiMap,
                     letterSpacing: '0px'
                 })
@@ -807,7 +807,7 @@ export class MediaService {
                     fontWeight: 'bold',
                     fill: 'white',
                     stroke: 'black',
-                    strokeWidth: bottomData.fontSize > 50 ? '6' : (bottomData.fontSize > 32 ? '4' : '3'),
+                    strokeWidth: bottomData.fontSize > 45 ? '5' : (bottomData.fontSize > 28 ? '3.5' : '2.5'),
                     emojiMap,
                     letterSpacing: '0px'
                 })

@@ -40,7 +40,7 @@ export async function downloadYtdlp(url, options = {}) {
         '--write-info-json', // Tulis metadata ke file .info.json
         '-o', outTemplate,
         '--js-runtimes', 'node',
-        '--extractor-args', 'youtube:player_client=ios,android,web,mweb',
+        '--extractor-args', 'youtube:player_client=android,web',
         '--max-filesize', '100M',
     ]
 
@@ -91,26 +91,24 @@ export async function downloadYtdlp(url, options = {}) {
         if (hasFfmpeg) {
             const quality = options.audioQuality === 'normal' ? '128K' : '320K'
             args.push(
-                '-f', 'bestaudio/best',
+                '-f', 'ba/b[ext=m4a]/b/18',
                 '--extract-audio',
                 '--audio-format', 'mp3',
                 '--audio-quality', quality
             )
         } else {
-            // Tanpa ffmpeg, extract-audio akan melempar error postprocessing.
-            // Gunakan format native audio yang tidak membutuhkan ffmpeg
-            args.push('-f', 'bestaudio[ext=m4a]/bestaudio/best')
+            args.push('-f', 'ba[ext=m4a]/ba/b[ext=m4a]/b/18')
         }
     } else {
         // Video MP4 with target resolution limit
         const res = options.resolution || '1080'
         if (hasFfmpeg) {
             args.push(
-                '-f', `bestvideo[height<=${res}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${res}]+bestaudio/best[height<=${res}]/best`,
+                '-f', `bv*[height<=${res}][ext=mp4]+ba[ext=m4a]/bv*[height<=${res}]+ba/b[height<=${res}][ext=mp4]/b/18`,
                 '--merge-output-format', 'mp4'
             )
         } else {
-            args.push('-f', `best[height<=${res}][ext=mp4]/best[ext=mp4]/best`)
+            args.push('-f', `b[height<=${res}][ext=mp4]/b[ext=mp4]/b/18`)
         }
     }
 
@@ -129,6 +127,21 @@ export async function downloadYtdlp(url, options = {}) {
             if (code !== 0) {
                 // Hapus sisa file jika ada error
                 cleanupTempFiles(sessionId)
+
+                // Coba fallback YouTube API alternatif jika local yt-dlp error
+                if (url.includes('youtu.be') || url.includes('youtube.com')) {
+                    try {
+                        logger.info(`[yt-dlp] Local yt-dlp error on YouTube (code ${code}), trying YouTube API fallback...`)
+                        const { downloadYouTube } = await import('./youtube.js')
+                        const fbResult = await downloadYouTube(url, options)
+                        if (fbResult && fbResult.buffer) {
+                            return resolve(fbResult)
+                        }
+                    } catch (fbErr) {
+                        logger.warn(`[yt-dlp] YouTube API fallback failed: ${fbErr.message}`)
+                    }
+                }
+
                 if (process.env.HF_API_URL && !process.env.HF_API_URL.includes('ronnlbtrn-downloader')) {
                     logger.info(`[yt-dlp] Local yt-dlp failed (code ${code}), falling back to HF Space...`)
                     return downloadViaHF(url, format).then(resolve).catch(hfErr => {
@@ -176,7 +189,7 @@ export async function downloadYtdlp(url, options = {}) {
                 const ext = (rawExt && !tempExts.includes(rawExt))
                     ? rawExt
                     : (format === 'audio' ? 'mp3' : 'mp4')
-                const mimeType = format === 'audio' ? 'audio/mp3' : 'video/mp4'
+                const mimeType = format === 'audio' ? 'audio/mpeg' : 'video/mp4'
                 
                 let caption = format === 'video' ? `🎬 *${title}*` : `🎵 *${title}*`
                 if (metadata.duration_string) caption += `\n⏱️ ${metadata.duration_string}`
@@ -268,7 +281,7 @@ async function downloadViaHF(url, format) {
         })
 
         const ext = format === 'audio' ? 'mp3' : 'mp4'
-        const mimeType = format === 'audio' ? 'audio/mp3' : 'video/mp4'
+        const mimeType = format === 'audio' ? 'audio/mpeg' : 'video/mp4'
         
         // Coba ambil judul dari custom header
         const rawTitle = res.headers?.['x-title'] || 'Media'

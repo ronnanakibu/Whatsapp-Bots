@@ -317,7 +317,7 @@ export function ytdlpGetAudioUrl(youtubeUrl) {
             '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best[height<=480]/best',
             '--get-url',
             '--js-runtimes', 'node',
-            '--extractor-args', 'youtube:player_client=ios,android,web,mweb',
+            '--extractor-args', 'youtube:player_client=android,web',
             '--buffer-size', '256k',
             ...getCookieArgs(),
             '--no-warnings',
@@ -372,7 +372,7 @@ export function ytdlpStream(youtubeUrl) {
         '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
         '--output', '-', // stream ke stdout
         '--js-runtimes', 'node',
-        '--extractor-args', 'youtube:player_client=ios,android,web,mweb',
+        '--extractor-args', 'youtube:player_client=android,web',
         '--buffer-size', '256k',
         ...getCookieArgs(),
         '--no-warnings',

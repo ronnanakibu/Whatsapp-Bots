@@ -213,18 +213,26 @@ async function sendMedia(sock, chatId, quotedMsg, result) {
         }, baseOpts)
 
     } else if (type === 'audio' || mimeType?.startsWith('audio/')) {
-        let docMime = 'audio/mp3'
+        let audioMime = 'audio/mpeg'
         const lowerExt = ext?.toLowerCase()
-        if (lowerExt === 'wav') docMime = 'audio/wav'
-        else if (lowerExt === 'ogg') docMime = 'audio/ogg'
-        else if (lowerExt === 'm4a') docMime = 'audio/m4a'
+        if (lowerExt === 'wav') audioMime = 'audio/wav'
+        else if (lowerExt === 'ogg' || lowerExt === 'opus') audioMime = 'audio/ogg; codecs=opus'
+        else if (lowerExt === 'm4a') audioMime = 'audio/mp4'
 
+        // Kirim sebagai audio message (ptt: false) agar langsung bisa diputar di HP Android, iOS, dan Web
         await sock.sendMessage(chatId, {
-            document: buffer,
-            caption,
-            mimetype: docMime,
+            audio: buffer,
+            mimetype: audioMime,
+            ptt: false,
             fileName: result.filename,
         }, baseOpts)
+
+        // Jika ada caption/informasi lagu, kirimkan juga sebagai info teks pendukung
+        if (caption) {
+            try {
+                await sock.sendMessage(chatId, { text: caption }, baseOpts)
+            } catch (_) {}
+        }
 
     } else if (type === 'image' || mimeType?.startsWith('image/')) {
         await sock.sendMessage(chatId, {

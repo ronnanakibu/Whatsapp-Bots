@@ -348,6 +348,59 @@ async function searchOnlineSound(query) {
     return null
 }
 
+/**
+ * Memastikan buffer audio siap diputar di semua platform WhatsApp (HP Android, iOS, dan Web).
+ * Khusus WhatsApp Mobile, pesan suara PTT (Voice Note) WAJIB berupa Ogg Opus (audio/ogg; codecs=opus).
+ * Jika MP3 dikirim dengan ptt: true, WhatsApp HP akan menolak memutar audio tersebut.
+ */
+async function preparePlayableAudio(buffer, desiredPtt = true) {
+    if (!buffer || buffer.length === 0) return null
+
+    // Cek magic bytes OGG ('OggS')
+    const isOgg = buffer.length > 4 && buffer[0] === 0x4F && buffer[1] === 0x67 && buffer[2] === 0x67 && buffer[3] === 0x53
+    if (isOgg) {
+        return {
+            buffer,
+            mimetype: 'audio/ogg; codecs=opus',
+            ptt: desiredPtt
+        }
+    }
+
+    // Jika bukan Ogg Opus, konversikan via ffmpeg ke libopus OGG agar valid sebagai Voice Note di HP
+    try {
+        const ffmpegBin = getFfmpegPath()
+        const tmpDir = path.resolve('./storage/media/tmp')
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+        const randId = crypto.randomBytes(4).toString('hex')
+        const tempIn = path.join(tmpDir, `${randId}_in`)
+        const tempOut = path.join(tmpDir, `${randId}_out.ogg`)
+
+        fs.writeFileSync(tempIn, buffer)
+        await execPromise(`"${ffmpegBin}" -y -i "${tempIn}" -vn -c:a libopus -b:a 64k -vbr on "${tempOut}"`)
+
+        if (fs.existsSync(tempOut)) {
+            const converted = fs.readFileSync(tempOut)
+            try { fs.unlinkSync(tempIn) } catch (_) {}
+            try { fs.unlinkSync(tempOut) } catch (_) {}
+            return {
+                buffer: converted,
+                mimetype: 'audio/ogg; codecs=opus',
+                ptt: desiredPtt
+            }
+        }
+    } catch (convErr) {
+        logger.warn(`[Sound] Ffmpeg opus conversion failed (${convErr.message}), fallback ptt: false`)
+    }
+
+    // Fallback: Jika konversi ffmpeg gagal, kirim sebagai audio standar (ptt: false) dengan audio/mpeg
+    // WhatsApp HP BISA memutar audio/mpeg jika ptt bernilai FALSE (pemutar musik standar)
+    return {
+        buffer,
+        mimetype: 'audio/mpeg',
+        ptt: false
+    }
+}
+
 export default {
     name: 'sound',
     aliases: ['snd', 'vn', 'voice'],
@@ -688,13 +741,16 @@ export default {
                     playBuffer = fs.readFileSync(vnRow.file_path)
                 }
                 if (playBuffer && playBuffer.length > 0) {
-                    await sock.sendMessage(from, {
-                        audio: playBuffer,
-                        mimetype: vnRow.mime_type || 'audio/ogg; codecs=opus',
-                        ptt: true
-                    }, { quoted: msg })
-                    await react('✅')
-                    return
+                    const playable = await preparePlayableAudio(playBuffer, true)
+                    if (playable) {
+                        await sock.sendMessage(from, {
+                            audio: playable.buffer,
+                            mimetype: playable.mimetype,
+                            ptt: playable.ptt
+                        }, { quoted: msg })
+                        await react('✅')
+                        return
+                    }
                 }
             }
         } catch (dbErr) {
@@ -707,13 +763,16 @@ export default {
                 const soundUrl = MEME_SOUNDS[query]
                 const audioBuffer = await fetchSoundBuffer(soundUrl)
                 if (audioBuffer && audioBuffer.length > 0) {
-                    await sock.sendMessage(from, {
-                        audio: audioBuffer,
-                        mimetype: 'audio/mpeg',
-                        ptt: true
-                    }, { quoted: msg })
-                    await react('✅')
-                    return
+                    const playable = await preparePlayableAudio(audioBuffer, true)
+                    if (playable) {
+                        await sock.sendMessage(from, {
+                            audio: playable.buffer,
+                            mimetype: playable.mimetype,
+                            ptt: playable.ptt
+                        }, { quoted: msg })
+                        await react('✅')
+                        return
+                    }
                 }
             } catch (playErr) {
                 logger.error(`[Sound] Built-in sound play error: ${playErr.message}`)
@@ -729,13 +788,16 @@ export default {
                     cachedBuffer = await fetchSoundBuffer(cacheRow.sound_url)
                 }
                 if (cachedBuffer && cachedBuffer.length > 0) {
-                    await sock.sendMessage(from, {
-                        audio: cachedBuffer,
-                        mimetype: 'audio/mpeg',
-                        ptt: true
-                    }, { quoted: msg })
-                    await react('✅')
-                    return
+                    const playable = await preparePlayableAudio(cachedBuffer, true)
+                    if (playable) {
+                        await sock.sendMessage(from, {
+                            audio: playable.buffer,
+                            mimetype: playable.mimetype,
+                            ptt: playable.ptt
+                        }, { quoted: msg })
+                        await react('✅')
+                        return
+                    }
                 }
             }
         } catch (cacheErr) {
@@ -746,24 +808,25 @@ export default {
         try {
             const onlineResult = await searchOnlineSound(query)
             if (onlineResult && onlineResult.buffer) {
-                // Simpan ke SQLite cache agar panggilan berikutnya 0ms
-                try {
-                    db.prepare(`
-                        INSERT OR REPLACE INTO sound_cache (keyword, sound_name, sound_url, audio_data, source, created_at)
-                        VALUES (?, ?, ?, ?, ?, unixepoch())
-                    `).run(query, onlineResult.title, onlineResult.url, onlineResult.buffer, onlineResult.source || 'online-sfx')
-                } catch (_) {}
+                const playable = await preparePlayableAudio(onlineResult.buffer, true)
+                if (playable) {
+                    // Simpan ke SQLite cache dengan audio siap putar agar panggilan berikutnya 0ms & 100% kompatibel di HP
+                    try {
+                        db.prepare(`
+                            INSERT OR REPLACE INTO sound_cache (keyword, sound_name, sound_url, audio_data, source, created_at)
+                            VALUES (?, ?, ?, ?, ?, unixepoch())
+                        `).run(query, onlineResult.title, onlineResult.url, playable.buffer, onlineResult.source || 'online-sfx')
+                    } catch (_) {}
 
-                // Kirim langsung sebagai Voice Note
-                const mime = onlineResult.ext === 'opus' ? 'audio/ogg; codecs=opus' : 'audio/mpeg'
-                await sock.sendMessage(from, {
-                    audio: onlineResult.buffer,
-                    mimetype: mime,
-                    ptt: true
-                }, { quoted: msg })
+                    await sock.sendMessage(from, {
+                        audio: playable.buffer,
+                        mimetype: playable.mimetype,
+                        ptt: playable.ptt
+                    }, { quoted: msg })
 
-                await react('✅')
-                return
+                    await react('✅')
+                    return
+                }
             }
         } catch (searchErr) {
             logger.warn(`[Sound] Online search error: ${searchErr.message}`)

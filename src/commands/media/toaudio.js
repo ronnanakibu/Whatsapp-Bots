@@ -96,10 +96,10 @@ export default {
             const cleanFileName = `audio_${id}.mp3`
 
             await sock.sendMessage(from, {
-                document: audioBuffer,
+                audio: audioBuffer,
                 mimetype: 'audio/mpeg',
-                fileName: cleanFileName,
-                caption: '🎵 *Ekstraksi Audio MP3 Selesai!*'
+                ptt: false,
+                fileName: cleanFileName
             }, { quoted: ctx.msg })
 
             await react('✅')

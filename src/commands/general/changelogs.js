@@ -3,18 +3,39 @@
 import fs from 'fs'
 import path from 'path'
 
+// Helper to locate changelogs directory across different run environments
+function getChangelogDir() {
+    const cwd = process.cwd()
+    const candidates = [
+        path.resolve(cwd, 'changelogs'),
+        path.resolve('./changelogs'),
+        path.resolve(cwd, 'JavaScript/BOTS/WABOT2.0/changelogs'),
+        path.resolve('d:/CE/JavaScript/BOTS/WABOT2.0/changelogs'),
+        path.resolve('d:/CE/changelogs')
+    ]
+    for (const d of candidates) {
+        try {
+            if (fs.existsSync(d) && fs.readdirSync(d).some(f => f.endsWith('.md'))) {
+                return d
+            }
+        } catch (_) {}
+    }
+    const fallback = path.resolve(cwd, 'changelogs')
+    if (!fs.existsSync(fallback)) fs.mkdirSync(fallback, { recursive: true })
+    return fallback
+}
+
 // Helper to clean and sort version files (semver descending)
 function getSortedLocalChangelogs() {
-    const changelogDir = './changelogs'
-    if (!fs.existsSync(changelogDir)) {
-        fs.mkdirSync(changelogDir, { recursive: true })
-    }
-    const files = fs.readdirSync(changelogDir)
-        .filter(f => f.endsWith('.md'))
+    const changelogDir = getChangelogDir()
+    let files = []
+    try {
+        files = fs.readdirSync(changelogDir).filter(f => f.endsWith('.md'))
+    } catch (_) {}
 
     const parseVersion = (filename) => {
-        const clean = filename.replace(/\.md$/, '').replace(/^v/, '')
-        return clean.split('.').map(Number)
+        const clean = filename.replace(/\.md$/, '').replace(/^v/i, '')
+        return clean.split('.').map(part => parseInt(part, 10) || 0)
     }
 
     files.sort((a, b) => {
@@ -126,9 +147,12 @@ export default {
         let isSpecific = false
 
         if (subCommand) {
-            // Find if subCommand matches any filename (e.g. v2.1.0 or 2.1.0)
-            const query = subCommand.startsWith('v') ? subCommand : `v${subCommand}`
-            const match = files.find(f => f.replace(/\.md$/, '') === query)
+            // Find if subCommand matches any filename (e.g. v2.1.0, 2.1.0, etc.)
+            const query = subCommand.toLowerCase().replace(/\.md$/, '').replace(/^v/, '')
+            const match = files.find(f => {
+                const fClean = f.toLowerCase().replace(/\.md$/, '').replace(/^v/, '')
+                return fClean === query || f.toLowerCase() === subCommand.toLowerCase() || f.toLowerCase() === `${subCommand.toLowerCase()}.md`
+            })
             if (match) {
                 targetFile = match
                 isSpecific = true
@@ -138,7 +162,8 @@ export default {
         }
 
         try {
-            const filePath = path.join('./changelogs', targetFile)
+            const changelogDir = getChangelogDir()
+            const filePath = path.join(changelogDir, targetFile)
             const mdContent = fs.readFileSync(filePath, 'utf-8')
             const formattedContent = formatMarkdownToWa(mdContent)
 
