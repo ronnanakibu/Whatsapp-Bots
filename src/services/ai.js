@@ -8,6 +8,7 @@ import { Client } from '@gradio/client'
 import fs from 'fs'
 import { memoryService } from './memory.js'
 import { logger } from '../utils/logger.js'
+import { botIntrospection } from './botIntrospection.js'
 
 let GoogleGenerativeAI = null
 let sharp = null
@@ -133,21 +134,41 @@ Daftar Perintah (Skills) yang Tersedia:
 6. 'buat' (alias: 'image'): Membuat gambar baru dengan AI (image generation). Argumen: [deskripsi gambar/prompt]. Contoh: ["kucing astronot"]
 7. 'ocr': Membaca teks dari gambar (baik gambar langsung atau quote gambar). Argumen: tidak ada.
 8. 'stalk': Mencari informasi profile instagram/tiktok/github/dll dari username. Argumen: [username]. Contoh: ["jokowi"]
-9. 'summarize': Merangkum teks yang sangat panjang menjadi ringkas. Argumen: [teks panjang].
+9. 'rangkum' (alias: 'summarize', 'recapchat', 'rangkuman'): Merangkum percakapan grup langsung dari riwayat SQLite bot (hingga 500 pesan terakhir). RonnBot MEMILIKI AKSES LANGSUNG ke riwayat obrolan grup WhatsApp! JANGAN PERNAH menolak atau menyuruh user copas. Argumen: [jumlah pesan, nama grup opsional]. Contoh: ["100", "learning C.St"].
 10. 'ping': Mengecek kecepatan/latensi respon bot. Argumen: tidak ada.
 11. 'uptime': Mengecek berapa lama bot sudah aktif berjalan. Argumen: tidak ada.
+12. 'groups' (alias: 'listgroups', 'listgrup', 'mygroups'): Menampilkan daftar dan jumlah grup WhatsApp yang diikuti oleh bot secara real-time. Gunakan jika user bertanya ada berapa grup yang lu join/ikuti atau meminta daftar grup. Argumen: [filter nama opsional]. Contoh: [].
+13. 'cook' (alias: 'racik', 'dynamicskill'): Meracik fitur baru atau mengeksekusi logika kustom JavaScript on-the-fly dengan Chef engine bot. Argumen: [instruksi fitur]. Contoh: ["cek status koneksi"].
 
 ATURAN JSON:
 - Balas HANYA dengan JSON murni di atas tanpa kata pengantar atau penutup. Jangan letakkan penjelasan apa pun.`
 
-function getDynamicSystemPrompt() {
+function getDynamicSystemPrompt(options = {}) {
     const now = new Date()
     const dateStr = now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Jakarta' })
     const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
 
     const basePrompt = process.env.SYSTEM_PROMPT || DEFAULT_SYSTEM_PROMPT
 
+    let introspection = options.introspectionPrompt || ''
+    if (!introspection && botIntrospection) {
+        try {
+            const id = botIntrospection.getBotIdentity()
+            const health = botIntrospection.getSystemHealth()
+            const groupCount = botIntrospection.groupsCache ? Object.keys(botIntrospection.groupsCache).length : 'aktif'
+            introspection = `
+🤖 [LIVE BOT SELF-AWARENESS & RUNTIME STATE]:
+- Nama: ${id.name} v${id.version} (Asisten WhatsApp berbasis ${id.engine})
+- Pencipta & Owner: ${id.ownerName} (@${id.ownerNumber})
+- RAM: ${health.rssMB} MB RSS | Uptime: ${health.uptimeStr}
+- Lingkungan: ${health.platform} | Node.js ${health.nodeVersion}
+- Keanggotaan Grup: Bot saat ini aktif bergabung di WhatsApp!
+- PENTING: Jika ditanya mengenai identitas, mesin, atau grup, jawab dengan bangga dan faktual berdasarkan data di atas!`
+        } catch (_) {}
+    }
+
     return `${basePrompt}
+${introspection}
 
 🕒 Info Waktu & Tanggal Real-time saat ini:
 - Hari/Tanggal: ${dateStr}

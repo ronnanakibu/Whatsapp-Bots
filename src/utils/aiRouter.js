@@ -130,14 +130,18 @@ const COMMAND_PATTERNS = [
         extractArgs: () => []
     },
     {
-        command: 'rangkum',
+        command: 'groups',
         requiresMedia: false,
         patterns: [
-            /\b(ringkas|rangkum|recap|summarize)\b.*\b(chat|percakapan|obrolan|pesan|grup)\b/i,
-            /\b(ringkas|rangkum|recap|summarize)\s+(\d{1,3})\b/i,
-            /\b(ringkasin|rangkumin|recapin)\b/i,
+            /\b(berapa|daftar|list|sebutkan)\s+grup\b/i,
+            /\bgrup\s+(apa\s+aja|mana\s+aja)\b/i,
+            /\bgrup\s+yang\s+(lu|kamu|bot)\s+(join|ikuti|masuki)\b/i,
+            /\b(total|jumlah)\s+grup\b/i
         ],
-        extractArgs: (text) => [text]
+        extractArgs: (text) => {
+            const match = text.match(/(?:nama|cari|filter)\s+([a-zA-Z0-9_\- ]+)/i)
+            return match ? [match[1].trim()] : []
+        }
     },
     {
         command: 'cook',
@@ -479,7 +483,7 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         let introspectionPrompt = ''
         try {
             const { botIntrospection } = await import('../services/botIntrospection.js')
-            introspectionPrompt = await botIntrospection.getIntrospectionContextPrompt()
+            introspectionPrompt = await botIntrospection.getIntrospectionContextPrompt(ctx.sock)
         } catch (_) {}
 
         const aiOptions = {

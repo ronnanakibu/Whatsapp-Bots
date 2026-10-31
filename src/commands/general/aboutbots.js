@@ -1,5 +1,6 @@
 // src/commands/general/aboutbots.js
 // Perintah .aboutbots — Informasi Profil Developer & Mindmap Arsitektur Bot
+import { getDashboardUrl, getRadioUrl } from '../../utils/url.js'
 
 export default {
     name: 'aboutbots',
@@ -36,10 +37,8 @@ export default {
         text += `• *Base Engine:* WhiskeySockets Baileys (WebSocket Connection)\n`
         text += `• *Database Cache:* Better-SQLite3 (High Performance SQL)\n`
         text += `• *Timezone:* Asia/Jakarta (GMT+7)\n`
-        const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
-        const port = process.env.RADIO_PORT || '25637'
-        text += `• *RonnBot Dashboard:* http://${host}:${port}/dashboard\n`
-        text += `• *Radio Dashboard:* http://${host}:${port}/radio\n\n`
+        text += `• *RonnBot Dashboard:* ${getDashboardUrl()}\n`
+        text += `• *Radio Dashboard:* ${getRadioUrl()}\n\n`
 
         text += `──────────────────────────────\n\n`
 

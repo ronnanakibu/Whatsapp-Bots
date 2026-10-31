@@ -2,6 +2,7 @@
 // !play — Request lagu ke radio. Support batch request dengan koma.
 
 import { radioService } from '../../services/radio.js'
+import { getRadioUrl } from '../../utils/url.js'
 
 const notifiedUsers = new Set()
 
@@ -86,9 +87,7 @@ export default {
 
             if (!notifiedUsers.has(sender)) {
                 notifiedUsers.add(sender)
-                const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
-                const port = process.env.RADIO_PORT || '25637'
-                text += `\n\n🎧 *Dengarkan radio di sini:*\n${host}:${port}/radio`
+                text += `\n\n🎧 *Dengarkan radio di sini:*\n${getRadioUrl()}`
             }
 
             await reply(text)
@@ -106,9 +105,7 @@ export default {
                 let linkMsg = ''
                 if (!notifiedUsers.has(sender)) {
                     notifiedUsers.add(sender)
-                    const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
-                    const port = process.env.RADIO_PORT || '25637'
-                    linkMsg = `\n\n🎧 *Dengarkan radio di sini:*\n${host}:${port}/radio`
+                    linkMsg = `\n\n🎧 *Dengarkan radio di sini:*\n${getRadioUrl()}`
                 }
 
                 await reply(

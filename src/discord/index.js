@@ -19,6 +19,7 @@ import {
 import { logger } from '../utils/logger.js'
 import { db } from '../services/db.js'
 import { lyricsService } from '../services/lyrics.js'
+import { getStreamUrl } from '../utils/url.js'
 
 let discordClient = null
 let currentConnection = null
@@ -381,7 +382,7 @@ export function startDiscordBot() {
                 `**📻 Radio Status**\n\n` +
                 `👥 Pendengar aktif: **${count}**\n` +
                 `▶️ Status: ${isPlaying ? '**ON AIR** 🔴' : '**OFF** ⚫'}\n` +
-                `🔗 Stream: \`http://ap2.nzb.zelpstore.id:${port}/stream\`\n\n` +
+                `🔗 Stream: \`${getStreamUrl()}\`\n\n` +
                 `_Gunakan URL stream di media player favoritmu!_`
             )
         }

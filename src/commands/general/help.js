@@ -2,6 +2,7 @@
 import fs from 'fs'
 import path from 'path'
 import { db } from '../../services/db.js'
+import { getDashboardUrl } from '../../utils/url.js'
 
 let cachedTotalUsers = 0
 let lastUserCountFetch = 0
@@ -269,15 +270,13 @@ export default {
         const runtimeStr = runtimeParts.join(' ')
 
         // Get bot version from package.json
-        let botVersion = '5.26.0'
+        let botVersion = '6.0.0'
         try {
             const pkg = JSON.parse(fs.readFileSync(path.resolve('./package.json'), 'utf-8'))
-            botVersion = pkg.version || '5.26.0'
+            botVersion = pkg.version || '6.0.0'
         } catch (_) { }
 
-        const host = process.env.RADIO_HOST || 'ap1.nzb.zelpstore.id'
-        const port = process.env.RADIO_PORT || '25637'
-        const dashboardUrl = `http://${host}:${port}/dashboard`
+        const dashboardUrl = getDashboardUrl()
 
         // Full clean Prompt Menu Layout
         let menuText = `╭───〔 *RONN BOT AUTOMATION* 〕───⬣\n`

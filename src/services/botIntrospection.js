@@ -14,13 +14,13 @@ class BotIntrospectionService {
     /**
      * Ambil daftar grup yang di-join oleh bot secara aman dengan in-memory cache
      */
-    async getParticipatingGroups() {
+    async getParticipatingGroups(passedSock = null) {
         const now = Date.now()
         if (this.groupsCache && (now - this.lastGroupsFetch < this.groupsTtlMs)) {
             return this.groupsCache
         }
 
-        const sock = getSocket()
+        const sock = passedSock || getSocket()
         if (!sock || typeof sock.groupFetchAllParticipating !== 'function') {
             return this.groupsCache || {}
         }
@@ -38,16 +38,16 @@ class BotIntrospectionService {
     /**
      * Hitung total grup aktif
      */
-    async getGroupsCount() {
-        const groups = await this.getParticipatingGroups()
+    async getGroupsCount(passedSock = null) {
+        const groups = await this.getParticipatingGroups(passedSock)
         return Object.keys(groups).length
     }
 
     /**
      * Ambil sampel nama grup yang di-join bot
      */
-    async getGroupsSample(limit = 5) {
-        const groups = await this.getParticipatingGroups()
+    async getGroupsSample(limit = 5, passedSock = null) {
+        const groups = await this.getParticipatingGroups(passedSock)
         return Object.values(groups).slice(0, limit).map(g => ({
             id: g.id,
             subject: g.subject || 'Tanpa Judul',
@@ -89,8 +89,8 @@ class BotIntrospectionService {
     /**
      * Ambil identitas lengkap bot
      */
-    getBotIdentity() {
-        const sock = getSocket()
+    getBotIdentity(passedSock = null) {
+        const sock = passedSock || getSocket()
         const rawUser = sock?.user?.id || process.env.BOT_NUMBER || ''
         const botNumber = rawUser.split(':')[0].replace(/[^0-9]/g, '')
 
@@ -155,12 +155,12 @@ class BotIntrospectionService {
     /**
      * Ambil string ringkasan komprehensif untuk disuntikkan ke prompt LLM
      */
-    async getIntrospectionContextPrompt() {
-        const identity = this.getBotIdentity()
+    async getIntrospectionContextPrompt(passedSock = null) {
+        const identity = this.getBotIdentity(passedSock)
         const health = this.getSystemHealth()
         const dbSummary = this.getDatabaseSummary()
-        const groupsCount = await this.getGroupsCount()
-        const groupsSample = await this.getGroupsSample(4)
+        const groupsCount = await this.getGroupsCount(passedSock)
+        const groupsSample = await this.getGroupsSample(4, passedSock)
 
         const sampleText = groupsSample.length > 0
             ? groupsSample.map(g => `"${g.subject}" (${g.participantsCount} member)`).join(', ')
