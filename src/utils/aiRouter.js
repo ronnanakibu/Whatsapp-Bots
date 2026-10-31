@@ -403,6 +403,23 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         return true
     }
 
+    // 3.5. Dynamic Skills Fast Match (Pustaka skrip otomatis yang pernah diracik Chef & disimpan)
+    try {
+        const { dynamicSkills } = await import('../services/dynamicSkills.js')
+        const matchedSkill = dynamicSkills.findMatchingSkill(promptText)
+        if (matchedSkill) {
+            botLogger.system(`⚡ [AIRouter] Executing cached dynamic skill: "${matchedSkill.name}"`)
+            const resultText = await dynamicSkills.executeSkill(matchedSkill, ctx)
+            if (resultText && typeof resultText === 'string') {
+                await reply(resultText)
+                await react('⚡')
+                return true
+            }
+        }
+    } catch (err) {
+        botLogger.warn('agent', `[DynamicSkills] Fast match error: ${err.message}`)
+    }
+
     // Normal Text Chat with Live Searching & Reasoning Timer
     // Send initial live status message
     let placeholderMsg = null

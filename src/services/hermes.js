@@ -123,6 +123,13 @@ class HermesService {
             headers['X-Title'] = 'WABOT2.0 Hermes Agent'
         }
 
+        if (!options.introspectionPrompt) {
+            try {
+                const { botIntrospection } = await import('./botIntrospection.js')
+                options.introspectionPrompt = await botIntrospection.getIntrospectionContextPrompt()
+            } catch (_) {}
+        }
+
         const systemPrompt = this.#buildSystemPrompt(options.systemPrompt, options)
 
         // Fetch multi-turn memory from memoryService if not provided
@@ -259,8 +266,11 @@ ATURAN SKILL:
 - Jika pengguna meminta aksi yang cocok dengan skill di atas (termasuk cek live AQI atau cuaca), KELUARKAN HANYA JSON di atas tanpa penjelasan atau formatting markdown tambahan.
 - Jika pengguna bertanya hal umum, diskusi, ngobrol, analisis teks, coding, atau konsultasi santai, jawablah secara alami sebagai RonnBot dengan gaya santai dan cerdas.`
 
+        const introspectionSection = options.introspectionPrompt || ''
+
         return `${basePrompt}
 ${identityContext}
+${introspectionSection}
 ${skillsCatalog}
 
 🕒 Real-Time Clock & Date (WIB):

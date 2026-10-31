@@ -98,11 +98,18 @@ export default {
         const dbFile = path.resolve('./storage/database/main.db')
         const credsFile = path.resolve('./storage/sessions/creds.json')
         const docsDir = path.resolve('./storage/documents')
+        const skillsFile = path.resolve('./storage/dynamic_skills.json')
 
         const dbExists = fs.existsSync(dbFile)
         const dbSize = dbExists ? `${(fs.statSync(dbFile).size / 1024).toFixed(1)} KB` : 'Belum dibuat'
         const sessionExists = fs.existsSync(credsFile)
         const docsCount = fs.existsSync(docsDir) ? fs.readdirSync(docsDir).length : 0
+        let skillsCount = 0
+        try {
+            if (fs.existsSync(skillsFile)) {
+                skillsCount = JSON.parse(fs.readFileSync(skillsFile, 'utf8')).length || 0
+            }
+        } catch (_) {}
 
         const hasToken = Boolean(sessionSync.token)
         const lastTime = sessionSync.lastBackupTime
@@ -116,6 +123,7 @@ export default {
             `• *Database Lokal (main.db):* ${dbExists ? `✅ Ada (${dbSize})` : '❌ Kosong'}\n` +
             `• *Sesi WhatsApp:* ${sessionExists ? '✅ Terkoneksi & Tersimpan' : '⚠️ Belum login'}\n` +
             `• *Dokumen Materi:* 📁 ${docsCount} berkas\n` +
+            `• *Dynamic Skills Tersimpan:* ⚡ ${skillsCount} skrip otomatis\n` +
             `• *Terakhir Dicadangkan:* ${lastTime}\n` +
             `• *Status Scheduler:* 🟢 Aktif otomatis tiap 30 menit & saat shutdown\n\n` +
             `━━━━━━━━━━━━━━━━━━━━\n` +

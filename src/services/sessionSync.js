@@ -359,6 +359,54 @@ class SessionSyncService {
     }
 
     // ─────────────────────────────────────────────
+    // 4.5. DYNAMIC SKILLS SYNC
+    // ─────────────────────────────────────────────
+
+    async restoreDynamicSkills() {
+        const skillsFile = path.resolve('./storage/dynamic_skills.json')
+        if (!this.token) return false
+
+        try {
+            const downloadUrl = `https://huggingface.co/datasets/${this.repo}/resolve/main/dynamic_skills.json`
+            const res = await fetch(downloadUrl, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            })
+            if (!res.ok) return false
+            const text = await res.text()
+            if (text && text.length > 10) {
+                fs.writeFileSync(skillsFile, text, 'utf8')
+                botLogger.system('✅ [CloudSync] Dynamic skills restored from HF Dataset!')
+                return true
+            }
+            return false
+        } catch (_) {
+            return false
+        }
+    }
+
+    async backupDynamicSkills() {
+        const skillsFile = path.resolve('./storage/dynamic_skills.json')
+        if (!fs.existsSync(skillsFile) || !this.token) return null
+        const content = fs.readFileSync(skillsFile)
+        if (content.length === 0) return null
+
+        try {
+            const res = await uploadFile({
+                credentials: { accessToken: this.token },
+                repo: { type: 'dataset', name: this.repo },
+                file: {
+                    path: 'dynamic_skills.json',
+                    content: new Blob([content])
+                },
+                commitTitle: 'Automated dynamic skills library backup [skip ci]'
+            })
+            return res
+        } catch (_) {
+            return null
+        }
+    }
+
+    // ─────────────────────────────────────────────
     // 5. FULL ALL-IN-ONE BACKUP & RESTORE
     // ─────────────────────────────────────────────
 
@@ -368,7 +416,8 @@ class SessionSyncService {
             database: await this.restoreDatabase(force),
             session: await this.restoreSession(),
             documents: await this.restoreDocuments(),
-            cookies: await this.restoreCookies()
+            cookies: await this.restoreCookies(),
+            skills: await this.restoreDynamicSkills()
         }
         return results
     }
@@ -386,6 +435,7 @@ class SessionSyncService {
             const sessionResult = await this.backupSession()
             const docsResult = await this.backupDocuments()
             const cookieResult = await this.backupCookies()
+            const skillsResult = await this.backupDynamicSkills()
 
             // Upload metadata summary
             const meta = {
@@ -421,7 +471,8 @@ class SessionSyncService {
                     database: dbResult?.commit?.url,
                     session: sessionResult?.commit?.url,
                     documents: docsResult?.commit?.url,
-                    cookies: cookieResult?.commit?.url
+                    cookies: cookieResult?.commit?.url,
+                    skills: skillsResult?.commit?.url
                 }
             }
         } catch (err) {
