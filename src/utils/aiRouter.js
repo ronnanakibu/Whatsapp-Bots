@@ -11,6 +11,18 @@ import { isOwner } from './permissions.js'
 
 const COMMAND_PATTERNS = [
     {
+        command: 'rangkum',
+        requiresMedia: false,
+        patterns: [
+            /\b(ringkas|rangkum|recap|summarize|rangkuman)\b/i
+        ],
+        extractArgs: (text) => {
+            const numMatch = text.match(/\b(\d{1,3})\b/)
+            const count = numMatch ? numMatch[1] : '100'
+            return [count, text]
+        }
+    },
+    {
         command: 'sticker',
         // Trigger jika ada kata stiker DAN ada media (gambar/video) — dicek di konteks
         requiresMedia: true,
@@ -447,13 +459,30 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
     const startMs = Date.now()
     try {
         const isSenderOwner = isOwner(ctx.sender) || ctx.msg?.key?.fromMe
+
+        let groupSubject = ''
+        if (isGroup && ctx.sock?.groupMetadata) {
+            try {
+                const meta = await ctx.sock.groupMetadata(chatId)
+                if (meta?.subject) groupSubject = meta.subject
+            } catch (_) {}
+        }
+
+        let introspectionPrompt = ''
+        try {
+            const { botIntrospection } = await import('../services/botIntrospection.js')
+            introspectionPrompt = await botIntrospection.getIntrospectionContextPrompt()
+        } catch (_) {}
+
         const aiOptions = {
             isOwner: isSenderOwner,
             isGroup: Boolean(isGroup),
+            groupName: groupSubject,
             senderName: ctx.pushName,
             senderJid: ctx.sender,
             ownerNumber: '6285172013920',
-            ownerName: process.env.OWNER_NAME || 'Rony Imanuel Sihombing'
+            ownerName: process.env.OWNER_NAME || 'Rony Imanuel Sihombing',
+            introspectionPrompt
         }
 
         const result = await aiService.chat(chatId, promptText, forcedProvider, aiOptions)
