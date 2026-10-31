@@ -5,12 +5,26 @@ import { isOwner } from '../../middleware/permission.js'
 
 export default {
     name: 'demote',
-    category: 'admin',
+    aliases: ['turunkan'],
+    category: 'group',
     description: 'Copot jabatan admin dari anggota.',
     usage: '.demote @user',
-    cooldown: 3,
+    example: '.demote @user',
+    cooldown: 5,
     permissions: ['admin'],
     requireBotAdmin: true,
+    tags: ['demote', 'turunkan', 'admin', 'group', 'member'],
+    params: {
+        type: 'object',
+        properties: {
+            user: {
+                type: 'string',
+                description: 'Nomor atau tag admin yang ingin diturunkan jabatannya',
+                required: true
+            }
+        },
+        required: ['user']
+    },
 
     async execute(ctx) {
         const { args, reply, react, chatId, sock, sender, messageContent } = ctx

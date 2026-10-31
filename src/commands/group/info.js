@@ -3,12 +3,20 @@ import { botLogger } from '../../utils/logger.js'
 
 export default {
     name: 'groupinfo',
-    aliases: ['ginfo'],
-    category: 'admin',
+    aliases: ['ginfo', 'infogrup', 'group'],
+    category: 'group',
     description: 'Menampilkan informasi dan daftar admin grup.',
     usage: '.groupinfo',
-    cooldown: 3,
-    permissions: ['admin'],
+    example: '.groupinfo',
+    cooldown: 5,
+    permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['groupinfo', 'ginfo', 'info', 'group', 'grup', 'anggota'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, chatId, sock, sender, isGroup } = ctx

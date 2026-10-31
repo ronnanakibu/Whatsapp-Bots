@@ -3,11 +3,20 @@ import { botLogger } from '../../utils/logger.js'
 
 export default {
     name: 'listadmin',
-    category: 'admin',
+    aliases: ['admins', 'adminlist'],
+    category: 'group',
     description: 'Menampilkan daftar admin di grup.',
     usage: '.listadmin',
-    cooldown: 3,
-    permissions: ['admin'],
+    example: '.listadmin',
+    cooldown: 5,
+    permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['listadmin', 'admins', 'adminlist', 'pengurus', 'group'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, chatId, sock, sender, isGroup } = ctx

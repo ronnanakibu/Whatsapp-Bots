@@ -5,12 +5,19 @@ import { isOwner } from '../../middleware/permission.js'
 export default {
     name: 'kickme',
     aliases: ['kick-me'],
-    category: 'admin',
+    category: 'group',
     description: 'Keluar sendiri dari grup.',
     usage: '.kickme',
-    cooldown: 3,
-    permissions: ['admin'],
+    example: '.kickme',
+    cooldown: 5,
+    permissions: ['user'],
     requireBotAdmin: true,
+    tags: ['kickme', 'keluarsendiri', 'leave', 'group'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, chatId, sock, sender } = ctx

@@ -6,12 +6,25 @@ import { isOwner, isGroupAdmin, normalizeJid } from '../../middleware/permission
 export default {
     name: 'kick',
     aliases: ['remove'],
-    category: 'admin',
+    category: 'group',
     description: 'Keluarkan anggota dari grup.',
     usage: '.kick @user',
-    cooldown: 3,
+    example: '.kick @user',
+    cooldown: 5,
     permissions: ['admin'],
     requireBotAdmin: true,
+    tags: ['kick', 'remove', 'keluarkan', 'group', 'admin'],
+    params: {
+        type: 'object',
+        properties: {
+            user: {
+                type: 'string',
+                description: 'Nomor WhatsApp atau tag anggota yang ingin dikeluarkan',
+                required: true
+            }
+        },
+        required: ['user']
+    },
 
     async execute(ctx) {
         const { args, reply, react, chatId, sock, sender, messageContent } = ctx

@@ -2,13 +2,26 @@
 
 export default {
     name: 'pin',
-    category: 'admin',
+    aliases: ['sematkan', 'unpin'],
+    category: 'group',
     description: 'Pin atau unpin pesan yang di-reply.',
     usage: '.pin [24h/7d/30d/unpin] (reply pesan)',
     example: '.pin 24h',
     cooldown: 3,
     permissions: ['admin'],
     requireBotAdmin: true,
+    tags: ['pin', 'sematkan', 'unpin', 'pesan', 'group', 'admin'],
+    params: {
+        type: 'object',
+        properties: {
+            duration: {
+                type: 'string',
+                description: 'Durasi pin: "24h", "7d", "30d", atau "unpin"',
+                enum: ['24h', '7d', '30d', 'unpin']
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { msg, args, reply, react, sock, chatId, isGroup } = ctx

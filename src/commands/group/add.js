@@ -4,12 +4,26 @@ import { parseTargetJid } from '../../utils/group.js'
 
 export default {
     name: 'add',
-    category: 'admin',
+    aliases: ['tambah', 'invite'],
+    category: 'group',
     description: 'Tambah anggota ke grup.',
-    usage: '.add 628xxx . @user',
-    cooldown: 3,
+    usage: '.add 628xxx atau @user',
+    example: '.add 6281234567890',
+    cooldown: 5,
     permissions: ['admin'],
     requireBotAdmin: true,
+    tags: ['add', 'tambah', 'invite', 'member', 'group', 'admin'],
+    params: {
+        type: 'object',
+        properties: {
+            nomor: {
+                type: 'string',
+                description: 'Nomor WhatsApp atau tag user yang ingin ditambahkan ke grup',
+                required: true
+            }
+        },
+        required: ['nomor']
+    },
 
     async execute(ctx) {
         const { args, reply, react, chatId, sock, messageContent } = ctx

@@ -4,12 +4,19 @@ import { botLogger } from '../../utils/logger.js'
 export default {
     name: 'unmute',
     aliases: ['openchat'],
-    category: 'admin',
+    category: 'group',
     description: 'Buka grup (semua anggota bisa kirim pesan).',
     usage: '.unmute',
-    cooldown: 3,
+    example: '.unmute',
+    cooldown: 5,
     permissions: ['admin'],
     requireBotAdmin: true,
+    tags: ['unmute', 'openchat', 'bukagrup', 'group', 'admin'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react, chatId, sock, sender } = ctx

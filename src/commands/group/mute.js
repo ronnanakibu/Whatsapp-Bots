@@ -4,12 +4,19 @@ import { botLogger } from '../../utils/logger.js'
 export default {
     name: 'mute',
     aliases: ['closechat'],
-    category: 'admin',
+    category: 'group',
     description: 'Kunci grup (hanya admin yang bisa kirim pesan).',
     usage: '.mute',
-    cooldown: 3,
+    example: '.mute',
+    cooldown: 5,
     permissions: ['admin'],
     requireBotAdmin: true,
+    tags: ['mute', 'closechat', 'tutupgrup', 'kunci', 'group', 'admin'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react, chatId, sock, sender } = ctx

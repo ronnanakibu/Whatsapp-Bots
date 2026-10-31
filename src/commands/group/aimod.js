@@ -4,11 +4,29 @@ import { moderatorService } from '../../services/moderator.js'
 export default {
     name: 'aimod',
     aliases: ['moderation', 'ai-moderator'],
-    category: 'admin',
+    category: 'group',
     description: 'Mengaktifkan atau mengatur AI Moderator di grup.',
     usage: '.aimod [on/off/warnings/reset/max]',
-    cooldown: 3,
+    example: '.aimod on',
+    cooldown: 5,
     permissions: ['admin'],
+    requireBotAdmin: false,
+    tags: ['aimod', 'moderation', 'ai-moderator', 'group', 'admin', 'toxic', 'antispam'],
+    params: {
+        type: 'object',
+        properties: {
+            action: {
+                type: 'string',
+                description: 'Aksi: "on", "off", "warnings", "reset", "max"',
+                enum: ['on', 'off', 'warnings', 'reset', 'max']
+            },
+            value: {
+                type: 'string',
+                description: 'Nilai parameter untuk opsi seperti max warnings'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, chatId, sender } = ctx

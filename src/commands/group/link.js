@@ -3,13 +3,20 @@ import { botLogger } from '../../utils/logger.js'
 
 export default {
     name: 'grouplink',
-    aliases: ['link', 'invitelink'],
-    category: 'admin',
+    aliases: ['link', 'invitelink', 'linkgrup'],
+    category: 'group',
     description: 'Ambil link undangan grup.',
     usage: '.grouplink',
-    cooldown: 3,
-    permissions: ['admin'],
+    example: '.grouplink',
+    cooldown: 5,
+    permissions: ['user'],
     requireBotAdmin: true,
+    tags: ['grouplink', 'link', 'invitelink', 'tautan', 'group', 'undangan'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react, chatId, sock, sender } = ctx

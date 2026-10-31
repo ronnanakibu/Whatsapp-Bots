@@ -4,12 +4,26 @@ import { parseTargetJid } from '../../utils/group.js'
 
 export default {
     name: 'promote',
-    category: 'admin',
+    aliases: ['jadikanadmin'],
+    category: 'group',
     description: 'Jadikan anggota sebagai admin grup.',
     usage: '.promote @user',
-    cooldown: 3,
+    example: '.promote @user',
+    cooldown: 5,
     permissions: ['admin'],
     requireBotAdmin: true,
+    tags: ['promote', 'jadikanadmin', 'admin', 'group', 'member'],
+    params: {
+        type: 'object',
+        properties: {
+            user: {
+                type: 'string',
+                description: 'Nomor WhatsApp atau tag anggota yang ingin dijadikan admin',
+                required: true
+            }
+        },
+        required: ['user']
+    },
 
     async execute(ctx) {
         const { args, reply, react, chatId, sock, sender, messageContent } = ctx
