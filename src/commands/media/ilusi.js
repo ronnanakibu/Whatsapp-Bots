@@ -33,6 +33,28 @@ export const ilusiCommand = {
     example: '.ilusi a medieval village in winter --pattern spiral --strength 0.95',
     cooldown: 30,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['ilusi', 'illusion', 'diffuse', 'opticalillusion', 'ai', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Deskripsi gambar yang ingin disisipkan ilusi',
+                required: true
+            },
+            pattern: {
+                type: 'string',
+                description: 'Nama pola ilusi: "spiral", "checkers", atau "pattern"',
+                enum: ['spiral', 'checkers', 'pattern']
+            },
+            strength: {
+                type: 'number',
+                description: 'Kekuatan ilusi (0.1 - 2.0, default: 0.8)'
+            }
+        },
+        required: ['prompt']
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx

@@ -26,6 +26,24 @@ export default {
     example: '.imagine a beautiful sunset over Jakarta | .imagine --style anime a samurai',
     cooldown: 30,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['imagine', 'mj', 'midjourney', 'txt2img', 'gen', 'art', 'media', 'ai'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Deskripsi gambar yang ingin dibuat Midjourney AI',
+                required: true
+            },
+            style: {
+                type: 'string',
+                description: 'Gaya seni gambar: "photo", "cinematic", "anime", "3d", "4k"',
+                enum: ['photo', 'cinematic', 'anime', '3d', '4k']
+            }
+        },
+        required: ['prompt']
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg, pushName } = ctx

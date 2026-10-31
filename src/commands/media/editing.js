@@ -36,8 +36,21 @@ export default {
     category: 'media',
     description: 'Menyatukan video atau foto dengan audio menjadi 1 video lengkap HD',
     usage: '.editing <keyword sound atau reply VN>',
+    example: '.editing vineboom (reply gambar/video)',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['editing', 'combine', 'mix', 'mediamix', 'videoedit', 'ffmpeg', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            soundKeyword: {
+                type: 'string',
+                description: 'Keyword sound meme (misal: "vineboom", "bruh", "bonk") atau nama sound tersimpan'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, messageContent, type, from, sock } = ctx

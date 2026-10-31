@@ -10,8 +10,25 @@ export default {
     category: 'media',
     description: 'Convert media to sticker (Original Ratio: --1 | Remove BG: --rmbg | Speed: --s2x | Max Duration: --max [sec] | Low Quality: --lq [1-100])',
     usage: '.sticker [--1] [--rmbg] [--s2x] [--max] [--lq 80] Teks Atas | Teks Bawah',
+    example: '.sticker (reply gambar/video) | .sticker Teks Atas | Teks Bawah',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['sticker', 's', 'stiker', 'meme', 'convert', 'media', 'whatsapp'],
+    params: {
+        type: 'object',
+        properties: {
+            topText: {
+                type: 'string',
+                description: 'Teks meme di bagian atas stiker'
+            },
+            bottomText: {
+                type: 'string',
+                description: 'Teks meme di bagian bawah stiker'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { msg, messageContent, type, args, reply, react, from, pushName, sender, sock } = ctx

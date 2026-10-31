@@ -51,9 +51,17 @@ export default {
     aliases: ['toimg', 'tomp4'],
     category: 'media',
     description: 'Bongkar stiker (ubah kembali menjadi gambar/video)',
-    usage: 'Balas stiker dengan .bongkar',
+    usage: '.bongkar (reply stiker)',
+    example: '.bongkar (reply stiker)',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['bongkar', 'toimg', 'tomp4', 'stiker', 'sticker', 'media', 'convert'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
     async execute(ctx) {
         const { msg, messageContent, reply, react, sock, from } = ctx
 

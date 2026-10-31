@@ -13,6 +13,19 @@ export const fluxCommand = {
     example: '.flux a cozy cabin in the woods at sunset',
     cooldown: 30,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['flux', 'fluxdev', 'flux1', 'generate', 'ai', 'gambar', 'art', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Deskripsi gambar yang ingin digenerate dengan model FLUX.1',
+                required: true
+            }
+        },
+        required: ['prompt']
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg, pushName } = ctx

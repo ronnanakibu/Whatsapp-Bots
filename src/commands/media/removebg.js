@@ -13,8 +13,21 @@ export default {
     category: 'media',
     description: 'Hapus latar belakang foto secara otomatis dengan AI (jadi PNG transparan / stiker)',
     usage: '.removebg [opsi: --sticker] (balas gambar)',
+    example: '.removebg (reply gambar)',
     cooldown: 10,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['removebg', 'nobg', 'hapusbg', 'transparent', 'transparan', 'sticker', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            asSticker: {
+                type: 'boolean',
+                description: 'Ubah hasil transparan langsung menjadi stiker WhatsApp (--sticker)'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, from, sock, commandName } = ctx

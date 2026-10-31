@@ -49,8 +49,25 @@ export default {
     category: 'media',
     description: 'Manajemen library stiker kustom personal (seperti sticker.ly).',
     usage: '.lib add <nama> | .lib addto <nama> (reply stiker) | .lib get <nama> <index> | .lib list | .lib show <nama> | .lib delete <nama> | .lib delsticker <nama> <index>',
+    example: '.lib add meme | .lib list | .lib get meme 1',
     cooldown: 2,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['lib', 'stickerlib', 'addlib', 'getlib', 'listlib', 'stiker', 'sticker', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            action: {
+                type: 'string',
+                description: 'Aksi: "add", "addto", "get", "list", "show", "delete", "delsticker"'
+            },
+            packName: {
+                type: 'string',
+                description: 'Nama sticker pack'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { msg, messageContent, args, reply, react, from, sender, sock } = ctx

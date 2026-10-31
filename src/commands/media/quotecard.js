@@ -131,6 +131,18 @@ export default {
     example: '.quote Hidup adalah perjalanan | (reply pesan) .quote',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['quotecard', 'quote', 'qcard', 'kartuquote', 'aesthetic', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            text: {
+                type: 'string',
+                description: 'Teks quote yang ingin dijadikan gambar aesthetic'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg, sender, pushName, messageContent } = ctx

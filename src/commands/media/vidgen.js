@@ -14,6 +14,23 @@ export const vidgenCommand = {
     example: '.vidgen a majestic dragon flying over mountains --duration 3.5',
     cooldown: 30,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['vidgen', 'video', 'wan2', 'generatevideo', 'ai', 'videoai', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Deskripsi adegan video yang ingin dibuat AI',
+                required: true
+            },
+            duration: {
+                type: 'number',
+                description: 'Durasi video (contoh: 3.5 detik)'
+            }
+        },
+        required: ['prompt']
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx

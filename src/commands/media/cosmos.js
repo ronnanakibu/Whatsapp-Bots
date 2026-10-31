@@ -13,8 +13,22 @@ export default {
     category: 'media',
     description: 'Bikin Physical AI Video dari prompt text atau gambar pakai NVIDIA Cosmos3-Nano',
     usage: '.cosmos <prompt> | atau reply gambar dengan .cosmos <prompt>',
-    cooldown: 60, // 60s cooldown karena ini berat di server
-    permissions: ['user'], // bisa dipakai siapa saja
+    example: '.cosmos a cute robot exploring futuristic city',
+    cooldown: 60,
+    permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['cosmos', 'cosmos3', 'nvidia', 'video', 'physicalai', 'ai', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Deskripsi video atau gerakan yang ingin digenerate oleh AI',
+                required: true
+            }
+        },
+        required: ['prompt']
+    },
     
     async execute(ctx) {
         const { msg, messageContent, args, reply, react, sock, from } = ctx

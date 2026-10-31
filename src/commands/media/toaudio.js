@@ -14,8 +14,16 @@ export default {
     category: 'media',
     description: 'Mengekstrak suara/audio dari sebuah video langsung menjadi file MP3',
     usage: '.toaudio (reply ke video)',
+    example: '.toaudio (reply pesan video)',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['toaudio', 'tomp3', 'extractaudio', 'video', 'audio', 'mp3', 'ffmpeg', 'media'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react, messageContent, type, from, sock } = ctx

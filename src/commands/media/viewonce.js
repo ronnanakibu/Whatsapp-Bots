@@ -11,9 +11,17 @@ export default {
     aliases: ['rvo', 'readvo', 'buka'],
     category: 'media',
     description: 'Bongkar dan lihat kembali pesan sekali lihat (View Once) dengan me-reply pesannya.',
-    usage: 'Balas pesan sekali lihat dengan .viewonce',
+    usage: '.viewonce (reply pesan view once)',
+    example: '.viewonce (reply pesan sekali lihat)',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['viewonce', 'rvo', 'readvo', 'buka', 'antiviewonce', 'media'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { msg, messageContent, reply, react, sock, from, sender, pushName, isGroup } = ctx

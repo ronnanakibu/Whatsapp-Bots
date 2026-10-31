@@ -14,6 +14,26 @@ export const cam3dCommand = {
     example: '.3d --azimuth 45 --elevation 15 --distance 1.2 (reply gambar)',
     cooldown: 20,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['3d', 'cam3d', 'perspective', 'qwen', 'camera', 'media', 'sudutpandang'],
+    params: {
+        type: 'object',
+        properties: {
+            azimuth: {
+                type: 'number',
+                description: 'Sudut azimuth kamera (-180 sampai 180 derajat, default: 30)'
+            },
+            elevation: {
+                type: 'number',
+                description: 'Sudut elevasi kamera (-90 sampai 90 derajat, default: 10)'
+            },
+            distance: {
+                type: 'number',
+                description: 'Jarak zoom kamera (default: 1.0)'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx

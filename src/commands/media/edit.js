@@ -15,6 +15,19 @@ export const editCommand = {
     example: '.edit ganti latar belakang menjadi pantai sunset (reply gambar)',
     cooldown: 20,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['edit', 'editimage', 'manipulate', 'ubahgambar', 'omni', 'ai', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            instruksi: {
+                type: 'string',
+                description: 'Instruksi pengeditan gambar (contoh: "ganti baju jadi jas hitam")',
+                required: true
+            }
+        },
+        required: ['instruksi']
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx

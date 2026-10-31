@@ -8,8 +8,22 @@ export default {
     category: 'media',
     description: 'Mengubah teks menjadi stiker anomali kurus tipis ala brat generator',
     usage: '.anomali <teks kamu>',
+    example: '.anomali kamu nanya',
     cooldown: 3,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['anomali', 'qs', 'qc', 'brat', 'stiker', 'sticker', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            text: {
+                type: 'string',
+                description: 'Teks yang ingin diubah menjadi stiker brat anomali',
+                required: true
+            }
+        },
+        required: ['text']
+    },
     async execute(ctx) {
         const { messageContent, args, reply, replyMedia } = ctx
 

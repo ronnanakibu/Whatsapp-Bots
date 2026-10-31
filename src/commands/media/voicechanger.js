@@ -25,8 +25,23 @@ export default {
     category: 'media',
     description: 'Mengubah suara VN/audio/video dengan efek/filter unik (robot, chipmunk, deep, echo, dll)',
     usage: '.vc <filter_name> (reply ke VN/audio/video)',
+    example: '.vc chipmunk (reply voice note)',
     cooldown: 5,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['voicechanger', 'vc', 'voicefilter', 'efekvn', 'audio', 'ffmpeg', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            filterName: {
+                type: 'string',
+                description: 'Nama efek suara (robot, chipmunk, deep, echo, reverse, nightcore, slow, fast)',
+                enum: ['robot', 'chipmunk', 'deep', 'echo', 'reverse', 'nightcore', 'slow', 'fast'],
+                required: true
+            }
+        },
+        required: ['filterName']
+    },
 
     async execute(ctx) {
         const { args, reply, react, messageContent, type, from, sock } = ctx

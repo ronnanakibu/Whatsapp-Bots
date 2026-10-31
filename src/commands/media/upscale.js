@@ -23,6 +23,13 @@ export const upscaleCommand = {
     example: '.upscale (reply gambar)',
     cooldown: 20,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['upscale', 'hd2', 'superres', 'omniupscale', 'image', 'media', 'resolusi'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { reply, react, sock, from, msg } = ctx

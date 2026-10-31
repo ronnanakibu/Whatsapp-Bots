@@ -30,12 +30,29 @@ const PLATFORM_NAME = {
 export default {
     name: 'dl',
     aliases: ['download', 'unduh', 'reels', 'tiktok', 'tt', 'ytmp3', 'ytmp4', 'yt', 'mp3', 'mp4', 'ig', 'fb'],
-    category: 'media',
+    category: 'downloader',
     description: 'Download video dari Instagram, TikTok, YouTube, Facebook.',
     usage: '.dl [link] [--boost] [--720p] [--320kbps]',
     example: '.dl https://www.youtube.com/watch?v=xxx --720p',
     cooldown: 10,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['dl', 'download', 'unduh', 'reels', 'tiktok', 'youtube', 'facebook', 'instagram', 'downloader'],
+    params: {
+        type: 'object',
+        properties: {
+            url: {
+                type: 'string',
+                description: 'URL konten sosial media (TikTok, IG, YouTube, Facebook)',
+                required: true
+            },
+            resolution: {
+                type: 'string',
+                description: 'Resolusi target (contoh: "720p", "1080p")'
+            }
+        },
+        required: ['url']
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, chatId, msg, commandName } = ctx

@@ -58,6 +58,18 @@ export const enhanceCommand = {
     example: '.enhance make it sharper (reply gambar)',
     cooldown: 20,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['enhance', 'hd', 'perbagus', 'tingkatkan', 'upscale', 'finegrain', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            prompt: {
+                type: 'string',
+                description: 'Deskripsi guidance untuk penyempurnaan gambar (opsional)'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx
@@ -119,6 +131,13 @@ export const restoreCommand = {
     example: '.restore (reply foto wajah blur)',
     cooldown: 20,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['restore', 'facefix', 'codeformer', 'wajah', 'blur', 'face', 'media'],
+    params: {
+        type: 'object',
+        properties: {},
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx

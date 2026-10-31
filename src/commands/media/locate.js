@@ -14,6 +14,18 @@ export const locateCommand = {
     example: '.locate cat (reply gambar kucing)',
     cooldown: 20,
     permissions: ['user'],
+    requireBotAdmin: false,
+    tags: ['locate', 'detect', 'cariobjek', 'temukan', 'objectdetection', 'ai', 'media'],
+    params: {
+        type: 'object',
+        properties: {
+            objectName: {
+                type: 'string',
+                description: 'Nama objek yang ingin dicari di dalam gambar (contoh: "cat", "car", "person")'
+            }
+        },
+        required: []
+    },
 
     async execute(ctx) {
         const { args, reply, react, sock, from, msg } = ctx
