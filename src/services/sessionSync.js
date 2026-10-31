@@ -9,19 +9,63 @@ class SessionSyncService {
     constructor() {
         this.token = process.env.HF_TOKEN ? process.env.HF_TOKEN.replace(/^["']|["']$/g, '').trim() : ''
         this.repo = (process.env.HF_DATASET_REPO || 'ronnLbtrn/wabot-storage').replace(/^["']|["']$/g, '').trim()
+        
         this.sessionDir = path.resolve('./storage/sessions')
-        this.archiveFile = path.resolve('./storage/session.tar.gz')
+        this.dbDir = path.resolve('./storage/database')
+        this.dbFile = path.resolve('./storage/database/main.db')
+        this.docsDir = path.resolve('./storage/documents')
+        
+        this.archiveSessionFile = path.resolve('./storage/session.tar.gz')
+        this.archiveDocsFile = path.resolve('./storage/documents.tar.gz')
+
         this.backupDebounceTimer = null
         this.isBackingUp = false
+        this.schedulerInterval = null
+        this.lastBackupTime = null
+        this.lastBackupStatus = 'idle'
     }
 
     /**
-     * Restore session from Hugging Face Dataset if local session is missing
+     * Helper to safely tar-pack a directory across Windows and Linux
      */
+    #packDirectory(sourceDir, destArchive) {
+        if (!fs.existsSync(sourceDir)) return false
+        const files = fs.readdirSync(sourceDir)
+        if (files.length === 0) return false
+
+        try {
+            execSync(`tar -czf "${destArchive}" -C "${sourceDir}" .`, { stdio: 'pipe' })
+            return fs.existsSync(destArchive) && fs.statSync(destArchive).size > 0
+        } catch (err) {
+            logger.warn(`[CloudSync] Tar pack failed for ${sourceDir}: ${err.message}`)
+            return false
+        }
+    }
+
+    /**
+     * Helper to safely unpack a tar archive across Windows and Linux
+     */
+    #unpackArchive(archivePath, targetDir) {
+        if (!fs.existsSync(archivePath)) return false
+        if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true })
+
+        try {
+            execSync(`tar -xzf "${archivePath}" -C "${targetDir}"`, { stdio: 'pipe' })
+            return true
+        } catch (err) {
+            logger.warn(`[CloudSync] Tar unpack failed for ${archivePath}: ${err.message}`)
+            return false
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // 1. WHATSAPP SESSION SYNC
+    // ─────────────────────────────────────────────
+
     async restoreSession() {
         const credsFile = path.join(this.sessionDir, 'creds.json')
         if (fs.existsSync(credsFile)) {
-            botLogger.system('[SessionSync] Local session credentials exist. Skip restore.')
+            botLogger.system('[CloudSync] Local session credentials exist. Skip restore.')
             return true
         }
 
@@ -30,7 +74,7 @@ class SessionSyncService {
             return false
         }
 
-        botLogger.system(`[SessionSync] Checking cloud session backup in HF Dataset: ${this.repo}...`)
+        botLogger.system(`[CloudSync] Checking cloud session backup in HF Dataset: ${this.repo}...`)
         try {
             if (!fs.existsSync(this.sessionDir)) {
                 fs.mkdirSync(this.sessionDir, { recursive: true })
@@ -38,103 +82,305 @@ class SessionSyncService {
 
             const downloadUrl = `https://huggingface.co/datasets/${this.repo}/resolve/main/session.tar.gz`
             const res = await fetch(downloadUrl, {
-                headers: {
-                    'Authorization': `Bearer ${this.token}`
-                }
+                headers: { 'Authorization': `Bearer ${this.token}` }
             })
 
             if (res.status === 404) {
-                botLogger.system('[SessionSync] No cloud session backup found (Fresh setup).')
+                botLogger.system('[CloudSync] No cloud session backup found in dataset.')
                 return false
             }
 
             if (!res.ok) {
-                botLogger.warn('session-sync', `Failed to fetch session backup: HTTP ${res.status} ${res.statusText}`)
+                botLogger.warn('session-sync', `Failed to fetch session backup: HTTP ${res.status}`)
                 return false
             }
 
             const arrayBuf = await res.arrayBuffer()
-            const buf = Buffer.from(arrayBuf)
-            fs.writeFileSync(this.archiveFile, buf)
+            fs.writeFileSync(this.archiveSessionFile, Buffer.from(arrayBuf))
 
-            // Extract archive
-            try {
-                execSync(`tar -xzf "${this.archiveFile}" -C "${this.sessionDir}"`, { stdio: 'pipe' })
-                botLogger.system('✅ [SessionSync] WhatsApp session successfully restored from Hugging Face Dataset!')
+            const restored = this.#unpackArchive(this.archiveSessionFile, this.sessionDir)
+            if (restored) {
+                botLogger.system('✅ [CloudSync] WhatsApp session restored from Hugging Face Dataset!')
                 return true
-            } catch (tarErr) {
-                botLogger.err('session-sync', tarErr, 'tar-extract')
-                return false
-            } finally {
-                try {
-                    if (fs.existsSync(this.archiveFile)) fs.unlinkSync(this.archiveFile)
-                } catch (_) {}
             }
+            return false
         } catch (err) {
             botLogger.warn('session-sync', `Error restoring session from HF: ${err.message}`)
             return false
+        } finally {
+            try {
+                if (fs.existsSync(this.archiveSessionFile)) fs.unlinkSync(this.archiveSessionFile)
+            } catch (_) {}
         }
     }
 
-    /**
-     * Immediately backup the current session directory to Hugging Face Dataset
-     */
     async backupSession() {
-        if (this.isBackingUp) return
-        this.isBackingUp = true
-
         try {
             const credsFile = path.join(this.sessionDir, 'creds.json')
-            if (!fs.existsSync(credsFile)) {
-                return
-            }
+            if (!fs.existsSync(credsFile) || !this.token) return null
 
-            if (!this.token) {
-                return
-            }
+            const packed = this.#packDirectory(this.sessionDir, this.archiveSessionFile)
+            if (!packed) return null
 
-            // Create compressed archive of storage/sessions
-            try {
-                execSync(`tar -czf "${this.archiveFile}" -C "${this.sessionDir}" .`, { stdio: 'pipe' })
-            } catch (tarErr) {
-                logger.warn(`[SessionSync] Failed to pack session: ${tarErr.message}`)
-                return
-            }
-
-            const archiveBuffer = fs.readFileSync(this.archiveFile)
+            const archiveBuffer = fs.readFileSync(this.archiveSessionFile)
             const blob = new Blob([archiveBuffer])
 
-            await uploadFile({
+            const res = await uploadFile({
                 credentials: { accessToken: this.token },
                 repo: { type: 'dataset', name: this.repo },
                 file: {
                     path: 'session.tar.gz',
                     content: blob
                 },
-                commitTitle: 'Automated WhatsApp session credentials backup [skip ci]'
+                commitTitle: 'Automated WhatsApp session backup [skip ci]'
             })
 
-            logger.info('☁️ [SessionSync] WhatsApp session backed up to Hugging Face Dataset!')
+            logger.info('☁️ [CloudSync] WhatsApp session backed up to Hugging Face Dataset!')
+            return res
         } catch (err) {
-            logger.warn(`[SessionSync] Backup failed: ${err.message}`)
+            logger.warn(`[CloudSync] Session backup failed: ${err.message}`)
+            return null
         } finally {
             try {
-                if (fs.existsSync(this.archiveFile)) fs.unlinkSync(this.archiveFile)
+                if (fs.existsSync(this.archiveSessionFile)) fs.unlinkSync(this.archiveSessionFile)
             } catch (_) {}
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // 2. SQLITE DATABASE SYNC (main.db)
+    // ─────────────────────────────────────────────
+
+    async restoreDatabase(force = false) {
+        if (!force && fs.existsSync(this.dbFile) && fs.statSync(this.dbFile).size > 1024) {
+            botLogger.system('[CloudSync] Local database (main.db) exists. Skip cloud restore.')
+            return true
+        }
+
+        if (!this.token) {
+            botLogger.warn('session-sync', 'HF_TOKEN not set, skipping database restore.')
+            return false
+        }
+
+        botLogger.system(`[CloudSync] Downloading persistent database from HF Dataset: ${this.repo}...`)
+        try {
+            if (!fs.existsSync(this.dbDir)) fs.mkdirSync(this.dbDir, { recursive: true })
+
+            const downloadUrl = `https://huggingface.co/datasets/${this.repo}/resolve/main/main.db`
+            const res = await fetch(downloadUrl, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            })
+
+            if (res.status === 404) {
+                botLogger.system('[CloudSync] No main.db found in HF Dataset (Fresh setup).')
+                return false
+            }
+
+            if (!res.ok) {
+                botLogger.warn('session-sync', `Failed to download main.db: HTTP ${res.status}`)
+                return false
+            }
+
+            const arrayBuf = await res.arrayBuffer()
+            fs.writeFileSync(this.dbFile, Buffer.from(arrayBuf))
+            botLogger.system(`✅ [CloudSync] Persistent database (main.db) successfully restored! (${(arrayBuf.byteLength / 1024).toFixed(1)} KB)`)
+            return true
+        } catch (err) {
+            botLogger.warn('session-sync', `Error restoring main.db from HF: ${err.message}`)
+            return false
+        }
+    }
+
+    async backupDatabase() {
+        if (!this.token) return null
+        if (!fs.existsSync(this.dbFile)) return null
+
+        try {
+            // Checkpoint WAL if SQLite instance is loaded to ensure clean snapshot
+            try {
+                const { db } = await import('./db.js')
+                if (db && typeof db.pragma === 'function') {
+                    db.pragma('wal_checkpoint(TRUNCATE)')
+                }
+            } catch (_) {}
+
+            const dbBuffer = fs.readFileSync(this.dbFile)
+            if (dbBuffer.length === 0) return null
+
+            const blob = new Blob([dbBuffer])
+            const res = await uploadFile({
+                credentials: { accessToken: this.token },
+                repo: { type: 'dataset', name: this.repo },
+                file: {
+                    path: 'main.db',
+                    content: blob
+                },
+                commitTitle: `Automated database snapshot backup (${(dbBuffer.length / 1024).toFixed(1)} KB) [skip ci]`
+            })
+
+            logger.info(`☁️ [CloudSync] SQLite database (main.db) backed up! (${(dbBuffer.length / 1024).toFixed(1)} KB)`)
+            return res
+        } catch (err) {
+            logger.warn(`[CloudSync] Database backup failed: ${err.message}`)
+            return null
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // 3. DOCUMENTS & NOTES ATTACHMENTS SYNC
+    // ─────────────────────────────────────────────
+
+    async restoreDocuments() {
+        if (!this.token) return false
+        if (fs.existsSync(this.docsDir) && fs.readdirSync(this.docsDir).length > 0) {
+            return true
+        }
+
+        try {
+            const downloadUrl = `https://huggingface.co/datasets/${this.repo}/resolve/main/documents.tar.gz`
+            const res = await fetch(downloadUrl, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            })
+            if (!res.ok) return false
+
+            const arrayBuf = await res.arrayBuffer()
+            fs.writeFileSync(this.archiveDocsFile, Buffer.from(arrayBuf))
+            const unpacked = this.#unpackArchive(this.archiveDocsFile, this.docsDir)
+            if (unpacked) {
+                botLogger.system('✅ [CloudSync] Uploaded notes & documents restored from HF Dataset!')
+                return true
+            }
+            return false
+        } catch (err) {
+            return false
+        } finally {
+            try {
+                if (fs.existsSync(this.archiveDocsFile)) fs.unlinkSync(this.archiveDocsFile)
+            } catch (_) {}
+        }
+    }
+
+    async backupDocuments() {
+        if (!this.token) return null
+        if (!fs.existsSync(this.docsDir)) return null
+
+        try {
+            const packed = this.#packDirectory(this.docsDir, this.archiveDocsFile)
+            if (!packed) return null
+
+            const buf = fs.readFileSync(this.archiveDocsFile)
+            const res = await uploadFile({
+                credentials: { accessToken: this.token },
+                repo: { type: 'dataset', name: this.repo },
+                file: {
+                    path: 'documents.tar.gz',
+                    content: new Blob([buf])
+                },
+                commitTitle: 'Automated documents & materials backup [skip ci]'
+            })
+            return res
+        } catch (err) {
+            return null
+        } finally {
+            try {
+                if (fs.existsSync(this.archiveDocsFile)) fs.unlinkSync(this.archiveDocsFile)
+            } catch (_) {}
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // 4. FULL ALL-IN-ONE BACKUP & RESTORE
+    // ─────────────────────────────────────────────
+
+    async restoreAll(force = false) {
+        botLogger.system(`☁️ [CloudSync] Initializing cloud memory sync from HF Dataset: ${this.repo}...`)
+        const results = {
+            database: await this.restoreDatabase(force),
+            session: await this.restoreSession(),
+            documents: await this.restoreDocuments()
+        }
+        return results
+    }
+
+    async backupAll(reason = 'manual') {
+        if (this.isBackingUp) return { ok: false, error: 'Backup already in progress' }
+        this.isBackingUp = true
+        this.lastBackupStatus = 'running'
+
+        const startTime = Date.now()
+        logger.info(`☁️ [CloudSync] Starting full cloud memory backup (${reason}) to ${this.repo}...`)
+
+        try {
+            const dbResult = await this.backupDatabase()
+            const sessionResult = await this.backupSession()
+            const docsResult = await this.backupDocuments()
+
+            // Upload metadata summary
+            const meta = {
+                repo: this.repo,
+                lastBackup: new Date().toISOString(),
+                reason,
+                dbSize: fs.existsSync(this.dbFile) ? fs.statSync(this.dbFile).size : 0,
+                docsCount: fs.existsSync(this.docsDir) ? fs.readdirSync(this.docsDir).length : 0,
+                elapsedMs: Date.now() - startTime
+            }
+
+            try {
+                await uploadFile({
+                    credentials: { accessToken: this.token },
+                    repo: { type: 'dataset', name: this.repo },
+                    file: {
+                        path: 'backup-meta.json',
+                        content: new Blob([Buffer.from(JSON.stringify(meta, null, 2))])
+                    },
+                    commitTitle: `Update backup metadata (${reason}) [skip ci]`
+                })
+            } catch (_) {}
+
+            this.lastBackupTime = new Date()
+            this.lastBackupStatus = 'success'
+            logger.info(`✅ [CloudSync] Full backup completed in ${Date.now() - startTime}ms!`)
+
+            return {
+                ok: true,
+                repo: this.repo,
+                meta,
+                commits: {
+                    database: dbResult?.commit?.url,
+                    session: sessionResult?.commit?.url,
+                    documents: docsResult?.commit?.url
+                }
+            }
+        } catch (err) {
+            this.lastBackupStatus = 'error'
+            logger.error(`❌ [CloudSync] Backup failed: ${err.message}`)
+            return { ok: false, error: err.message }
+        } finally {
             this.isBackingUp = false
         }
     }
 
     /**
-     * Trigger a debounced backup (e.g. called on creds.update)
+     * Trigger debounced backup (e.g. after note inserted or session changed)
      */
     triggerDebouncedBackup(delayMs = 30000) {
         if (this.backupDebounceTimer) {
             clearTimeout(this.backupDebounceTimer)
         }
         this.backupDebounceTimer = setTimeout(() => {
-            this.backupSession()
+            this.backupAll('debounced')
         }, delayMs)
+    }
+
+    /**
+     * Start background recurring sync (default: every 30 minutes)
+     */
+    initScheduler(intervalMs = 30 * 60 * 1000) {
+        if (this.schedulerInterval) return
+        this.schedulerInterval = setInterval(() => {
+            this.backupAll('periodic-30m').catch(() => {})
+        }, intervalMs)
+        logger.info(`☁️ [CloudSync] Auto-sync scheduler active (interval: ${intervalMs / 60000}m)`)
     }
 }
 

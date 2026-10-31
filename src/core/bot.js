@@ -204,11 +204,12 @@ async function startBot() {
             botLogger.section('BOT READY 🚀')
             updateBotStatus('open')
 
-            // Immediately back up the fresh authenticated session to Hugging Face Dataset
+            // Immediately back up the authenticated session & database to Hugging Face Dataset
             try {
-                sessionSync.backupSession().catch(e => {
-                    botLogger.warn('session-sync', `Initial session backup warning: ${e.message}`)
+                sessionSync.backupAll('initial_connect').catch(e => {
+                    botLogger.warn('session-sync', `Initial backup warning: ${e.message}`)
                 })
+                sessionSync.initScheduler(30 * 60 * 1000)
             } catch (_) {}
 
             // Start reminder scheduler setelah connected
@@ -321,10 +322,10 @@ async function startBot() {
             console.error('❌ Gagal mengirim log shutdown:', e)
         }
 
-        // Backup sesi WhatsApp ke Hugging Face Dataset sebelum shutdown
+        // Backup sesi WhatsApp & database ke Hugging Face Dataset sebelum shutdown
         try {
             const { sessionSync } = await import('../services/sessionSync.js')
-            await sessionSync.backupSession()
+            await sessionSync.backupAll('shutdown')
         } catch (_) {}
 
         try {

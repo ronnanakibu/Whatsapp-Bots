@@ -607,6 +607,12 @@ export default {
                 isPublic
             )
 
+            // Trigger background cloud sync ke Hugging Face Dataset
+            try {
+                const { sessionSync } = await import('../../services/sessionSync.js')
+                sessionSync.triggerDebouncedBackup(20000)
+            } catch (_) {}
+
             await react('✅')
 
             const newId = result.lastInsertRowid

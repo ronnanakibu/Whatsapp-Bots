@@ -7,6 +7,8 @@ node_modules/
 .env.*.local
 storage/*.json
 storage/*.txt
+storage/*.tar.gz
+storage/documents/
 
 # Storage directories (contains SQLite DBs, logs, and WhatsApp sessions)
 storage/sessions/

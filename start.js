@@ -639,10 +639,10 @@ async function main() {
         await setupYtDlp()
         await setupOpenssl()
         validateEnv()
-        // Try restoring WhatsApp session from Hugging Face Dataset if local session is missing
+        // Try restoring WhatsApp session, database & memory from Hugging Face Dataset
         try {
             const { sessionSync } = await import('./src/services/sessionSync.js')
-            await sessionSync.restoreSession()
+            await sessionSync.restoreAll()
         } catch (_) {}
         await setupPrisma()
         process.stdout.write('\r\x1b[K✅ [Bootstrap] Pre-launch checks completed successfully!\n')
