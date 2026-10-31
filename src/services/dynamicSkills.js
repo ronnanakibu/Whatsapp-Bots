@@ -100,6 +100,13 @@ class DynamicSkillsService {
     saveStorage() {
         try {
             fs.writeFileSync(this.storagePath, JSON.stringify(this.skills, null, 2), 'utf8')
+            // Auto-backup dynamic skills library to Hugging Face Dataset in background
+            setTimeout(async () => {
+                try {
+                    const { sessionSync } = await import('./sessionSync.js')
+                    await sessionSync.backupDynamicSkills()
+                } catch (_) {}
+            }, 1500)
         } catch (err) {
             logger.warn(`[DynamicSkills] Failed to save storage: ${err.message}`)
         }
@@ -110,7 +117,7 @@ class DynamicSkillsService {
      */
     findMatchingSkill(queryText) {
         if (!queryText || typeof queryText !== 'string') return null
-        const cleanQuery = queryText.toLowerCase().replace(/[?!.,;:_`~*'"()\[\]{}]/g, ' ').replace(/\s+/g, ' ').trim()
+        const cleanQuery = queryText.toLowerCase().replace(/[?!.,;:_`~*'"()\[\]{}/\\|@#$%^&+=<>]/g, ' ').replace(/\s+/g, ' ').trim()
 
         for (const skill of this.skills) {
             // 1. Cek keywords

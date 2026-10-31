@@ -129,6 +129,28 @@ const COMMAND_PATTERNS = [
         ],
         extractArgs: () => []
     },
+    {
+        command: 'rangkum',
+        requiresMedia: false,
+        patterns: [
+            /\b(ringkas|rangkum|recap|summarize)\b.*\b(chat|percakapan|obrolan|pesan|grup)\b/i,
+            /\b(ringkas|rangkum|recap|summarize)\s+(\d{1,3})\b/i,
+            /\b(ringkasin|rangkumin|recapin)\b/i,
+        ],
+        extractArgs: (text) => [text]
+    },
+    {
+        command: 'cook',
+        requiresMedia: false,
+        patterns: [
+            /\b(bikin\s*fitur|buat\s*fitur|bikin\s*skill|buat\s*skill|racik\s*skill|cook\s*skill)\b/i,
+            /\b(racik|bikinfitur|dynamicskill)\s+(.+)/i,
+        ],
+        extractArgs: (text) => {
+            const cleaned = text.replace(/\b(bikin\s*fitur|buat\s*fitur|bikin\s*skill|buat\s*skill|racik\s*skill|cook\s*skill|racik|bikinfitur|dynamicskill)\b/gi, '').trim()
+            return cleaned ? [cleaned] : []
+        }
+    },
 ]
 
 /**

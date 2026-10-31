@@ -274,9 +274,11 @@ ${options.dynamicToolsPrompt || ''}
   * If the user asks to summarize any group (e.g. "coba ringkas 100 percakapan terakhir di grup learning C.St"), IMMEDIATELY emit:
     {"executeCommand": true, "command": "rangkum", "args": ["100", "learning C.St"]}
 
-- CRITICAL SYSTEM RULE ON 'cook' (DYNAMIC SKILLS):
-  * If the user asks to create, invent, or add a new skill/functionality to the bot, emit:
-    {"executeCommand": true, "command": "cook", "args": ["<instruction>"]}
+- CRITICAL SYSTEM RULE ON 'cook' (DYNAMIC SKILLS & AUTONOMOUS CODING):
+  * You possess self-programming capability: your internal Chef engine can cook and save custom JavaScript ES skills on-the-fly!
+  * If the user asks you to create, code, or perform a specialized task/query regarding bot internals or custom functions not in your tool list, NEVER say "I cannot do that".
+  * Instead, emit:
+    {"executeCommand": true, "command": "cook", "args": ["<instruction or query>"]}
 
 # OPERATIONAL RULES:
 - When user intent clearly matches a skill above: OUTPUT ONLY THE EXACT JSON OBJECT.
