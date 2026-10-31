@@ -1,5 +1,7 @@
 // src/core/bot.js
 import dns from 'dns'
+import fs from 'fs'
+import path from 'path'
 process.env.TZ = process.env.BOT_TIMEZONE || 'Asia/Jakarta'
 dns.setDefaultResultOrder('ipv4first')
 try {
@@ -168,6 +170,7 @@ async function startBot() {
                 const formatted = code.match(/.{1,4}/g)?.join('-') ?? code
                 process.stdout.write('\n')
                 botLogger.section(`PAIRING CODE: ${formatted.toUpperCase()}`)
+                updateBotStatus('pairing', formatted.toUpperCase())
             } catch (err) {
                 botLogger.err('bot', err, 'requestPairingCode')
             }
@@ -182,7 +185,7 @@ async function startBot() {
     })
 
     // 6. Connection events
-    sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+    sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
         if (qr && (!phoneNumber || useQR)) {
             botLogger.system('QR Code generated — scan with WhatsApp:')
             qrcode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
@@ -244,11 +247,41 @@ async function startBot() {
         if (connection === 'close') {
             const error = lastDisconnect?.error
             const statusCode = new Boom(error)?.output?.statusCode
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut
+            const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401
+            const shouldReconnect = !isLoggedOut
 
             botLogger.connect('close', `status=${statusCode} | ${error?.message ?? 'unknown'}`)
             metricsService.setWhatsAppStatus('offline')
             updateBotStatus('close')
+
+            // 401 Logged Out / Stale Session auto-recovery
+            if (isLoggedOut && !isStopping) {
+                botLogger.warn('bot', 'Session logged out (status 401). Purging stale session locally and from cloud storage...')
+                try {
+                    sock.ws?.close()
+                    sock.ev?.removeAllListeners()
+                } catch (_) {}
+
+                try {
+                    if (fs.existsSync(sessionPath)) {
+                        fs.rmSync(sessionPath, { recursive: true, force: true })
+                        botLogger.system('Local session credentials cleared ✓')
+                    }
+                } catch (e) {
+                    botLogger.warn('bot', `Failed to delete local session: ${e.message}`)
+                }
+
+                try {
+                    await sessionSync.deleteCloudSession()
+                } catch (_) {}
+
+                reconnectCount = 0
+                botLogger.system('Restarting connection in 3s to request new pairing code / QR...')
+                setTimeout(() => {
+                    startBot()
+                }, 3000)
+                return
+            }
 
             if (shouldReconnect && !isStopping) {
                 if (reconnectCount < MAX_RECONNECT_ATTEMPTS) {
@@ -261,7 +294,7 @@ async function startBot() {
                     process.exit(1)
                 }
             } else {
-                botLogger.warn('bot', 'Logged out. Delete session folder and restart.')
+                botLogger.warn('bot', 'Connection closed without auto-reconnect.')
             }
         }
     })

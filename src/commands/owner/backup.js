@@ -9,8 +9,8 @@ export default {
     aliases: ['syncstorage', 'cloudsync', 'savecloud'],
     category: 'owner',
     description: 'Sinkronisasi memori & database bot ke Hugging Face Dataset (Persistent Storage)',
-    usage: '.backup [now | restore | status]',
-    example: '.backup now\n.backup restore\n.backup status',
+    usage: '.backup [now | restore | clearsession | status]',
+    example: '.backup now\n.backup restore\n.backup clearsession\n.backup status',
     cooldown: 5,
     permissions: ['owner'],
 
@@ -78,6 +78,22 @@ export default {
             }
         }
 
+        if (sub === 'clearsession' || sub === 'purgesession') {
+            await react('⏳')
+            try {
+                const deleted = await sessionSync.deleteCloudSession()
+                await react('✅')
+                return reply(
+                    `🗑️ *Pembersihan Sesi Cloud Selesai!*\n\n` +
+                    `Status: ${deleted ? '✅ Sesi kedaluwarsa berhasil dihapus dari HF Dataset.' : 'ℹ️ Sesi di HF Dataset sudah bersih atau tidak ditemukan.'}\n\n` +
+                    `_Bot berikutnya yang dinyalakan akan meminta pairing code / scan QR baru._`
+                )
+            } catch (err) {
+                await react('❌')
+                return reply(`❌ Gagal membersihkan sesi cloud: ${err.message}`)
+            }
+        }
+
         // Status default
         const dbFile = path.resolve('./storage/database/main.db')
         const credsFile = path.resolve('./storage/sessions/creds.json')
@@ -110,3 +126,4 @@ export default {
         )
     }
 }
+

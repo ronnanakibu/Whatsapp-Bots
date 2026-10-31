@@ -2,7 +2,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execSync } from 'child_process'
-import { uploadFile } from '@huggingface/hub'
+import { uploadFile, deleteFile } from '@huggingface/hub'
 import { logger, botLogger } from '../utils/logger.js'
 
 class SessionSyncService {
@@ -144,6 +144,27 @@ class SessionSyncService {
             try {
                 if (fs.existsSync(this.archiveSessionFile)) fs.unlinkSync(this.archiveSessionFile)
             } catch (_) {}
+        }
+    }
+
+    /**
+     * Delete invalid/expired session backup from Hugging Face Dataset
+     */
+    async deleteCloudSession() {
+        if (!this.token) return false
+        try {
+            await deleteFile({
+                credentials: { accessToken: this.token },
+                repo: { type: 'dataset', name: this.repo },
+                path: 'session.tar.gz',
+                commitTitle: 'Purge stale session credentials (401 Logged Out) [skip ci]'
+            })
+            logger.info('☁️ [CloudSync] Stale session.tar.gz removed from Hugging Face Dataset.')
+            return true
+        } catch (err) {
+            // Ignore if file already doesn't exist
+            logger.warn(`[CloudSync] Cloud session delete notice: ${err.message}`)
+            return false
         }
     }
 

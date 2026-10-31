@@ -54,6 +54,7 @@ let sseEventCounter = 1
 // Connection status cache
 let currentBotStatus = 'connecting'
 let currentQrCode = null
+let currentPairingCode = null
 
 // Recently played history
 const recentlyPlayed = []
@@ -387,13 +388,22 @@ function setupRadioBroadcasts() {
 // EXPORTED STATUS SINK (CALLABLE BY BOT.JS)
 // ─────────────────────────────────────────────
 
-export function updateBotStatus(state, qr = null) {
+export function updateBotStatus(state, data = null) {
     currentBotStatus = state
-    currentQrCode = qr
+    if (state === 'qr') {
+        currentQrCode = data
+        currentPairingCode = null
+    } else if (state === 'pairing') {
+        currentPairingCode = data
+        currentQrCode = null
+    } else if (state === 'open') {
+        currentQrCode = null
+        currentPairingCode = null
+    }
     
     // Broadcast status to Socket.IO & SSE
-    io?.emit('status:change', { state, qr })
-    broadcastSSE('status:change', { state, qr })
+    io?.emit('status:change', { state, qr: currentQrCode, pairingCode: currentPairingCode })
+    broadcastSSE('status:change', { state, qr: currentQrCode, pairingCode: currentPairingCode })
 
     // If bot becomes online/open, broadcast updated lists after dynamic sync stabilizes
     if (state === 'open') {
@@ -1143,25 +1153,79 @@ export function startRadioServer() {
         res.on('error', cleanup)
     })
 
-    // QR Code Web Endpoint
-    app.get('/qr', async (req, res) => {
-        if (!currentQrCode) {
-            return res.status(404).send('<body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#222;color:white;font-family:sans-serif;"><h2>QR Code not ready or bot is already connected.</h2></body>')
-        }
-        try {
-            const dataUrl = await qrcode.toDataURL(currentQrCode)
-            res.send(`
+    // QR Code & Pairing Code Web Endpoint
+    app.get(['/qr', '/pairing', '/code'], async (req, res) => {
+        if (currentPairingCode) {
+            return res.send(`
+                <!DOCTYPE html>
                 <html>
-                <body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#111;color:white;font-family:sans-serif;flex-direction:column;margin:0;">
-                    <h2>Scan with WhatsApp</h2>
-                    <img src="${dataUrl}" style="background:white;padding:20px;border-radius:15px;width:300px;height:300px;box-shadow: 0 4px 20px rgba(0,0,0,0.5);"/>
-                    <p style="margin-top:20px;opacity:0.7;">Refresh the page if the QR code expires.</p>
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <title>WhatsApp Bot Pairing Code</title>
+                </head>
+                <body style="display:flex;justify-content:center;align-items:center;min-height:100vh;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;box-sizing:border-box;">
+                    <div style="background:#1e293b;padding:32px;border-radius:16px;max-width:440px;width:100%;text-align:center;box-shadow:0 10px 25px -5px rgba(0,0,0,0.5);border:1px solid #334155;">
+                        <div style="font-size:36px;margin-bottom:12px;">🔗</div>
+                        <h2 style="margin:0 0 8px 0;font-size:22px;">WhatsApp Pairing Code</h2>
+                        <p style="color:#94a3b8;font-size:14px;margin:0 0 24px 0;">Buka WhatsApp &gt; Perangkat Tertaut &gt; Tautkan Perangkat &gt; Tautkan dengan nomor telepon</p>
+                        <div style="background:#0f172a;border:2px dashed #38bdf8;padding:16px;border-radius:12px;margin-bottom:20px;">
+                            <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:6px;color:#38bdf8;">${currentPairingCode}</span>
+                        </div>
+                        <p style="color:#64748b;font-size:12px;margin:0;">Kode ini berlaku ~60 detik. Refresh jika expired.</p>
+                        <p style="margin-top:20px;margin-bottom:0;"><a href="/api/system/app.log" style="color:#38bdf8;text-decoration:none;font-size:13px;">📄 Lihat Server Logs</a></p>
+                    </div>
                 </body>
                 </html>
             `)
-        } catch (err) {
-            res.status(500).send('Error generating QR code')
         }
+
+        if (currentQrCode) {
+            try {
+                const dataUrl = await qrcode.toDataURL(currentQrCode)
+                return res.send(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1">
+                        <title>Scan WhatsApp QR</title>
+                    </head>
+                    <body style="display:flex;justify-content:center;align-items:center;min-height:100vh;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;box-sizing:border-box;">
+                        <div style="background:#1e293b;padding:32px;border-radius:16px;max-width:400px;width:100%;text-align:center;box-shadow:0 10px 25px -5px rgba(0,0,0,0.5);border:1px solid #334155;">
+                            <div style="font-size:36px;margin-bottom:12px;">📱</div>
+                            <h2 style="margin:0 0 8px 0;font-size:22px;">Scan WhatsApp QR</h2>
+                            <p style="color:#94a3b8;font-size:14px;margin:0 0 20px 0;">Buka WhatsApp &gt; Perangkat Tertaut &gt; Tautkan Perangkat</p>
+                            <img src="${dataUrl}" style="background:white;padding:16px;border-radius:12px;width:240px;height:240px;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:block;margin:0 auto;"/>
+                            <p style="color:#64748b;font-size:12px;margin-top:20px;margin-bottom:0;">Refresh halaman jika QR code kadaluarsa.</p>
+                            <p style="margin-top:16px;margin-bottom:0;"><a href="/api/system/app.log" style="color:#38bdf8;text-decoration:none;font-size:13px;">📄 Lihat Server Logs</a></p>
+                        </div>
+                    </body>
+                    </html>
+                `)
+            } catch (err) {
+                return res.status(500).send('Error generating QR code')
+            }
+        }
+
+        return res.status(200).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>Status Bot WhatsApp</title>
+            </head>
+            <body style="display:flex;justify-content:center;align-items:center;min-height:100vh;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;box-sizing:border-box;">
+                <div style="background:#1e293b;padding:32px;border-radius:16px;max-width:400px;width:100%;text-align:center;border:1px solid #334155;">
+                    <div style="font-size:36px;margin-bottom:12px;">${currentBotStatus === 'open' ? '✅' : '⏳'}</div>
+                    <h2 style="margin:0 0 8px 0;font-size:20px;">${currentBotStatus === 'open' ? 'Bot WhatsApp Terhubung!' : 'Menunggu Sesi WhatsApp...'}</h2>
+                    <p style="color:#94a3b8;font-size:14px;margin:0;">Status saat ini: <strong>${currentBotStatus}</strong></p>
+                    <p style="margin-top:16px;"><a href="/api/system/app.log" style="color:#38bdf8;text-decoration:none;">📄 Lihat Live Log Server</a></p>
+                </div>
+            </body>
+            </html>
+        `)
     })
 
     // Locate static build out directories

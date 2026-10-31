@@ -13,7 +13,7 @@ const TEMP_DIR = path.resolve('./storage/media/temp')
 
 export async function downloadYtdlp(url, options = {}) {
     const format = options.format || 'video' // 'audio' | 'video'
-    
+
     // --- LOKAL YT-DLP ---
     const ytdlpPath = getYtdlpPath()
 
@@ -58,7 +58,7 @@ export async function downloadYtdlp(url, options = {}) {
         if (found && found !== 'ffmpeg') {
             customFfmpeg = found.replace(/^"|"$/g, '')
         }
-    } catch (_) {}
+    } catch (_) { }
 
     if (!customFfmpeg) {
         customFfmpeg = [
@@ -84,7 +84,7 @@ export async function downloadYtdlp(url, options = {}) {
             const { execSync } = await import('child_process')
             execSync(isWindows ? 'where ffmpeg' : 'which ffmpeg', { stdio: 'ignore' })
             hasFfmpeg = true
-        } catch (_) {}
+        } catch (_) { }
     }
 
     if (format === 'audio') {
@@ -118,7 +118,7 @@ export async function downloadYtdlp(url, options = {}) {
 
     return new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, args)
-        
+
         let stderr = ''
 
         proc.stderr.on('data', d => stderr += d.toString())
@@ -172,10 +172,10 @@ export async function downloadYtdlp(url, options = {}) {
                 if (fs.existsSync(infoJsonPath)) {
                     metadata = JSON.parse(fs.readFileSync(infoJsonPath, 'utf-8'))
                 }
-                
+
                 // Cari file yang berhasil di-download (jangan ambil .info.json)
                 const downloadedFile = findDownloadedFile(sessionId)
-                
+
                 if (!downloadedFile) {
                     throw new Error('File tidak ditemukan di disk setelah download selesai.')
                 }
@@ -190,7 +190,7 @@ export async function downloadYtdlp(url, options = {}) {
                     ? rawExt
                     : (format === 'audio' ? 'mp3' : 'mp4')
                 const mimeType = format === 'audio' ? 'audio/mpeg' : 'video/mp4'
-                
+
                 let caption = format === 'video' ? `🎬 *${title}*` : `🎵 *${title}*`
                 if (metadata.duration_string) caption += `\n⏱️ ${metadata.duration_string}`
                 if (metadata.extractor) caption += `\n_via ${metadata.extractor}_`
@@ -235,13 +235,13 @@ export async function downloadYtdlp(url, options = {}) {
 function findDownloadedFile(sessionId) {
     if (!fs.existsSync(TEMP_DIR)) return null
     const files = fs.readdirSync(TEMP_DIR)
-    const match = files.find(f => 
-        f.startsWith(sessionId) && 
-        !f.endsWith('.info.json') && 
-        !f.endsWith('.ytdl') && 
-        !f.endsWith('.part') && 
-        !f.endsWith('.ffmpeg') && 
-        !f.endsWith('.temp') && 
+    const match = files.find(f =>
+        f.startsWith(sessionId) &&
+        !f.endsWith('.info.json') &&
+        !f.endsWith('.ytdl') &&
+        !f.endsWith('.part') &&
+        !f.endsWith('.ffmpeg') &&
+        !f.endsWith('.temp') &&
         !f.endsWith('.tmp')
     )
     if (match) return path.join(TEMP_DIR, match)
@@ -255,7 +255,7 @@ function cleanupTempFiles(sessionId) {
         if (f.startsWith(sessionId)) {
             try {
                 fs.unlinkSync(path.join(TEMP_DIR, f))
-            } catch (_) {}
+            } catch (_) { }
         }
     }
 }
@@ -267,7 +267,7 @@ function cleanupTempFiles(sessionId) {
 async function downloadViaHF(url, format) {
     const apiUrl = process.env.HF_API_URL.replace(/\/$/, '') // hapus slash di akhir
     logger.info(`[yt-dlp HF] Requesting ${format} dari ${apiUrl}...`)
-    
+
     try {
         // Kita nge-POST ke HF API yang mereturn FileResponse
         const res = await fetchBuffer(`${apiUrl}/download`, {
@@ -282,11 +282,11 @@ async function downloadViaHF(url, format) {
 
         const ext = format === 'audio' ? 'mp3' : 'mp4'
         const mimeType = format === 'audio' ? 'audio/mpeg' : 'video/mp4'
-        
+
         // Coba ambil judul dari custom header
         const rawTitle = res.headers?.['x-title'] || 'Media'
         const title = decodeURIComponent(escape(rawTitle)) // fix latin-1 ke utf8 jika perlu
-        
+
         let caption = format === 'video' ? `🎬 *${title}*` : `🎵 *${title}*`
         caption += `\n_via HF Space_`
 
