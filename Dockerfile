@@ -37,6 +37,7 @@ RUN (npm ci --omit=dev || npm install --omit=dev --legacy-peer-deps) && npx pris
 
 # Copy bot source code
 COPY src ./src/
+COPY changelogs ./changelogs/
 COPY start.js ./
 COPY .env.example ./
 
