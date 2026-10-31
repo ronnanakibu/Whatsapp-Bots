@@ -289,7 +289,56 @@ class SessionSyncService {
     }
 
     // ─────────────────────────────────────────────
-    // 4. FULL ALL-IN-ONE BACKUP & RESTORE
+    // 4. YOUTUBE COOKIES SYNC (Bypass Bot Verification)
+    // ─────────────────────────────────────────────
+
+    async restoreCookies() {
+        const cookieFile = path.resolve('./storage/youtube-cookies.txt')
+        if (fs.existsSync(cookieFile) && fs.statSync(cookieFile).size > 10) return true
+        if (!this.token) return false
+
+        try {
+            const downloadUrl = `https://huggingface.co/datasets/${this.repo}/resolve/main/youtube-cookies.txt`
+            const res = await fetch(downloadUrl, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            })
+            if (!res.ok) return false
+            const text = await res.text()
+            if (text && text.length > 10) {
+                fs.writeFileSync(cookieFile, text, 'utf8')
+                botLogger.system('✅ [CloudSync] YouTube cookies restored from HF Dataset!')
+                return true
+            }
+            return false
+        } catch (_) {
+            return false
+        }
+    }
+
+    async backupCookies() {
+        const cookieFile = path.resolve('./storage/youtube-cookies.txt')
+        if (!fs.existsSync(cookieFile) || !this.token) return null
+        const content = fs.readFileSync(cookieFile)
+        if (content.length === 0) return null
+
+        try {
+            const res = await uploadFile({
+                credentials: { accessToken: this.token },
+                repo: { type: 'dataset', name: this.repo },
+                file: {
+                    path: 'youtube-cookies.txt',
+                    content: new Blob([content])
+                },
+                commitTitle: 'Automated YouTube cookies backup [skip ci]'
+            })
+            return res
+        } catch (_) {
+            return null
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // 5. FULL ALL-IN-ONE BACKUP & RESTORE
     // ─────────────────────────────────────────────
 
     async restoreAll(force = false) {
@@ -297,7 +346,8 @@ class SessionSyncService {
         const results = {
             database: await this.restoreDatabase(force),
             session: await this.restoreSession(),
-            documents: await this.restoreDocuments()
+            documents: await this.restoreDocuments(),
+            cookies: await this.restoreCookies()
         }
         return results
     }
@@ -314,6 +364,7 @@ class SessionSyncService {
             const dbResult = await this.backupDatabase()
             const sessionResult = await this.backupSession()
             const docsResult = await this.backupDocuments()
+            const cookieResult = await this.backupCookies()
 
             // Upload metadata summary
             const meta = {
@@ -348,7 +399,8 @@ class SessionSyncService {
                 commits: {
                     database: dbResult?.commit?.url,
                     session: sessionResult?.commit?.url,
-                    documents: docsResult?.commit?.url
+                    documents: docsResult?.commit?.url,
+                    cookies: cookieResult?.commit?.url
                 }
             }
         } catch (err) {
