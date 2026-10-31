@@ -33,7 +33,7 @@ WORKDIR /app
 # Install bot dependencies (copy lockfile for deterministic installs)
 COPY package.json package-lock.json ./
 COPY prisma ./prisma/
-RUN npm ci --omit=dev && npx prisma generate
+RUN (npm ci --omit=dev || npm install --omit=dev --legacy-peer-deps) && npx prisma generate
 
 # Copy bot source code
 COPY src ./src/
