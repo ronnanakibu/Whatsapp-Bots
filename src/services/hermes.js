@@ -240,7 +240,8 @@ class HermesService {
         if (!options.dynamicToolsPrompt) {
             try {
                 options.dynamicToolsPrompt = generatePromptToolDefinitions({
-                    role: isSenderOwner ? 'owner' : 'user'
+                    role: 'user',
+                    compact: true
                 })
             } catch (_) {}
         }
@@ -306,10 +307,10 @@ ${options.dynamicToolsPrompt || ''}
             ]
         }
 
-        // CPU Core 1: Groq Cloud (Ultra-fast Llama 3.3 / GPT-OSS / Qwen)
+        // CPU Core 1: Groq Cloud (Ultra-fast Qwen / GPT-OSS)
         const groqKey = process.env.GROQ_API_KEY
         if (groqKey) {
-            const groqModels = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b']
+            const groqModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b']
             for (const grqModel of groqModels) {
                 try {
                     const { default: Groq } = await import('groq-sdk')
@@ -318,7 +319,7 @@ ${options.dynamicToolsPrompt || ''}
                         model: grqModel,
                         messages,
                         temperature: 0.7,
-                        max_tokens: 4096
+                        max_tokens: 2048
                     })
                     const text = res.choices[0]?.message?.content?.trim()
                     if (text) return { text, provider: `hermes-agent (Groq ${grqModel})`, model: grqModel }
@@ -336,7 +337,7 @@ ${options.dynamicToolsPrompt || ''}
                     model: 'nousresearch/hermes-3-llama-3.1-70b',
                     messages,
                     temperature: 0.7,
-                    max_tokens: 4096
+                    max_tokens: 2048
                 }, {
                     headers: {
                         'Authorization': `Bearer ${openrouterKey}`,
@@ -352,10 +353,10 @@ ${options.dynamicToolsPrompt || ''}
             }
         }
 
-        // CPU Core 3: NVIDIA NIM (Nemotron 70B / Llama 3.3 / DeepSeek V4)
+        // CPU Core 3: NVIDIA NIM (Nemotron 120B / DeepSeek V4 / Llama 3)
         const nvidiaKey = process.env.NVIDIA_API_KEY
         if (nvidiaKey) {
-            const nvidiaModels = ['nvidia/llama-3.1-nemotron-70b-instruct', 'meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-v4.1-flash']
+            const nvidiaModels = ['deepseek-ai/deepseek-v4.1-flash', 'nvidia/nemotron-3-super-120b-a12b', 'meta/llama3-chatqa-1.5-70b']
             for (const nvModel of nvidiaModels) {
                 try {
                     const { default: OpenAI } = await import('openai')
@@ -367,7 +368,7 @@ ${options.dynamicToolsPrompt || ''}
                         model: nvModel,
                         messages,
                         temperature: 0.7,
-                        max_tokens: 4096
+                        max_tokens: 2048
                     })
                     const text = res.choices?.[0]?.message?.content?.trim()
                     if (text) return { text, provider: `hermes-agent (NVIDIA ${nvModel})`, model: nvModel }
