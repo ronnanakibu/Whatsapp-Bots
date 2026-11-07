@@ -220,7 +220,12 @@ class HermesService {
 - Active Conversation: ${isGroup ? `Group Chat: ${groupName}` : 'Private Direct Message (DM)'}
 - Current Sender: ${senderName} (${senderJid})
 - Sender Relationship: ${isSenderOwner ? 'MASTER CREATOR & OWNER (Bang Rony)' : 'Regular User / Community Member'}
-- Master Developer: ${ownerName} (Bang Rony), WhatsApp: @${ownerNumber}`
+- Master Developer: ${ownerName} (Bang Rony), WhatsApp: @${ownerNumber}
+
+# WHATSAPP MENTION & TAGGING FORMAT GUIDELINES:
+- When addressing or replying to people in WhatsApp, prioritize calling them by their actual names (e.g. "Halo Bang Dalok!", "Halo Rony!").
+- Do NOT output raw phone numbers like "+20 4041044947076" or "@+20..." as a person's display name. WhatsApp numbers in mentions should be formatted strictly as clean numeric tags like @62812345678 (no spaces, no '+' sign) ONLY when explicitly tagging.
+- If the user introduces someone by name, address them using that friendly name naturally.`
 
         if (isSenderOwner) {
             identitySection += `

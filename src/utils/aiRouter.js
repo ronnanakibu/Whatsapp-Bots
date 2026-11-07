@@ -518,8 +518,14 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         }
 
         if (text && placeholderMsg?.key) {
+            // Clean up messy mention formats like @+20 404... into valid WhatsApp format @20404...
+            let cleanedText = text.replace(/@\+?(\d[\d\s-]{6,18}\d)/g, (match, digits) => {
+                const pureDigits = digits.replace(/[\s-]/g, '')
+                return pureDigits.length >= 8 && pureDigits.length <= 16 ? `@${pureDigits}` : match
+            })
+
             // Extract mentions (e.g. @6285172013920)
-            const mentionMatches = text.match(/@(\d{8,16})\b/g)
+            const mentionMatches = cleanedText.match(/@(\d{8,16})\b/g)
             const mentionJids = []
             if (isGroup && mentionMatches) {
                 for (const m of mentionMatches) {
@@ -537,14 +543,14 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
                 try {
                     await sock.sendMessage(from, { delete: placeholderMsg.key })
                 } catch (_) {}
-                const sent = await reply(text, { mentions: mentionJids })
+                const sent = await reply(cleanedText, { mentions: mentionJids })
                 if (sent?.key?.id) {
                     const { seamlessTracker } = await import('../services/seamless.js')
                     seamlessTracker.track(sent.key.id)
                 }
             } else {
                 await sock.sendMessage(from, {
-                    text,
+                    text: cleanedText,
                     edit: placeholderMsg.key
                 })
                 if (placeholderMsg.key.id) {
