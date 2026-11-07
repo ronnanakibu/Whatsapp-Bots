@@ -524,7 +524,7 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
             }
         }
 
-        if (text && placeholderMsg?.key) {
+        if (text) {
             // Clean up messy mention formats like @+20 404... into valid WhatsApp format @20404...
             let cleanedText = text.replace(/@\+?(\d[\d\s-]{6,18}\d)/g, (match, digits) => {
                 const pureDigits = digits.replace(/[\s-]/g, '')
@@ -547,22 +547,39 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
             // In WhatsApp groups, if there are user mentions, editing a message does NOT highlight
             // the tag in blue and does NOT trigger notification.
             if (isGroup && mentionJids.length > 0) {
-                try {
-                    await sock.sendMessage(from, { delete: placeholderMsg.key })
-                } catch (_) {}
+                if (placeholderMsg?.key) {
+                    try {
+                        await sock.sendMessage(from, { delete: placeholderMsg.key })
+                    } catch (_) {}
+                }
                 const sent = await reply(cleanedText, { mentions: mentionJids })
                 if (sent?.key?.id) {
                     const { seamlessTracker } = await import('../services/seamless.js')
                     seamlessTracker.track(sent.key.id)
                 }
+            } else if (placeholderMsg?.key) {
+                try {
+                    await sock.sendMessage(from, {
+                        text: cleanedText,
+                        edit: placeholderMsg.key
+                    })
+                    if (placeholderMsg.key.id) {
+                        const { seamlessTracker } = await import('../services/seamless.js')
+                        seamlessTracker.track(placeholderMsg.key.id)
+                    }
+                } catch (editErr) {
+                    botLogger.warn('aiChat', `Failed to edit placeholder message, falling back to new reply: ${editErr.message}`)
+                    const sent = await reply(cleanedText)
+                    if (sent?.key?.id) {
+                        const { seamlessTracker } = await import('../services/seamless.js')
+                        seamlessTracker.track(sent.key.id)
+                    }
+                }
             } else {
-                await sock.sendMessage(from, {
-                    text: cleanedText,
-                    edit: placeholderMsg.key
-                })
-                if (placeholderMsg.key.id) {
+                const sent = await reply(cleanedText)
+                if (sent?.key?.id) {
                     const { seamlessTracker } = await import('../services/seamless.js')
-                    seamlessTracker.track(placeholderMsg.key.id)
+                    seamlessTracker.track(sent.key.id)
                 }
             }
             await react('✅')
