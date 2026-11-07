@@ -80,11 +80,19 @@ export function isViewOnceMessage(msg) {
 /**
  * Construct a clean and safe quoted message object for Baileys, ensuring that the target message structure
  * is recursively unwrapped to prevent silent message drops by WhatsApp servers.
+ * Also cleanses participant LID format in groups to avoid server-side drop in LID addressing mode.
  */
 export function getCleanQuoted(msg) {
-    if (!msg) return null
+    if (!msg?.key || !msg?.message) return null
+
+    const key = { ...msg.key }
+    // Di grup WhatsApp dengan mode LID, pastikan participant selalu terdefinisi
+    if (key.remoteJid?.endsWith('@g.us') && !key.participant && msg.participant) {
+        key.participant = msg.participant
+    }
+
     return {
-        key: msg.key,
+        key,
         message: unwrapMessage(msg.message)
     }
 }

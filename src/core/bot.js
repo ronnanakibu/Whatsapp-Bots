@@ -70,8 +70,8 @@ setInterval(async () => {
         const rssMB = Math.round(mem.rss / (1024 * 1024))
         const heapUsedMB = Math.round(mem.heapUsed / (1024 * 1024))
 
-        // Proactive threshold: Sweep when RSS > 280MB or HeapUsed > 220MB to prevent Render OOM
-        if ((rssMB > 280 || heapUsedMB > 220) && typeof global.gc === 'function') {
+        // Proactive threshold: Sweep when RSS > 750MB or HeapUsed > 550MB (tuned for 2GB VPS)
+        if ((rssMB > 750 || heapUsedMB > 550) && typeof global.gc === 'function') {
             botLogger.warn?.('system', `[MemoryGuard] Elevated RAM at ${rssMB}MB RSS (${heapUsedMB}MB Heap). Cleaning sharp cache & running GC...`)
             try {
                 const sharp = (await import('sharp')).default
