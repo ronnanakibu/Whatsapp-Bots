@@ -538,11 +538,13 @@ class RadioService extends EventEmitter {
                 if (oembedRes.ok) {
                     const oembedData = await oembedRes.json()
                     const songTitle = oembedData.title
+                    const songArtist = oembedData.author_name || 'Spotify'
                     if (songTitle) {
-                        botLogger.info('radio', `Spotify track parsed: "${songTitle}" → searching on YouTube...`)
-                        const info = await this.#ytdlpSearch(songTitle)
+                        botLogger.info('radio', `Spotify track parsed: "${songTitle}" by ${songArtist} → searching on YouTube...`)
+                        const info = await this.#ytdlpSearch(`${songArtist} - ${songTitle}`)
                         return new Track({
                             title: `${songTitle} (Spotify)`,
+                            artist: songArtist,
                             url: info.url,
                             duration: info.duration,
                             thumbnail: oembedData.thumbnail_url || info.thumbnail,
@@ -563,9 +565,10 @@ class RadioService extends EventEmitter {
                 botLogger.info('radio', `Searching YouTube via yt-dlp: ${cleanQuery}`)
                 const info = await this.#ytdlpSearch(cleanQuery)
                 if (info && info.url) {
-                    botLogger.info('radio', `YouTube found (yt-dlp): ${info.title} → ${info.url}`)
+                    botLogger.info('radio', `YouTube found (yt-dlp): ${info.title} [${info.artist}] → ${info.url}`)
                     return new Track({
                         title: info.title,
+                        artist: info.artist,
                         url: info.url,
                         duration: info.duration,
                         thumbnail: info.thumbnail,
@@ -587,9 +590,10 @@ class RadioService extends EventEmitter {
                     botLogger.info('radio', `YouTube found (play-dl): ${v.title} → ${ytUrl}`)
                     return new Track({
                         title: v.title || 'Unknown',
+                        artist: v.channel?.name || 'YouTube',
                         url: ytUrl,
                         duration: v.durationInSec || 0,
-                        thumbnail: v.thumbnails?.[0]?.url || null,
+                        thumbnail: v.thumbnails?.[v.thumbnails.length - 1]?.url || v.thumbnails?.[0]?.url || null,
                         requestedBy: display,
                         requestedByJid,
                         source: 'youtube'
@@ -631,6 +635,7 @@ class RadioService extends EventEmitter {
         return new Track({
             url: sc.url,
             title: sc.name + ' (SC)',
+            artist: sc.user?.name || 'SoundCloud',
             duration: sc.durationInSec,
             thumbnail: sc.thumbnail || null,
             requestedBy: display,
@@ -672,11 +677,14 @@ class RadioService extends EventEmitter {
                 try {
                     const firstLine = trimmed.split('\n')[0]
                     const data = JSON.parse(firstLine)
+                    const detectedArtist = data.artist || data.creator || data.channel || data.uploader || 'YouTube'
+                    const thumbnail = data.thumbnail || (Array.isArray(data.thumbnails) && data.thumbnails.length > 0 ? data.thumbnails[data.thumbnails.length - 1]?.url : null)
                     resolve({
                         title: data.title || data.fulltitle || 'Unknown',
+                        artist: detectedArtist,
                         url: data.webpage_url || url,
                         duration: data.duration ? Math.round(data.duration) : 0,
-                        thumbnail: data.thumbnail || data.thumbnails?.[0]?.url || null,
+                        thumbnail: thumbnail,
                     })
                 } catch (e) {
                     reject(new Error(`yt-dlp JSON parse error: ${e.message}`))
@@ -722,11 +730,14 @@ class RadioService extends EventEmitter {
                     const data = JSON.parse(firstLine)
                     const videoUrl = data.webpage_url || (data.id ? `https://www.youtube.com/watch?v=${data.id}` : null)
                     if (!videoUrl) return reject(new Error('yt-dlp tidak mengembalikan URL video valid'))
+                    const detectedArtist = data.artist || data.creator || data.channel || data.uploader || 'YouTube'
+                    const thumbnail = data.thumbnail || (Array.isArray(data.thumbnails) && data.thumbnails.length > 0 ? data.thumbnails[data.thumbnails.length - 1]?.url : null)
                     resolve({
                         title: data.title || data.fulltitle || 'Unknown',
+                        artist: detectedArtist,
                         url: videoUrl,
                         duration: data.duration ? Math.round(data.duration) : 0,
-                        thumbnail: data.thumbnail || data.thumbnails?.[0]?.url || null,
+                        thumbnail: thumbnail,
                     })
                 } catch (e) {
                     reject(new Error(`yt-dlp search parse error: ${e.message}`))

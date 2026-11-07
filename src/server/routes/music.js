@@ -92,7 +92,8 @@ router.post('/api/v2/music/request', optionalJwt, async (req, res) => {
     }
 
     try {
-        const track = await radioService.search(query, userJid)
+        const userName = req.user?.name || req.body?.userName || 'Web Listener'
+        const track = await radioService.search(query, userJid, userName)
         radioService.addToQueue(track, req.id)
 
         if (dedicatedTo) {

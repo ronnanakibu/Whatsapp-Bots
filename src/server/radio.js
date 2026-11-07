@@ -246,11 +246,13 @@ function getCommandsList() {
 function addToHistory(track) {
     recentlyPlayed.unshift({
         title: track.title,
+        artist: track.artist || 'Unknown Artist',
         url: track.url,
         duration: track.duration,
         durationFormatted: track.durationFormatted,
         thumbnail: track.thumbnail,
-        requestedBy: track.requestedBy,
+        requestedBy: track.requestedBy || 'Auto DJ',
+        requester: track.requestedBy || 'Auto DJ',
         playedAt: Date.now(),
     })
     if (recentlyPlayed.length > MAX_HISTORY) recentlyPlayed.pop()
@@ -299,11 +301,13 @@ function getQueueData() {
     return radioService.queue.map((track, i) => ({
         position: i + 1,
         title: track.title,
+        artist: track.artist || 'Unknown Artist',
         url: track.url,
         duration: track.duration,
         durationFormatted: track.durationFormatted,
         thumbnail: track.thumbnail,
-        requestedBy: track.requestedBy,
+        requestedBy: track.requestedBy || 'Auto DJ',
+        requester: track.requestedBy || 'Auto DJ',
     }))
 }
 
@@ -314,11 +318,13 @@ function getFullStatus() {
         listeners: radioService.listenerCount,
         nowPlaying: track ? {
             title: track.title,
+            artist: track.artist || 'Unknown Artist',
             url: track.url,
             duration: track.duration,
             durationFormatted: track.durationFormatted,
             thumbnail: track.thumbnail,
-            requestedBy: track.requestedBy,
+            requestedBy: track.requestedBy || 'Auto DJ',
+            requester: track.requestedBy || 'Auto DJ',
             startedAt: track.addedAt,
         } : null,
         queue: getQueueData(),
@@ -337,11 +343,13 @@ function setupRadioBroadcasts() {
         addToHistory(track)
         const trackData = {
             title: track.title,
+            artist: track.artist || 'Unknown Artist',
             url: track.url,
             duration: track.duration,
             durationFormatted: track.durationFormatted,
             thumbnail: track.thumbnail,
-            requestedBy: track.requestedBy,
+            requestedBy: track.requestedBy || 'Auto DJ',
+            requester: track.requestedBy || 'Auto DJ',
         }
         broadcastSSE('track:start', trackData)
         io?.emit('track:start', trackData)
@@ -1063,6 +1071,9 @@ export function startRadioServer() {
             'Transfer-Encoding': 'chunked',
             'Connection': 'keep-alive',
             'Cache-Control': 'no-cache, no-store',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
             'icy-name': process.env.BOT_NAME ?? 'RonnBot Radio',
             'icy-br': '128',
         })
@@ -1073,6 +1084,13 @@ export function startRadioServer() {
         if (!radioService.isPlaying && radioService.queue.length > 0) {
             radioService.start().catch(err => logger.error('[Radio] Auto-start error:', err.message))
         }
+    })
+
+    app.options('/stream', (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', '*')
+        res.status(204).end()
     })
 
     // ─────────────────────────────────────────────
