@@ -1211,6 +1211,28 @@ export function startRadioServer() {
         }
     })
 
+    app.post('/api/groups/:jid/leave', async (req, res) => {
+        try {
+            const { jid } = req.params
+            const sock = getSocket()
+            if (!sock) return res.status(503).json({ success: false, error: 'WhatsApp socket offline' })
+            try {
+                await sock.sendMessage(jid, { text: '👋 *Bot pamit keluar dari grup ini.* Terima kasih!' })
+            } catch (_) {}
+            await sock.groupLeave(jid)
+            delete avatarCache[jid]
+            if (db) {
+                try {
+                    db.prepare('DELETE FROM chat_config WHERE chat_id = ?').run(jid)
+                    db.prepare('DELETE FROM moderation_config WHERE chat_id = ?').run(jid)
+                } catch (_) {}
+            }
+            res.json({ success: true, jid })
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message })
+        }
+    })
+
     // REST API /history endpoint
     app.get('/history', (req, res) => {
         res.json({
