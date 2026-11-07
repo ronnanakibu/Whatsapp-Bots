@@ -132,8 +132,10 @@ function commandExists(cmd) {
 function downloadFile(url, destPath) {
     return new Promise((resolve, reject) => {
         const request = (targetUrl) => {
-            https.get(targetUrl, (res) => {
-                if (res.statusCode === 301 || res.statusCode === 302) {
+            https.get(targetUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' }
+            }, (res) => {
+                if ([301, 302, 307, 308].includes(res.statusCode)) {
                     return request(res.headers.location)
                 }
                 if (res.statusCode !== 200) {
@@ -387,71 +389,50 @@ async function setupFfmpeg() {
 }
 
 // ─────────────────────────────────────────────
-// STEP 4: YT-DLP
+// STEP 4: YT-DLP (STANDALONE ELF / EXE)
 // ─────────────────────────────────────────────
 
-const YTDLP_SCRIPT_PATH = path.resolve('./storage/bin/yt-dlp')
-const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp'
-const PYTHON_DIR = path.resolve('./storage/python')
-const PYTHON_BIN = path.resolve('./storage/python/bin/python3')
-const PYTHON_TAR = path.resolve('./storage/bin/python.tar.gz')
+const isWindows = process.platform === 'win32'
+const YTDLP_SCRIPT_PATH = path.resolve('./storage/bin/yt-dlp' + (isWindows ? '.exe' : ''))
+const YTDLP_URL = isWindows
+    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+    : (process.arch === 'arm64'
+        ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64'
+        : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux')
 
 async function setupYtDlp() {
-    let isMusl = fs.existsSync('/lib/ld-musl-x86_64.so.1') || fs.existsSync('/lib/ld-musl-aarch64.so.1')
-    const detectedLibc = isMusl ? 'musl' : 'gnu'
-    const pythonUrl = `https://github.com/indygreg/python-build-standalone/releases/download/20240415/cpython-3.12.3+20240415-x86_64-unknown-linux-${detectedLibc}-install_only.tar.gz`
-
-    let hasPython = false
-    try {
-        if (commandExists('python3') || commandExists('python')) {
-            hasPython = true
-            ok('Python3 system detected.')
-        }
-    } catch (_) { }
-
-    if (!hasPython && !fs.existsSync(PYTHON_BIN)) {
-        inf(`Downloading Python standalone (${detectedLibc.toUpperCase()}) (~35MB)...`)
-        try {
-            await downloadFile(pythonUrl, PYTHON_TAR)
-            if (!fs.existsSync(PYTHON_DIR)) fs.mkdirSync(PYTHON_DIR, { recursive: true })
-            execSync(`tar -xzf "${PYTHON_TAR}" -C "${PYTHON_DIR}" --strip-components=1`, { stdio: 'pipe' })
-            fs.unlinkSync(PYTHON_TAR)
-            ok(`Python standalone (${detectedLibc}) installed.`)
-        } catch (e) {
-            wrn(`Gagal install Python: ${e.message}`)
-            try { fs.unlinkSync(PYTHON_TAR) } catch (_) { }
-        }
-    } else if (!hasPython && fs.existsSync(PYTHON_BIN)) {
-        ok(`Python standalone (${detectedLibc}) ready.`)
-    }
-
-    if (fs.existsSync(PYTHON_BIN)) {
-        process.env.PATH = path.dirname(PYTHON_BIN) + ':' + process.env.PATH
-        process.env.PYTHON_CMD = PYTHON_BIN
-    }
-
     if (fs.existsSync(YTDLP_SCRIPT_PATH)) {
-        const size = fs.statSync(YTDLP_SCRIPT_PATH).size
-        if (size > 100_000) {
-            try { fs.chmodSync(YTDLP_SCRIPT_PATH, '755') } catch (_) { }
-            try {
-                execSync(`"${YTDLP_SCRIPT_PATH}" --update-to nightly`, { stdio: 'ignore', timeout: 30000 })
-                ok('yt-dlp nightly ready.')
-            } catch (_) {
-                ok('yt-dlp script ready.')
+        try {
+            fs.chmodSync(YTDLP_SCRIPT_PATH, '755')
+            const out = execSync(`"${YTDLP_SCRIPT_PATH}" --version`, { stdio: 'pipe', timeout: 8000 }).toString().trim()
+            if (out && !out.includes('ImportError') && !out.includes('Traceback')) {
+                ok(`yt-dlp ready: v${out}`)
+                return
             }
-            return
-        }
-        fs.unlinkSync(YTDLP_SCRIPT_PATH)
+        } catch (_) {}
+        wrn('yt-dlp di storage/bin tidak kompatibel (membutuhkan Python 3.11+) atau corrupt. Mengunduh standalone binary...')
+        try { fs.unlinkSync(YTDLP_SCRIPT_PATH) } catch (_) {}
     }
 
-    inf('Downloading yt-dlp nightly script (~3MB)...')
+    inf('Downloading standalone yt-dlp binary (~39MB)...')
     try {
-        await downloadFile(YTDLP_URL, YTDLP_SCRIPT_PATH)
+        let downloaded = false
+        if (commandExists('curl')) {
+            try {
+                execSync(`curl -fSL "${YTDLP_URL}" -o "${YTDLP_SCRIPT_PATH}"`, { stdio: 'pipe', timeout: 120_000 })
+                if (fs.existsSync(YTDLP_SCRIPT_PATH) && fs.statSync(YTDLP_SCRIPT_PATH).size > 10_000_000) {
+                    downloaded = true
+                }
+            } catch (_) {}
+        }
+        if (!downloaded) {
+            await downloadFile(YTDLP_URL, YTDLP_SCRIPT_PATH)
+        }
         fs.chmodSync(YTDLP_SCRIPT_PATH, '755')
-        ok('yt-dlp nightly downloaded.')
+        const out = execSync(`"${YTDLP_SCRIPT_PATH}" --version`, { stdio: 'pipe', timeout: 10_000 }).toString().trim()
+        ok(`yt-dlp standalone ready: v${out}`)
     } catch (e) {
-        wrn(`Gagal download yt-dlp: ${e.message}`)
+        wrn(`Gagal setup yt-dlp standalone: ${e.message}`)
     }
 }
 

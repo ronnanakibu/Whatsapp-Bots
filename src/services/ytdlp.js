@@ -11,20 +11,35 @@ import { botLogger } from '../utils/logger.js'
 const isWindows = process.platform === 'win32'
 const BIN_DIR = path.resolve('./storage/bin')
 const BIN_PATH = path.resolve('./storage/bin/yt-dlp' + (isWindows ? '.exe' : ''))
-const YTDLP_URL = `https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp${isWindows ? '.exe' : ''}`
+const YTDLP_URL = isWindows
+    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+    : (process.arch === 'arm64'
+        ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64'
+        : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux')
 
 // ─────────────────────────────────────────────
 // CEK BINARY VALID
 // ─────────────────────────────────────────────
 
+function testExecutable(filePath) {
+    if (!filePath) return false
+    try {
+        const out = execSync(`"${filePath}" --version`, { stdio: 'pipe', timeout: 5000 }).toString().trim()
+        if (out && !out.includes('ImportError') && !out.includes('Traceback')) {
+            return true
+        }
+    } catch (_) {}
+    return false
+}
+
 export function getYtdlpPath(preferLocal = false) {
     // 1. Dari env
     if (process.env.YTDLP_PATH) {
-        if (fs.existsSync(process.env.YTDLP_PATH)) {
+        if (fs.existsSync(process.env.YTDLP_PATH) && isValidBinary(process.env.YTDLP_PATH)) {
             ensureExecutable(process.env.YTDLP_PATH)
             return process.env.YTDLP_PATH
         }
-        botLogger.warn('ytdlp', `YTDLP_PATH set tapi tidak ditemukan: ${process.env.YTDLP_PATH}`)
+        botLogger.warn('ytdlp', `YTDLP_PATH set tapi tidak valid atau gagal dijalankan: ${process.env.YTDLP_PATH}`)
     }
 
     // 2. Local binary
@@ -42,10 +57,9 @@ export function getYtdlpPath(preferLocal = false) {
 
     // 4. System PATH (hanya jika tidak preferLocal)
     if (!preferLocal) {
-        try {
-            execSync('yt-dlp --version', { stdio: 'ignore', timeout: 3000 })
+        if (testExecutable('yt-dlp')) {
             return 'yt-dlp'
-        } catch (_) { }
+        }
     }
 
     return null  // tidak ada
@@ -53,9 +67,14 @@ export function getYtdlpPath(preferLocal = false) {
 
 function isValidBinary(filePath) {
     try {
+        if (!fs.existsSync(filePath)) return false
         const stat = fs.statSync(filePath)
-        if (stat.size < 1_000_000) {
+        if (stat.size < 500_000) {
             botLogger.warn('ytdlp', `Binary terlalu kecil (${(stat.size / 1024).toFixed(0)}KB): ${filePath}`)
+            return false
+        }
+        if (!testExecutable(filePath)) {
+            botLogger.warn('ytdlp', `Binary tidak kompatibel dengan Python host atau corrupt: ${filePath}`)
             return false
         }
         return true
@@ -104,16 +123,30 @@ export async function ensureYtdlp() {
         return existing
     }
 
-    botLogger.warn('ytdlp', 'yt-dlp local tidak ditemukan, mencoba mengunduh versi terbaru dari GitHub...')
+    botLogger.warn('ytdlp', 'yt-dlp local valid tidak ditemukan, mencoba mengunduh versi standalone dari GitHub...')
 
     if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true })
 
     try {
-        await downloadFile(YTDLP_URL, BIN_PATH)
+        if (fs.existsSync(BIN_PATH)) {
+            try { fs.unlinkSync(BIN_PATH) } catch (_) {}
+        }
+
+        let downloadedViaCurl = false
+        try {
+            execSync(`curl -fSL "${YTDLP_URL}" -o "${BIN_PATH}"`, { stdio: 'ignore', timeout: 90_000 })
+            if (fs.existsSync(BIN_PATH) && fs.statSync(BIN_PATH).size > 10_000_000) {
+                downloadedViaCurl = true
+            }
+        } catch (_) {}
+
+        if (!downloadedViaCurl) {
+            await downloadFile(YTDLP_URL, BIN_PATH)
+        }
         fs.chmodSync(BIN_PATH, 0o755)
 
         const version = execSync(`"${BIN_PATH}" --version`, { timeout: 10_000 }).toString().trim()
-        botLogger.info('ytdlp', `yt-dlp downloaded & ready: v${version}`)
+        botLogger.info('ytdlp', `yt-dlp standalone downloaded & ready: v${version}`)
         return BIN_PATH
     } catch (e) {
         botLogger.warn('ytdlp', `Gagal mengunduh yt-dlp dari GitHub: ${e.message}`)
@@ -135,8 +168,8 @@ function downloadFile(url, dest) {
         let downloaded = 0
 
         function doRequest(reqUrl) {
-            https.get(reqUrl, (res) => {
-                if (res.statusCode === 301 || res.statusCode === 302) {
+            https.get(reqUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' } }, (res) => {
+                if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
                     return doRequest(res.headers.location)
                 }
 
