@@ -1160,6 +1160,16 @@ export function startRadioServer() {
         }
     })
 
+    // REST API /api/groups endpoint
+    app.get(['/api/groups', '/groups'], async (req, res) => {
+        try {
+            const list = await getGroupsList()
+            res.json({ success: true, total: list.length, groups: list })
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message })
+        }
+    })
+
     // REST API /history endpoint
     app.get('/history', (req, res) => {
         res.json({
