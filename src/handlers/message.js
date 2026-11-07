@@ -128,7 +128,9 @@ async function processSingleMessage(sock, msg) {
             return norm && botNumbers.has(norm)
         })
 
-        const prefixes = [process.env.BOT_PREFIX, '.', '!'].filter(Boolean)
+        // Use only the prefix defined in .env (default ".")
+        // Fallback to "." if not set.
+        const prefixes = [process.env.BOT_PREFIX ?? '.'].filter(Boolean)
         const matchedPrefix = prefixes.find(p => body.startsWith(p))
         const isCommand = Boolean(matchedPrefix)
         const prefix = matchedPrefix || process.env.BOT_PREFIX || '.'
