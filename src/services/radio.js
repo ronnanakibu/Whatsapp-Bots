@@ -791,6 +791,12 @@ class RadioService extends EventEmitter {
 
         this.emit('queue:add', track, correlationId)
         botLogger.info('radio', `Queued: ${track.title}`)
+
+        // AUTO-START: Jika radio sedang idle, langsung jalankan pemutaran tanpa menunggu
+        if (!this.#isPlaying) {
+            botLogger.info('radio', `Radio idle terdeteksi, auto-start pemutaran lagu baru: ${track.title}`)
+            this.start().catch(err => botLogger.err('radio', err, 'addToQueue:autoStart'))
+        }
     }
 
     removeFromQueue(index) {
