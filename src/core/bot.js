@@ -64,14 +64,19 @@ process.on('unhandledRejection', (reason) => {
 // ACTIVE MEMORY WATCHDOG (Render 512MB RAM Guard)
 // ─────────────────────────────────────────────
 
-setInterval(() => {
+setInterval(async () => {
     try {
         const mem = process.memoryUsage()
         const rssMB = Math.round(mem.rss / (1024 * 1024))
         const heapUsedMB = Math.round(mem.heapUsed / (1024 * 1024))
 
-        if (rssMB > 380 && typeof global.gc === 'function') {
-            botLogger.warn?.('system', `[MemoryGuard] RAM usage at ${rssMB}MB RSS (${heapUsedMB}MB Heap). Triggering active GC sweep...`)
+        // Proactive threshold: Sweep when RSS > 280MB or HeapUsed > 220MB to prevent Render OOM
+        if ((rssMB > 280 || heapUsedMB > 220) && typeof global.gc === 'function') {
+            botLogger.warn?.('system', `[MemoryGuard] Elevated RAM at ${rssMB}MB RSS (${heapUsedMB}MB Heap). Cleaning sharp cache & running GC...`)
+            try {
+                const sharp = (await import('sharp')).default
+                if (sharp?.cache) sharp.cache(false)
+            } catch (_) {}
             global.gc()
         }
     } catch (_) {}

@@ -9,7 +9,7 @@ function getAllJsFiles(dir) {
     let results = []
     const list = fs.readdirSync(dir)
     for (const file of list) {
-        if (file === 'node_modules' || file.startsWith('.')) continue
+        if (file === 'node_modules' || file === 'out' || file.startsWith('.')) continue
         const fullPath = path.join(dir, file)
         const stat = fs.statSync(fullPath)
         if (stat.isDirectory()) {

@@ -1,30 +1,15 @@
-# ── Stage 1: Build radio dashboard ──
-FROM node:20-slim AS radio-builder
-WORKDIR /dashboard
-COPY dashboard/package.json dashboard/package-lock.json ./
-RUN npm ci --legacy-peer-deps
-COPY dashboard/ .
-RUN npm run build
-
-# ── Stage 2: Build main dashboard ──
-FROM node:20-slim AS main-builder
-WORKDIR /main-dashboard
-COPY src/app/dashboard/package.json src/app/dashboard/package-lock.json ./
-RUN npm ci --legacy-peer-deps
-COPY src/app/dashboard/ .
-RUN npm run build
-
-# ── Stage 3: Runtime ──
+# ── Runtime Container ──
 # Use standard node:20 which has build-essential & python3 pre-installed
 FROM node:20
 
-# OS dependencies (ffmpeg, curl, tar, fontconfig, python3 for media & yt-dlp)
+# OS dependencies (ffmpeg, curl, tar, fontconfig, python3 for media & yt-dlp, noto color emoji)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     tar \
     fontconfig \
     fonts-liberation \
+    fonts-noto-color-emoji \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -40,10 +25,6 @@ COPY src ./src/
 COPY changelogs ./changelogs/
 COPY start.js ./
 COPY .env.example ./
-
-# Copy built dashboard static files
-COPY --from=radio-builder /dashboard/out ./dashboard/out/
-COPY --from=main-builder /main-dashboard/out ./src/app/dashboard/out/
 
 # Create storage directory structure, pre-download essential fonts & yt-dlp, and assign ownership to node user (UID 1000)
 RUN mkdir -p storage/sessions storage/database storage/logs \

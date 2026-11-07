@@ -2,6 +2,7 @@
 import 'dotenv/config'
 import fs from 'fs'
 import path from 'path'
+import vm from 'node:vm'
 import axios from 'axios'
 import Groq from 'groq-sdk'
 import { logger, botLogger, getSocket } from '../utils/logger.js'
@@ -175,22 +176,46 @@ class DynamicSkillsService {
             }
         }
 
-        // Kompilasi Async Function
-        const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
-        const runner = new AsyncFunction('ctx', 'bundle', `
-            const { sock, db, store, introspection } = bundle;
-            const fn = ${skill.code};
-            return await fn(ctx, { sock, db, store, introspection });
-        `)
+        // Kompilasi dan eksekusi aman via node:vm sandbox (Document 1 §16.3 & Document 2 §Phase 5)
+        const sandbox = {
+            ctx: {
+                sender: ctx?.sender,
+                pushName: ctx?.pushName,
+                isGroup: ctx?.isGroup,
+                chatId: ctx?.chatId || ctx?.remoteJid,
+                args: ctx?.args || []
+            },
+            bundle: {
+                introspection: {
+                    getGroupsCount: () => botIntrospection.getGroupsCount(),
+                    getGroupsSample: (limit) => botIntrospection.getGroupsSample(limit),
+                    getSystemHealth: () => botIntrospection.getSystemHealth()
+                }
+            },
+            console: {
+                log: (...args) => logger.debug('[VMSandbox]', ...args),
+                error: (...args) => logger.error('[VMSandbox]', ...args)
+            },
+            setTimeout,
+            clearTimeout,
+            Promise
+        }
+        vm.createContext(sandbox)
 
-        const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Eksekusi skrip melebihi batas waktu (5s)')), 5000)
+        const wrappedCode = `(async () => {
+            const fn = ${skill.code};
+            return await fn(ctx, bundle);
+        })()`
+
+        const script = new vm.Script(wrappedCode, {
+            filename: `skill_${skill.id || 'dynamic'}.vm`,
+            timeout: 5000
         })
 
-        const result = await Promise.race([
-            runner(ctx, contextBundle),
-            timeoutPromise
-        ])
+        const result = await script.runInContext(sandbox, {
+            timeout: 5000,
+            breakOnSigint: true
+        })
 
         // Update metrik skill
         skill.usageCount = (skill.usageCount || 0) + 1

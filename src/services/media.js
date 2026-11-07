@@ -4,6 +4,12 @@ import fs from 'fs'
 let sharp = null
 try {
     sharp = (await import('sharp')).default
+    // Configure libvips cache and concurrency to prevent RAM bloat on Render (512MB limit)
+    if (sharp) {
+        sharp.cache({ files: 0, memory: 32, items: 50 })
+        sharp.concurrency(1)
+        sharp.simd(true)
+    }
 } catch (e) {
     // Sharp tidak ada di Lite Mode, kita abaikan saja.
     // Nanti error handling ditangkap di fungsi yang pakai sharp.
@@ -48,7 +54,6 @@ export function getFfmpegPath() {
 
 
 const EMOJI_CACHE_DIR = path.resolve('./storage/media/emoji-cache')
-const NOTO_BASE = 'https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128'
 
 function emojiToCodepoint(emoji) {
     const codepoints = []
@@ -56,9 +61,9 @@ function emojiToCodepoint(emoji) {
     for (let i = 0; i < chars.length; i++) {
         const cp = chars[i].codePointAt(0)
         if (cp === 0xFE0F) continue
-        codepoints.push(cp.toString(16))
+        codepoints.push(cp.toString(16).toLowerCase())
     }
-    return 'emoji_u' + codepoints.join('_')
+    return codepoints.join('-')
 }
 
 async function fetchEmojiPng(emoji) {
@@ -67,32 +72,53 @@ async function fetchEmojiPng(emoji) {
     const cachePath = path.join(EMOJI_CACHE_DIR, `${cp}.png`)
 
     if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 100) return cachePath
-    const url = `${NOTO_BASE}/${cp}.png`
 
-    return new Promise((resolve) => {
-        const file = fs.createWriteStream(cachePath)
-        https.get(url, (res) => {
+    // CDN endpoints with high availability
+    const cdnUrls = [
+        `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${cp}.png`,
+        `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${cp}.png`,
+        `https://raw.githubusercontent.com/jdecked/twemoji/main/assets/72x72/${cp}.png`
+    ]
+
+    const downloadFromUrl = (url) => new Promise((resolve) => {
+        const req = https.get(url, { timeout: 8000 }, (res) => {
             if (res.statusCode === 301 || res.statusCode === 302) {
-                file.close()
-                https.get(res.headers.location, (res2) => {
+                const redirectReq = https.get(res.headers.location, { timeout: 8000 }, (res2) => {
+                    if (res2.statusCode !== 200) return resolve(false)
+                    const file = fs.createWriteStream(cachePath)
                     res2.pipe(file)
-                    file.on('finish', () => { file.close(); resolve(cachePath) })
-                }).on('error', () => { fs.unlink(cachePath, () => { }); resolve(null) })
+                    file.on('finish', () => { file.close(); resolve(true) })
+                    file.on('error', () => resolve(false))
+                })
+                redirectReq.on('error', () => resolve(false))
+                redirectReq.on('timeout', () => { redirectReq.destroy(); resolve(false) })
                 return
             }
             if (res.statusCode !== 200) {
-                file.close()
-                fs.unlink(cachePath, () => { })
-                resolve(null)
-                return
+                return resolve(false)
             }
+            const file = fs.createWriteStream(cachePath)
             res.pipe(file)
-            file.on('finish', () => { file.close(); resolve(cachePath) })
-        }).on('error', () => {
-            fs.unlink(cachePath, () => { })
-            resolve(null)
+            file.on('finish', () => { file.close(); resolve(true) })
+            file.on('error', () => resolve(false))
         })
+        req.on('error', () => resolve(false))
+        req.on('timeout', () => { req.destroy(); resolve(false) })
     })
+
+    for (const url of cdnUrls) {
+        try {
+            const ok = await downloadFromUrl(url)
+            if (ok && fs.existsSync(cachePath) && fs.statSync(cachePath).size > 100) {
+                return cachePath
+            }
+            if (fs.existsSync(cachePath)) {
+                try { fs.unlinkSync(cachePath) } catch {}
+            }
+        } catch (_) {}
+    }
+
+    return null
 }
 
 function pngToDataUri(filePath) {
@@ -100,9 +126,10 @@ function pngToDataUri(filePath) {
     return `data:image/png;base64,${buf.toString('base64')}`
 }
 
-const EMOJI_REGEX = /\p{Emoji_Presentation}\p{Emoji_Modifier_Base}?\p{Emoji_Modifier}?(\u200D\p{Emoji_Presentation}\p{Emoji_Modifier_Base}?\p{Emoji_Modifier}?)*\uFE0F?/gu;
+const EMOJI_REGEX = /(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base})(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base})(?:\p{Emoji_Modifier})?)*/gu;
 
 function detectEmojis(text) {
+    if (!text) return []
     const matches = [...text.matchAll(EMOJI_REGEX)]
     return [...new Set(matches.map(m => m[0]))]
 }
@@ -611,6 +638,9 @@ export class MediaService {
                 rawWebp = await this.applyLowQualityImage(rawWebp, lqPercent)
             }
 
+            if (sharp?.cache) sharp.cache(false)
+            if (global.gc) global.gc()
+
             return await addExif(rawWebp)
 
         } catch (e) {
@@ -741,6 +771,9 @@ export class MediaService {
                 .composite([{ input: svg, top: 0, left: 0 }])
                 .webp({ quality: webpQuality })
                 .toBuffer()
+
+            if (sharp?.cache) sharp.cache(false)
+            if (global.gc) global.gc()
 
             return await addExif(rawWebp)
 
@@ -955,6 +988,9 @@ export class MediaService {
 
             if (fs.existsSync(framesInDir)) fs.rmSync(framesInDir, { recursive: true, force: true })
             if (fs.existsSync(framesOutDir)) fs.rmSync(framesOutDir, { recursive: true, force: true })
+
+            if (sharp?.cache) sharp.cache(false)
+            if (global.gc) global.gc()
         }
     }
 

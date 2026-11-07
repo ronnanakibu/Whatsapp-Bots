@@ -1228,53 +1228,68 @@ export function startRadioServer() {
         `)
     })
 
-    // Locate static build out directories
+    // Locate static build out directories (if any custom build exists)
     const dashboardDir = path.resolve('./src/app/dashboard/out')
     const radioDashboardDir = path.resolve('./dashboard/out')
 
-    logger.info(`[Radio] Serving BotOS Dashboard static files from: ${dashboardDir}`)
-    logger.info(`[Radio] Serving Radio Dashboard static files from: ${radioDashboardDir}`)
-    
-    app.use('/dashboard', express.static(dashboardDir))
-    app.use('/radio', express.static(radioDashboardDir))
+    if (fs.existsSync(dashboardDir)) {
+        logger.info(`[Radio] Serving BotOS Dashboard static files from: ${dashboardDir}`)
+        app.use('/dashboard', express.static(dashboardDir))
+    }
+    if (fs.existsSync(radioDashboardDir)) {
+        logger.info(`[Radio] Serving Radio Dashboard static files from: ${radioDashboardDir}`)
+        app.use('/radio', express.static(radioDashboardDir))
+    }
 
-    // Fallback client route paths to support SPA client router
+    // Fallback client route paths
     app.use((req, res, next) => {
         if (req.method !== 'GET') return next()
         const url = req.path
-        if (url === '/stream' || url === '/status' || url === '/queue' || url === '/history' || url === '/events') {
+        if (url === '/stream' || url === '/status' || url === '/queue' || url === '/history' || url === '/events' || url.startsWith('/api/')) {
             return next()
         }
 
-        // Redirect root / to /dashboard
-        if (url === '/') {
-            return res.redirect('/dashboard')
-        }
-
-        // Redirect standalone /sunoautomation and /music to /dashboard/music
-        if (url === '/sunoautomation' || url === '/music') {
-            return res.redirect('/dashboard/music')
-        }
-
-        // Serve index.html or page-specific HTML for BotOS dashboard fallback routes
-        if (url.startsWith('/dashboard') && !url.includes('/_next/') && !path.extname(url)) {
-            const subPath = url.slice('/dashboard'.length) || '/'
-            const filePath = path.join(dashboardDir, (subPath === '/' ? 'index' : subPath) + '.html')
-            if (fs.existsSync(filePath)) {
-                return res.sendFile(filePath)
-            }
-            const indexPath = path.join(dashboardDir, 'index.html')
+        // Root & dashboard placeholder while redesign is in progress
+        if (url === '/' || url.startsWith('/dashboard') || url.startsWith('/radio') || url === '/sunoautomation' || url === '/music') {
+            // Serve static index if exists
+            const activeDir = url.startsWith('/radio') ? radioDashboardDir : dashboardDir
+            const indexPath = path.join(activeDir, 'index.html')
             if (fs.existsSync(indexPath)) {
                 return res.sendFile(indexPath)
             }
-        }
 
-        // Serve index.html for Radio dashboard fallback routes
-        if (url.startsWith('/radio') && !url.includes('/_next/') && !path.extname(url)) {
-            const indexPath = path.join(radioDashboardDir, 'index.html')
-            if (fs.existsSync(indexPath)) {
-                return res.sendFile(indexPath)
-            }
+            return res.status(200).send(`
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>BotOS v6 — Modern Node</title>
+                    <style>
+                        body { background: #090a0f; color: #f3f4f6; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                        .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 2rem 2.5rem; border-radius: 1rem; text-align: center; max-width: 480px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+                        .badge { display: inline-block; background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 1rem; }
+                        h1 { font-size: 1.5rem; margin: 0 0 0.5rem; font-weight: 700; letter-spacing: -0.025em; }
+                        p { color: #9ca3af; font-size: 0.9rem; line-height: 1.5; margin: 0 0 1.5rem; }
+                        .links { display: flex; gap: 0.75rem; justify-content: center; }
+                        a { color: #38bdf8; text-decoration: none; font-size: 0.85rem; border: 1px solid rgba(56,189,248,0.2); padding: 0.4rem 0.8rem; border-radius: 0.5rem; transition: all 0.2s; }
+                        a:hover { background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.5); }
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div class="badge">● ONLINE & ACTIVE</div>
+                        <h1>BotOS v6 Core Node</h1>
+                        <p>Autonomous WhatsApp Bot & Media Processing Engine is operational. New modern dashboard redesign is in development.</p>
+                        <div class="links">
+                            <a href="/api/system/ping">Health Check</a>
+                            <a href="/stream">Audio Stream</a>
+                            <a href="/status">Bot Status</a>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `)
         }
 
         res.status(404).send('Not found')
