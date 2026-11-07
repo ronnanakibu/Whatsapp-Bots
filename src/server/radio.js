@@ -1257,16 +1257,13 @@ export function startRadioServer() {
     })
 
     // Locate static build out directories (if any custom build exists)
-    const dashboardDir = path.resolve('./src/app/dashboard/out')
+    const dashboardDir = path.resolve('./dashboard/out')
     const radioDashboardDir = path.resolve('./dashboard/out')
 
     if (fs.existsSync(dashboardDir)) {
         logger.info(`[Radio] Serving BotOS Dashboard static files from: ${dashboardDir}`)
         app.use('/dashboard', express.static(dashboardDir))
-    }
-    if (fs.existsSync(radioDashboardDir)) {
-        logger.info(`[Radio] Serving Radio Dashboard static files from: ${radioDashboardDir}`)
-        app.use('/radio', express.static(radioDashboardDir))
+        app.use('/radio', express.static(dashboardDir))
     }
 
     // Fallback client route paths
