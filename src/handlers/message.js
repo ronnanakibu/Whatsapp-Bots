@@ -163,7 +163,9 @@ async function processSingleMessage(sock, msg) {
         // ─────────────────────────────────────────────
 
         const reply = async (text, options = {}) => {
-            const sent = await sock.sendMessage(from, { text, ...options }, { quoted: getCleanQuoted(msg) })
+            // Note: avoid passing quoted in groups — some groups silently drop messages with invalid quoted refs
+            const sendOpts = isGroup ? {} : { quoted: getCleanQuoted(msg) }
+            const sent = await sock.sendMessage(from, { text, ...options }, sendOpts)
             return sent
         }
 
