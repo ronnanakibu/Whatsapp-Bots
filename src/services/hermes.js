@@ -334,40 +334,52 @@ ${options.dynamicToolsPrompt || ''}
             }
         }
 
-        // CPU Core 2: OpenRouter (Nous Hermes 3 70B)
+        // CPU Core 2: OpenRouter (Auto Free Tier & Hermes Fallback)
         const openrouterKey = process.env.OPENROUTER_API_KEY
         if (openrouterKey) {
-            try {
-                const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-                    model: 'nousresearch/hermes-3-llama-3.1-70b',
-                    messages,
-                    temperature: 0.7,
-                    max_tokens: 2048
-                }, {
-                    headers: {
-                        'Authorization': `Bearer ${openrouterKey}`,
-                        'HTTP-Referer': 'https://github.com/NousResearch/hermes-agent',
-                        'X-Title': 'WABOT2.0 Hermes Agent'
-                    },
-                    timeout: 45000
-                })
-                const text = res.data?.choices?.[0]?.message?.content?.trim()
-                if (text) return { text, provider: 'hermes-agent (OpenRouter Hermes-3-70B)', model: 'hermes-3-llama-3.1-70b' }
-            } catch (e) {
-                logger.warn(`[HermesService] OpenRouter Hermes-3 call failed: ${e.message}`)
+            const orModels = [
+                'nousresearch/hermes-3-llama-3.1-70b',
+                'nvidia/nemotron-3.5-lightning:free',
+                'google/gemma-4-31b-it:free'
+            ]
+            for (const orModel of orModels) {
+                try {
+                    const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+                        model: orModel,
+                        messages,
+                        temperature: 0.7,
+                        max_tokens: 2048
+                    }, {
+                        headers: {
+                            'Authorization': `Bearer ${openrouterKey}`,
+                            'HTTP-Referer': 'https://github.com/NousResearch/hermes-agent',
+                            'X-Title': 'WABOT2.0 Hermes Agent'
+                        },
+                        timeout: 15000
+                    })
+                    const text = res.data?.choices?.[0]?.message?.content?.trim()
+                    if (text) return { text, provider: `hermes-agent (OpenRouter ${orModel})`, model: orModel }
+                } catch (e) {
+                    logger.warn(`[HermesService] OpenRouter ${orModel} call failed: ${e.response?.data?.error?.message || e.message}`)
+                }
             }
         }
 
-        // CPU Core 3: NVIDIA NIM (Nemotron 120B / DeepSeek V4 / Llama 3)
+        // CPU Core 3: NVIDIA NIM (Nemotron Bolt 3.5 / Mistral / Nemotron Super VL)
         const nvidiaKey = process.env.NVIDIA_API_KEY
         if (nvidiaKey) {
-            const nvidiaModels = ['deepseek-ai/deepseek-v4.1-flash', 'nvidia/nemotron-3-super-120b-a12b', 'meta/llama3-chatqa-1.5-70b']
+            const nvidiaModels = [
+                'nvidia/nemotron-3.5-bolt-e4b',
+                'mistralai/mistral-large-4-1t-a52b',
+                'nvidia/nemotron-3.5-super-vl-120b-a12b'
+            ]
             for (const nvModel of nvidiaModels) {
                 try {
                     const { default: OpenAI } = await import('openai')
                     const nvidia = new OpenAI({
                         apiKey: nvidiaKey,
-                        baseURL: 'https://integrate.api.nvidia.com/v1'
+                        baseURL: 'https://integrate.api.nvidia.com/v1',
+                        timeout: 10000
                     })
                     const res = await nvidia.chat.completions.create({
                         model: nvModel,
