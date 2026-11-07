@@ -492,27 +492,56 @@ class RadioService extends EventEmitter {
 
     async search(query, requestedByJid, requestedByName = null) {
         const playdl = await getPlayDl()
-        const isUrl = /^https?:\/\//.test(query)
-        const isYoutubeUrl = /(?:youtube\.com|youtu\.be)/.test(query)
+        const cleanQuery = (query || '').trim().replace(/^<|>$/g, '').trim()
+        const isUrl = /^https?:\/\//i.test(cleanQuery)
+        const isYoutubeUrl = /(?:youtube\.com\/(?:watch|shorts|live|embed)|youtu\.be\/|music\.youtube\.com\/)/i.test(cleanQuery)
+        const isSpotifyUrl = /spotify\.com\/track\/([a-zA-Z0-9]+)/i.test(cleanQuery)
+        const isSoundcloudUrl = /soundcloud\.com\//i.test(cleanQuery)
         const display = requestedByName || (requestedByJid ? (requestedByJid.includes('@') ? requestedByJid.split('@')[0] : requestedByJid) : 'Unknown')
 
-        // ── Strategy 1: YouTube URL langsung → yt-dlp ──
+        // ── Strategy 1: YouTube URL langsung (watch, shorts, youtu.be, music.youtube) → yt-dlp ──
         if (isYoutubeUrl) {
-            botLogger.info('radio', `YouTube URL detected, using yt-dlp: ${query}`)
+            botLogger.info('radio', `YouTube URL detected, using yt-dlp: ${cleanQuery}`)
             try {
-                const info = await this.#ytdlpGetInfo(query)
+                const info = await this.#ytdlpGetInfo(cleanQuery)
                 return new Track({ ...info, requestedBy: display, requestedByJid, source: 'youtube' })
             } catch (e) {
                 botLogger.warn('radio', `yt-dlp gagal untuk URL: ${e.message}`)
-                // Fallback ke SoundCloud search via judul
             }
         }
 
-        // ── Strategy 2: Text query → YouTube search via yt-dlp first! ──
+        // ── Strategy 2: Spotify URL parsing via open oEmbed → stream on YouTube ──
+        if (isSpotifyUrl) {
+            try {
+                botLogger.info('radio', `Spotify URL detected, parsing metadata: ${cleanQuery}`)
+                const oembedRes = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(cleanQuery)}`, { signal: AbortSignal.timeout(6000) })
+                if (oembedRes.ok) {
+                    const oembedData = await oembedRes.json()
+                    const songTitle = oembedData.title
+                    if (songTitle) {
+                        botLogger.info('radio', `Spotify track parsed: "${songTitle}" → searching on YouTube...`)
+                        const info = await this.#ytdlpSearch(songTitle)
+                        return new Track({
+                            title: `${songTitle} (Spotify)`,
+                            url: info.url,
+                            duration: info.duration,
+                            thumbnail: oembedData.thumbnail_url || info.thumbnail,
+                            requestedBy: display,
+                            requestedByJid,
+                            source: 'spotify'
+                        })
+                    }
+                }
+            } catch (spErr) {
+                botLogger.warn('radio', `Gagal parse Spotify URL: ${spErr.message}`)
+            }
+        }
+
+        // ── Strategy 3: Text query → YouTube search via yt-dlp first! ──
         if (!isUrl) {
             try {
-                botLogger.info('radio', `Searching YouTube via yt-dlp: ${query}`)
-                const info = await this.#ytdlpSearch(query)
+                botLogger.info('radio', `Searching YouTube via yt-dlp: ${cleanQuery}`)
+                const info = await this.#ytdlpSearch(cleanQuery)
                 if (info && info.url) {
                     botLogger.info('radio', `YouTube found (yt-dlp): ${info.title} → ${info.url}`)
                     return new Track({
@@ -530,8 +559,8 @@ class RadioService extends EventEmitter {
             }
 
             try {
-                botLogger.info('radio', `Searching YouTube via play-dl: ${query}`)
-                const ytResults = await playdl.search(query, { limit: 1, source: { youtube: 'video' } })
+                botLogger.info('radio', `Searching YouTube via play-dl: ${cleanQuery}`)
+                const ytResults = await playdl.search(cleanQuery, { limit: 1, source: { youtube: 'video' } })
                 if (ytResults?.length > 0) {
                     const v = ytResults[0]
                     const ytUrl = `https://www.youtube.com/watch?v=${v.id}`
@@ -551,8 +580,8 @@ class RadioService extends EventEmitter {
             }
         }
 
-        // ── Strategy 3: SoundCloud fallback ──
-        botLogger.info('radio', `Fallback ke SoundCloud: ${query}`)
+        // ── Strategy 4: SoundCloud fallback ──
+        botLogger.info('radio', `Fallback ke SoundCloud: ${cleanQuery}`)
         try {
             const clientId = await playdl.getFreeClientID()
             await playdl.setToken({ soundcloud: { client_id: clientId } })
@@ -563,19 +592,19 @@ class RadioService extends EventEmitter {
             } catch (_) { }
         }
 
-        let searchQuery = query
+        let searchQuery = cleanQuery
         // Kalau YouTube URL tapi yt-dlp gagal, coba ambil judul untuk SC search
         if (isYoutubeUrl) {
             try {
-                const info = await playdl.video_info(query)
-                searchQuery = info.video_details?.title || query
+                const info = await playdl.video_info(cleanQuery)
+                searchQuery = info.video_details?.title || cleanQuery
                 botLogger.info('radio', `YT title untuk SC search: ${searchQuery}`)
             } catch (_) { }
         }
 
         const scResults = await playdl.search(searchQuery, { source: { soundcloud: 'tracks' }, limit: 1 })
         if (!scResults || scResults.length === 0) {
-            throw new Error(`Tidak ditemukan di YouTube maupun SoundCloud: ${query}`)
+            throw new Error(`Tidak ditemukan di YouTube maupun SoundCloud: ${cleanQuery}`)
         }
 
         const sc = scResults[0]
