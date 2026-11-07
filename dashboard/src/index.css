@@ -1,8 +1,0 @@
-@import "tailwindcss";
-
-@layer base {
-  :root {
-    --background: #090A0F;
-    --foreground: #F8FAFC;
-  }
-}
