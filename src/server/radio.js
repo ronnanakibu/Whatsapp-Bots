@@ -918,8 +918,9 @@ export function startRadioServer() {
 
         // CORS headers
         res.setHeader('Access-Control-Allow-Origin', '*')
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Accept, Authorization, X-Request-ID')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Accept, Authorization, X-Request-ID, X-API-Key')
+        res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID, Content-Disposition')
 
         res.on('finish', () => {
             logger.info(`[${reqId}] Response ${res.statusCode}`)
@@ -1099,6 +1100,33 @@ export function startRadioServer() {
             queue: getQueueData(),
             total: radioService.queue.length,
         })
+    })
+
+    // REST API /api/radio/queue and /api/radio/now-playing aliases for external dashboards (Vercel)
+    app.get('/api/radio/status', (req, res) => {
+        res.json({ success: true, data: getFullStatus() })
+    })
+    app.get('/api/radio/queue', (req, res) => {
+        res.json({ success: true, data: { queue: getQueueData(), total: radioService.queue.length } })
+    })
+    app.get('/api/radio/history', (req, res) => {
+        res.json({ success: true, data: { history: recentlyPlayed, total: recentlyPlayed.length } })
+    })
+    app.get('/api/bot/commands', (req, res) => {
+        const cmdList = []
+        for (const [name, cmd] of commands.entries()) {
+            if (cmd.name === name) {
+                cmdList.push({
+                    name: cmd.name,
+                    category: cmd.category || 'general',
+                    description: cmd.description || '',
+                    aliases: cmd.aliases || [],
+                    usage: cmd.usage || '',
+                    permissions: cmd.permissions || ['user']
+                })
+            }
+        }
+        res.json({ success: true, total: cmdList.length, data: cmdList })
     })
 
     // REST API /history endpoint
