@@ -1170,6 +1170,47 @@ export function startRadioServer() {
         }
     })
 
+    // REST API Group actions
+    app.post('/api/groups/:jid/toggle-ai', async (req, res) => {
+        try {
+            const { jid } = req.params
+            const { enabled } = req.body
+            memoryService.setAiEnabled(jid, Boolean(enabled))
+            res.json({ success: true, jid, ai_enabled: Boolean(enabled) })
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message })
+        }
+    })
+
+    app.post('/api/groups/:jid/toggle-moderation', async (req, res) => {
+        try {
+            const { jid } = req.params
+            const { enabled } = req.body
+            await moderatorService.setModerationEnabled(jid, Boolean(enabled))
+            res.json({ success: true, jid, mod_enabled: Boolean(enabled) })
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message })
+        }
+    })
+
+    app.post('/api/groups/:jid/broadcast', async (req, res) => {
+        try {
+            const { jid } = req.params
+            const { text } = req.body
+            const sock = getSocket()
+            if (!sock) return res.status(503).json({ success: false, error: 'WhatsApp socket offline' })
+            let mentions = []
+            try {
+                const groupMeta = await sock.groupMetadata(jid)
+                if (groupMeta?.participants) mentions = groupMeta.participants.map(p => p.id)
+            } catch (_) {}
+            await sock.sendMessage(jid, { text: `📢 *PENGUMUMAN DARI OWNER*\n\n${text}`, mentions })
+            res.json({ success: true, jid })
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message })
+        }
+    })
+
     // REST API /history endpoint
     app.get('/history', (req, res) => {
         res.json({
