@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { io, Socket } from 'socket.io-client'
 import {
   Activity,
@@ -12,6 +12,13 @@ import {
   ExternalLink,
   MessageSquare,
   Sparkles,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Send,
+  CheckCircle,
+  AlertTriangle,
 } from 'lucide-react'
 
 interface Telemetry {
@@ -34,6 +41,16 @@ export default function App() {
   })
   const [activeTab, setActiveTab] = useState<'overview' | 'ai' | 'radio' | 'logs'>('overview')
   const [logs, setLogs] = useState<string[]>([])
+
+  // Radio player state
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [volume, setVolume] = useState(0.8)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  // AI Router simulator state
+  const [simPrompt, setSimPrompt] = useState('')
+  const [simResult, setSimResult] = useState<{ tier: string; provider: string; tokens: number; latency: string } | null>(null)
 
   useEffect(() => {
     // 1. Initial REST Ping
@@ -95,8 +112,55 @@ export default function App() {
     }
   }, [])
 
+  // Audio player controls
+  const togglePlay = () => {
+    if (!audioRef.current) return
+    if (isPlaying) {
+      audioRef.current.pause()
+      setIsPlaying(false)
+    } else {
+      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false))
+    }
+  }
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value)
+    setVolume(val)
+    if (audioRef.current) {
+      audioRef.current.volume = val
+      setIsMuted(val === 0)
+    }
+  }
+
+  const toggleMute = () => {
+    if (!audioRef.current) return
+    const nextMuted = !isMuted
+    audioRef.current.muted = nextMuted
+    setIsMuted(nextMuted)
+  }
+
+  // AI Router simulator
+  const handleSimulatePrompt = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!simPrompt.trim()) return
+
+    const lower = simPrompt.toLowerCase()
+    if (lower.startsWith('ping') || lower.includes('siapa kamu') || lower.includes('owner')) {
+      setSimResult({ tier: 'Tier 0 (Deterministic Regex)', provider: 'Local Kernel', tokens: 0, latency: '1.2ms' })
+    } else if (lower.length < 35 && (lower.startsWith('halo') || lower.startsWith('hai') || lower.startsWith('pagi'))) {
+      setSimResult({ tier: 'Tier 1 (Fast Flash)', provider: 'Groq / Gemma 3.8B', tokens: 42, latency: '140ms' })
+    } else if (lower.includes('buatkan') || lower.includes('jelaskan') || lower.includes('kenapa') || lower.includes('analisis')) {
+      setSimResult({ tier: 'Tier 2 (Pro Reasoning)', provider: 'Gemini 2.5 Flash / Thinking', tokens: 380, latency: '420ms' })
+    } else {
+      setSimResult({ tier: 'Tier 3 (Specialist Multimodal)', provider: 'Claude / Gemini Pro', tokens: 620, latency: '850ms' })
+    }
+  }
+
   return (
     <div className="flex h-screen bg-[#090A0F] text-slate-100 font-sans overflow-hidden">
+      {/* Audio Element Hidden Node */}
+      <audio ref={audioRef} src="/stream" preload="none" />
+
       {/* Sidebar */}
       <aside className="w-64 border-r border-slate-800/80 bg-[#0C0E17]/60 backdrop-blur-xl flex flex-col justify-between p-4">
         <div className="space-y-6">
@@ -256,32 +320,8 @@ export default function App() {
             </div>
           </div>
 
-          {activeTab === 'logs' ? (
-            /* Logs Terminal View */
-            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-3 font-mono">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <span className="text-xs text-slate-400 flex items-center gap-2">
-                  <Terminal className="h-4 w-4 text-cyan-400" />
-                  Live System Kernel Logs
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 text-slate-500">
-                  {logs.length} entries recorded
-                </span>
-              </div>
-              <div className="h-96 overflow-y-auto space-y-1 text-xs text-slate-300">
-                {logs.length === 0 ? (
-                  <p className="text-slate-600 italic">Listening for live kernel events...</p>
-                ) : (
-                  logs.map((log, idx) => (
-                    <div key={idx} className="p-1 rounded hover:bg-slate-900/80 transition-colors">
-                      {log}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          ) : (
-            /* Module Detailed View */
+          {/* TAB 1: OVERVIEW */}
+          {activeTab === 'overview' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* AI Tier Routing */}
               <div className="p-5 rounded-2xl bg-slate-900/30 border border-slate-800/80 space-y-4">
@@ -333,9 +373,210 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* TAB 2: AI ORCHESTRATOR */}
+          {activeTab === 'ai' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="md:col-span-2 p-5 rounded-2xl bg-slate-900/30 border border-slate-800/80 space-y-4">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-cyan-400" />
+                  AI Tier Routing Simulator
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Test user queries to observe zero-cost routing, deterministic tier-0 short-circuiting, and provider allocation.
+                </p>
+                <form onSubmit={handleSimulatePrompt} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={simPrompt}
+                    onChange={(e) => setSimPrompt(e.target.value)}
+                    placeholder="Contoh: 'ping', 'siapa kamu', 'buatkan kode python', 'halo bro'..."
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-xs font-medium flex items-center gap-2 transition"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    Simulate
+                  </button>
+                </form>
+
+                {simResult && (
+                  <div className="p-4 rounded-xl bg-slate-950 border border-cyan-800/30 space-y-3 font-mono">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Routed Tier:</span>
+                      <span className="text-cyan-400 font-semibold">{simResult.tier}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Selected Provider:</span>
+                      <span className="text-indigo-400">{simResult.provider}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Token Overhead:</span>
+                      <span className={simResult.tokens === 0 ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
+                        {simResult.tokens} Tokens
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Estimated Latency:</span>
+                      <span className="text-slate-300">{simResult.latency}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Status Circuit Breakers */}
+              <div className="p-5 rounded-2xl bg-slate-900/30 border border-slate-800/80 space-y-4">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                  Provider Circuit Breakers
+                </h3>
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/40 border border-slate-800">
+                    <span>Groq (Gemma / Llama)</span>
+                    <span className="text-emerald-400 flex items-center gap-1 font-mono text-[10px]">
+                      <CheckCircle className="h-3 w-3" /> CLOSED
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/40 border border-slate-800">
+                    <span>Gemini 2.5 Flash / Pro</span>
+                    <span className="text-emerald-400 flex items-center gap-1 font-mono text-[10px]">
+                      <CheckCircle className="h-3 w-3" /> CLOSED
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-800/40 border border-slate-800">
+                    <span>Cerebras Fast Tier</span>
+                    <span className="text-emerald-400 flex items-center gap-1 font-mono text-[10px]">
+                      <CheckCircle className="h-3 w-3" /> CLOSED
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: RADIO & STUDIO */}
+          {activeTab === 'radio' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="md:col-span-2 p-6 rounded-2xl bg-slate-900/30 border border-slate-800/80 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <h3 className="text-base font-semibold flex items-center gap-2">
+                      <Radio className="h-5 w-5 text-indigo-400" />
+                      ronn.ai Live Radio Broadcast
+                    </h3>
+                    <p className="text-xs text-slate-400">Direct low-latency audio stream from the bot's internal MP3 mixer.</p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800/30 text-[10px] font-mono flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    LIVE STREAM
+                  </span>
+                </div>
+
+                {/* Simulated Audio Waveform Bar */}
+                <div className="h-24 rounded-xl bg-slate-950 border border-slate-800 flex items-end justify-between px-6 py-4 gap-1.5 overflow-hidden">
+                  {[20, 45, 80, 60, 30, 90, 75, 40, 65, 85, 30, 50, 70, 95, 40, 25, 75, 60, 90, 35, 45, 80, 50, 30].map(
+                    (height, i) => (
+                      <div
+                        key={i}
+                        className={`w-full rounded-t-sm transition-all duration-300 ${
+                          isPlaying
+                            ? 'bg-gradient-to-t from-cyan-500 to-indigo-500 animate-pulse'
+                            : 'bg-slate-800'
+                        }`}
+                        style={{ height: isPlaying ? `${height}%` : '15%' }}
+                      ></div>
+                    )
+                  )}
+                </div>
+
+                {/* Player Controls */}
+                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-950 border border-slate-800/80">
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={togglePlay}
+                      className="h-11 w-11 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-500 hover:from-cyan-400 hover:to-indigo-400 flex items-center justify-center text-white shadow-lg shadow-cyan-500/25 transition active:scale-95"
+                    >
+                      {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-0.5" />}
+                    </button>
+                    <div>
+                      <h4 className="text-xs font-semibold">BotOS Stream Channel</h4>
+                      <p className="text-[10px] text-slate-500 font-mono">128 kbps • 44.1 kHz Stereo</p>
+                    </div>
+                  </div>
+
+                  {/* Volume Slider */}
+                  <div className="flex items-center gap-3 w-48">
+                    <button onClick={toggleMute} className="text-slate-400 hover:text-slate-200 transition">
+                      {isMuted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                    </button>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={isMuted ? 0 : volume}
+                      onChange={handleVolumeChange}
+                      className="w-full accent-cyan-400 h-1 bg-slate-800 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Station Info */}
+              <div className="p-5 rounded-2xl bg-slate-900/30 border border-slate-800/80 space-y-4">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-cyan-400" />
+                  Station Telemetry
+                </h3>
+                <div className="space-y-3 text-xs font-mono">
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800/60 space-y-1">
+                    <p className="text-slate-500 text-[10px]">CURRENT ENDPOINT</p>
+                    <p className="text-cyan-400 text-xs">/stream</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800/60 space-y-1">
+                    <p className="text-slate-500 text-[10px]">PIPELINE BUFFER</p>
+                    <p className="text-slate-200 text-xs">FFmpeg Direct Pipe</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800/60 space-y-1">
+                    <p className="text-slate-500 text-[10px]">BROADCAST STATUS</p>
+                    <p className="text-emerald-400 text-xs">STABLE</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: SYSTEM LOGS */}
+          {activeTab === 'logs' && (
+            <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-3 font-mono">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <span className="text-xs text-slate-400 flex items-center gap-2">
+                  <Terminal className="h-4 w-4 text-cyan-400" />
+                  Live System Kernel Logs
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 text-slate-500">
+                  {logs.length} entries recorded
+                </span>
+              </div>
+              <div className="h-96 overflow-y-auto space-y-1 text-xs text-slate-300">
+                {logs.length === 0 ? (
+                  <p className="text-slate-600 italic">Listening for live kernel events...</p>
+                ) : (
+                  logs.map((log, idx) => (
+                    <div key={idx} className="p-1 rounded hover:bg-slate-900/80 transition-colors">
+                      {log}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
   )
 }
+
 
