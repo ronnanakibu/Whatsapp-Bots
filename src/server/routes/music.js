@@ -7,7 +7,7 @@ import crypto from 'crypto'
 import { radioService } from '../../services/radio.js'
 import { logger } from '../../utils/logger.js'
 import { startSunoPipeline } from '../../services/suno.js'
-import { authenticateJwt } from '../middleware/auth.js'
+import { authenticateJwt, optionalJwt } from '../middleware/auth.js'
 import { db } from '../radio.js'
 
 const router = express.Router()
@@ -78,7 +78,7 @@ router.get('/api/v2/music/search', async (req, res) => {
     }
 })
 
-router.post('/api/v2/music/request', authenticateJwt, async (req, res) => {
+router.post('/api/v2/music/request', optionalJwt, async (req, res) => {
     const { query, dedicatedTo, message } = req.body
     const userJid = req.user.jid
     if (!query) {

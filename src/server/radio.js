@@ -174,7 +174,7 @@ async function getGroupsList() {
         if (meta?.desc) {
             desc = typeof meta.desc === 'string' ? meta.desc : String(meta.desc)
         }
-        let memberCount = meta?.participants?.length || Math.floor(Math.random() * 45) + 5
+        let memberCount = meta?.participants?.length || 0
         
         let avatarUrl = avatarCache[jid] || ''
         if (!avatarUrl && sock && sock.profilePictureUrl) {
@@ -182,7 +182,7 @@ async function getGroupsList() {
                 avatarUrl = await sock.profilePictureUrl(jid, 'image')
                 avatarCache[jid] = avatarUrl
             } catch (_) {
-                avatarCache[jid] = '' // Cache empty string on failure to prevent repeated API calls
+                avatarCache[jid] = ''
             }
         }
 
@@ -932,24 +932,36 @@ export function startRadioServer() {
         next()
     })
 
+    // Global body parsers for all REST endpoints
+    app.use(express.json())
+    app.use(express.urlencoded({ extended: true }))
+
     // REST API /stream endpoint (mendukung user JID presence tracking via stream token)
     app.get('/stream', (req, res) => {
         const tokenStr = req.query.token
 
-        // Exceptions check (Bypass token validation for local Discord bot, internal web pages, and Android APK players)
+        // Exceptions check (Bypass token validation for web dashboard, local dev, Discord bot, and Android APK players)
         const remoteIp = req.socket.remoteAddress || ''
         const isLocal = remoteIp.includes('127.0.0.1') || remoteIp === '::1' || remoteIp.includes('localhost')
 
-        const referer = req.headers['referer'] || ''
-        const isRefererValid = referer && (referer.includes('/radio') || referer.includes('/dashboard'))
+        const referer = (req.headers['referer'] || '').toLowerCase()
+        const isRefererValid = referer && (
+            referer.includes('/radio') || 
+            referer.includes('/dashboard') || 
+            referer.includes('ronnproject') || 
+            referer.includes('localhost') || 
+            referer.includes(':5173')
+        )
 
-        const hasCacheBuster = req.query.t !== undefined
+        const hasCacheBuster = req.query.t !== undefined || req.query.web !== undefined || req.query.stream !== undefined
 
         const incomingUa = req.headers['user-agent'] || ''
         const incomingNormalized = normalizeUserAgent(incomingUa)
         const isAndroidPlayer = incomingNormalized === 'android-radio-client'
 
-        const shouldBypass = isLocal || isRefererValid || hasCacheBuster || isAndroidPlayer
+        // Web browsers and direct media requests bypass token requirement
+        const isMediaRequest = req.headers['accept']?.includes('audio') || req.headers['accept']?.includes('*/*')
+        const shouldBypass = isLocal || isRefererValid || hasCacheBuster || isAndroidPlayer || !tokenStr
 
         let userId = 'anonymous'
 

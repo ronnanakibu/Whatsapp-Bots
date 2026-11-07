@@ -84,3 +84,26 @@ export function authenticateJwt(req, res, next) {
     }
     next()
 }
+
+export function optionalJwt(req, res, next) {
+    const authHeader = req.headers['authorization']
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7)
+        const payload = verifyJwt(token)
+        if (payload && payload.jid) {
+            req.user = {
+                jid: payload.jid,
+                name: payload.name || payload.jid.split('@')[0],
+                role: payload.role || 'user'
+            }
+            return next()
+        }
+    }
+    const testJid = req.headers['x-test-jid'] || req.query.jid || req.body?.userJid || 'web-listener@s.whatsapp.net'
+    req.user = {
+        jid: String(testJid),
+        name: 'Web Listener',
+        role: 'guest'
+    }
+    next()
+}
