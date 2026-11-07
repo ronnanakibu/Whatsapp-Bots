@@ -4,7 +4,7 @@ import { botIntrospection } from '../../services/botIntrospection.js'
 
 export default {
     name: 'groups',
-    aliases: ['listgroups', 'listgrup', 'grupbot', 'mygroups', 'botgroups'],
+    aliases: ['listgroups', 'listgrup', 'grupbot', 'mygroups', 'botgroups', 'grouplist'],
     category: 'group',
     description: 'Melihat daftar dan total grup WhatsApp yang diikuti oleh bot secara real-time.',
     usage: '.groups atau .listgrup [pencarian opsional]',

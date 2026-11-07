@@ -3,7 +3,7 @@ import { botLogger } from '../../utils/logger.js'
 
 export default {
     name: 'groupinfo',
-    aliases: ['ginfo', 'infogrup', 'group'],
+    aliases: ['ginfo', 'infogrup'],
     category: 'group',
     description: 'Menampilkan informasi dan daftar admin grup.',
     usage: '.groupinfo',

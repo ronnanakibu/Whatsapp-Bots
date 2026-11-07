@@ -133,14 +133,21 @@ const COMMAND_PATTERNS = [
         command: 'groups',
         requiresMedia: false,
         patterns: [
-            /\b(berapa|daftar|list|sebutkan)\s+grup\b/i,
-            /\bgrup\s+(apa\s+aja|mana\s+aja)\b/i,
+            /\b(berapa|daftar|list|sebutkan|minta)\s+(jid\s+)?grup\b/i,
+            /\bgrup\s+(apa\s+aja|mana\s+aja|list)\b/i,
             /\bgrup\s+yang\s+(lu|kamu|bot)\s+(join|ikuti|masuki)\b/i,
-            /\b(total|jumlah)\s+grup\b/i
+            /\b(total|jumlah)\s+grup\b/i,
+            /\b(group\s*list|list\s*group|list\s*grup|groups)\b/i,
+            /\bminta\s+jid\b/i
         ],
         extractArgs: (text) => {
-            const match = text.match(/(?:nama|cari|filter)\s+([a-zA-Z0-9_\- ]+)/i)
-            return match ? [match[1].trim()] : []
+            // Jika ada query nama grup (misal: "minta jid untuk grup learning c.st" atau "list grup learning")
+            const match = text.match(/(?:untuk\s+grup|grup|nama|cari|filter)\s+([a-zA-Z0-9_\- .]+)/i)
+            if (match) {
+                const cleaned = match[1].replace(/\b(jid|list|daftar|dong|ya|tolong)\b/gi, '').trim()
+                if (cleaned) return [cleaned]
+            }
+            return []
         }
     },
     {
@@ -505,13 +512,13 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
 
         // 4. Autonomous Skill / Tool Calling from Hermes Agent Mastermind
         if (text && text.includes('{') && text.includes('executeCommand')) {
-            if (placeholderMsg?.key) {
-                try {
-                    await sock.sendMessage(from, { delete: placeholderMsg.key })
-                } catch (_) {}
-            }
             const executed = await processAiResponse(ctx, result)
             if (executed) {
+                if (placeholderMsg?.key) {
+                    try {
+                        await sock.sendMessage(from, { delete: placeholderMsg.key })
+                    } catch (_) {}
+                }
                 await react('✅')
                 return true
             }
