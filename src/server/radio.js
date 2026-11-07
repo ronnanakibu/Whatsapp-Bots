@@ -1094,6 +1094,29 @@ export function startRadioServer() {
         res.json(getFullStatus())
     })
 
+    // REST API /api/system/ping for health check & live telemetry polling
+    app.get(['/api/system/ping', '/ping', '/healthz'], (req, res) => {
+        const mem = process.memoryUsage()
+        const rssMB = Math.round(mem.rss / 1024 / 1024)
+        const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024)
+        const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024)
+        res.json({
+            status: 'ok',
+            uptime: Math.floor(process.uptime()),
+            timestamp: Date.now(),
+            memory: {
+                rssMB,
+                heapUsedMB,
+                heapTotalMB
+            },
+            bot: {
+                connected: !!(sock?.user),
+                user: sock?.user?.id || null,
+                pushName: sock?.user?.name || 'BotOS'
+            }
+        })
+    })
+
     // REST API /queue endpoint
     app.get('/queue', (req, res) => {
         res.json({
