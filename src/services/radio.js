@@ -431,16 +431,43 @@ export function dbUnlockAchievement(userJid, achievementId) {
 
 export class Track {
     constructor({ title, url, duration, thumbnail, requestedBy, source, songId, artist, requestedByJid, startSeek }) {
-        this.title = title
+        // Auto-extract YouTube thumbnail from URL if thumbnail is missing
+        let resolvedThumbnail = thumbnail || null
+        if (!resolvedThumbnail && url) {
+            const ytMatch = url.match(/(?:watch\?v=|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})/)
+            if (ytMatch && ytMatch[1]) {
+                resolvedThumbnail = `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`
+            }
+        }
+        if (resolvedThumbnail && resolvedThumbnail.includes('-large.')) {
+            resolvedThumbnail = resolvedThumbnail.replace('-large.', '-t500x500.')
+        }
+
+        // Auto-clean & split title/artist if artist is Unknown
+        let detectedArtist = artist
+        let detectedTitle = title
+        if ((!detectedArtist || detectedArtist === 'Unknown' || detectedArtist === 'YouTube') && title) {
+            if (title.includes(' - ')) {
+                const parts = title.split(' - ')
+                detectedArtist = parts[0].trim()
+                detectedTitle = parts.slice(1).join(' - ').trim()
+            } else if (title.includes(' | ')) {
+                const parts = title.split(' | ')
+                detectedTitle = parts[0].trim()
+                detectedArtist = parts[1].trim()
+            }
+        }
+
+        this.title = detectedTitle || title || 'Live Stream Track'
         this.url = url
         this.duration = duration
-        this.thumbnail = thumbnail
-        this.requestedBy = requestedBy
+        this.thumbnail = resolvedThumbnail
+        this.requestedBy = requestedBy || 'Auto DJ'
         this.requestedByJid = requestedByJid || null
         this.source = source || 'unknown' // 'youtube' | 'soundcloud' | 'unknown'
         this.addedAt = Date.now()
         this.songId = songId || getSongId(url, this.source)
-        this.artist = artist || 'Unknown'
+        this.artist = detectedArtist || 'Unknown Artist'
         this.startSeek = startSeek || 0
     }
 
@@ -632,12 +659,23 @@ class RadioService extends EventEmitter {
         }
 
         const sc = scResults[0]
+        let scThumbnail = sc.thumbnail || null
+        if (scThumbnail && scThumbnail.includes('-large.')) {
+            scThumbnail = scThumbnail.replace('-large.', '-t500x500.')
+        }
+        if (!scThumbnail && isYoutubeUrl) {
+            const ytMatch = cleanQuery.match(/(?:watch\?v=|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})/)
+            if (ytMatch && ytMatch[1]) {
+                scThumbnail = `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`
+            }
+        }
+
         return new Track({
             url: sc.url,
             title: sc.name + ' (SC)',
             artist: sc.user?.name || 'SoundCloud',
             duration: sc.durationInSec,
-            thumbnail: sc.thumbnail || null,
+            thumbnail: scThumbnail,
             requestedBy: display,
             requestedByJid,
             source: 'soundcloud'
