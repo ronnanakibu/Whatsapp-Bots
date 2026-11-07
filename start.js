@@ -75,19 +75,44 @@ try {
     }
 } catch {}
 
+// ─────────────────────────────────────────────
+// CYBERPUNK STEPWISE PROGRESS BAR HELPER
+// ─────────────────────────────────────────────
+
+let currentStep = 0
+const TOTAL_BOOTSTRAP_STEPS = 9
+
+function renderStepProgress(stepName, detail = '') {
+    currentStep = Math.min(TOTAL_BOOTSTRAP_STEPS, currentStep + 1)
+    const pct = Math.round((currentStep / TOTAL_BOOTSTRAP_STEPS) * 100)
+    const barWidth = 24
+    const filled = Math.round((currentStep / TOTAL_BOOTSTRAP_STEPS) * barWidth)
+    const empty = barWidth - filled
+    const bar = '━'.repeat(filled) + '┈'.repeat(empty)
+
+    const cyan = '\x1b[96m'
+    const green = '\x1b[92m'
+    const gray = '\x1b[90m'
+    const white = '\x1b[97m'
+    const reset = '\x1b[0m'
+
+    const detailText = detail ? ` ${gray}(${detail})${reset}` : ''
+    process.stdout.write(`\r\x1b[K${cyan}⚡ [Kernel]${reset} ${gray}[${green}${bar}${gray}]${reset} ${white}${pct}%${reset} ❯ ${green}${stepName}${reset}${detailText}`)
+}
+
 const updateProgress = (msg) => {
-    process.stdout.write(`\r\x1b[K⚙️  [Bootstrap] ${msg}...`)
+    process.stdout.write(`\r\x1b[K  \x1b[90m↳\x1b[0m \x1b[96m${msg}...\x1b[0m`)
 }
 const log = (emoji, msg) => {
-    process.stdout.write(`\r\x1b[K${emoji} [Bootstrap] ${msg}\n`)
+    process.stdout.write(`\r\x1b[K${emoji} \x1b[90m[Bootstrap]\x1b[0m ${msg}\n`)
 }
 const ok = (msg) => updateProgress(msg)
 const inf = (msg) => updateProgress(msg)
 const wrn = (msg) => {
-    process.stdout.write(`\n⚠️  [Bootstrap Warning] ${msg}\n`)
+    process.stdout.write(`\n\x1b[33m⚠️  [Kernel Warning]\x1b[0m ${msg}\n`)
 }
 const err = (msg) => {
-    process.stdout.write(`\n❌ [Bootstrap Error] ${msg}\n`)
+    process.stdout.write(`\n\x1b[91m❌ [Kernel Panic]\x1b[0m ${msg}\n`)
 }
 
 function commandExists(cmd) {
@@ -665,22 +690,40 @@ async function launchBot() {
 // MAIN
 // ─────────────────────────────────────────────
 async function main() {
-    console.log('\n🚀 [Bootstrap] RonnBot v2.0 starting up...\n')
+    process.stdout.write('\n\x1b[96m🚀 [ronn.ai] Bootstrapping Autonomous Kernel & Security Layers...\x1b[0m\n\n')
     try {
+        renderStepProgress('Storage Trees', 'verifying directories')
         setupDirectories()
+
+        renderStepProgress('Telegram Cloud', 'archive vault')
         await migrateArchivesToTelegram()
+
+        renderStepProgress('Typography', 'Impact, Arial, Emoji')
         await setupFonts()
+
+        renderStepProgress('FFmpeg Media', 'hardware/software codecs')
         await setupFfmpeg()
+
+        renderStepProgress('yt-dlp Core', 'radio streaming bridge')
         await setupYtDlp()
+
+        renderStepProgress('Crypto / OpenSSL', 'handshake security')
         await setupOpenssl()
+
+        renderStepProgress('Security & Env', 'sanitizing environment')
         validateEnv()
+
+        renderStepProgress('HF Session Sync', 'restoring Baileys state')
         // Try restoring WhatsApp session, database & memory from Hugging Face Dataset
         try {
             const { sessionSync } = await import('./src/services/sessionSync.js')
             await sessionSync.restoreAll()
         } catch (_) {}
+
+        renderStepProgress('Prisma Engine', 'SQLite schema ready')
         await setupPrisma()
-        process.stdout.write('\r\x1b[K✅ [Bootstrap] Pre-launch checks completed successfully!\n')
+
+        process.stdout.write('\n\n\x1b[92m✔ Kernel Initialization Sequence 100% Complete!\x1b[0m\n')
         await printSummary()
         await launchBot()
     } catch (e) {
