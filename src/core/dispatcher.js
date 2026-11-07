@@ -151,33 +151,38 @@ export function createContextBridge(ctx, options = {}) {
         const originalSendMessage = ctx.sock.sendMessage.bind(ctx.sock)
         activeSock = Object.create(ctx.sock)
         activeSock.sendMessage = async (jid, content, sendOpts) => {
-            if (content?.text) {
-                capturedOutputs.push(String(content.text))
-                if (!shouldSendToChat) {
-                    return {
-                        key: { remoteJid: jid, fromMe: true, id: `intercepted-sock-${Date.now()}` },
-                        message: { conversation: content.text }
+            try {
+                if (content?.text) {
+                    capturedOutputs.push(String(content.text))
+                    if (!shouldSendToChat) {
+                        return {
+                            key: { remoteJid: jid, fromMe: true, id: `intercepted-sock-${Date.now()}` },
+                            message: { conversation: content.text }
+                        }
                     }
                 }
-            }
-            if (content?.react) {
-                if (content.react.text) capturedReactions.push(content.react.text)
-                if (!shouldSendToChat) return
-            }
-            const mediaKey = Object.keys(content || {}).find(k =>
-                ['image', 'video', 'audio', 'sticker', 'document'].includes(k)
-            )
-            if (mediaKey) {
-                capturedMedia.push({ type: mediaKey, caption: content.caption || '' })
-                capturedOutputs.push(`[Media sent: ${mediaKey}${content.caption ? ` - ${content.caption}` : ''}]`)
-                if (options.sendMedia === false && !shouldSendToChat) {
-                    return {
-                        key: { remoteJid: jid, fromMe: true, id: `intercepted-media-${Date.now()}` },
-                        mediaKey
+                if (content?.react) {
+                    if (content.react.text) capturedReactions.push(content.react.text)
+                    if (!shouldSendToChat) return
+                }
+                const mediaKey = Object.keys(content || {}).find(k =>
+                    ['image', 'video', 'audio', 'sticker', 'document'].includes(k)
+                )
+                if (mediaKey) {
+                    capturedMedia.push({ type: mediaKey, caption: content.caption || '' })
+                    capturedOutputs.push(`[Media sent: ${mediaKey}${content.caption ? ` - ${content.caption}` : ''}]`)
+                    if (options.sendMedia === false && !shouldSendToChat) {
+                        return {
+                            key: { remoteJid: jid, fromMe: true, id: `intercepted-media-${Date.now()}` },
+                            mediaKey
+                        }
                     }
                 }
+                return await originalSendMessage(jid, content, sendOpts)
+            } catch (err) {
+                botLogger.err('dispatcher', err, { jid, content })
+                throw err
             }
-            return await originalSendMessage(jid, content, sendOpts)
         }
     }
 

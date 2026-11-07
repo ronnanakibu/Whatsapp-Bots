@@ -18,6 +18,13 @@ export async function handleIncomingMessage(sock, { messages }) {
     for (const msg of messages) {
         if (!msg?.message) continue
         await processSingleMessage(sock, msg)
+        botLogger.debug('handler', `Incoming msg: ${JSON.stringify({
+            jid: from,
+            isGroup,
+            bodyPreview: (msg.message?.conversation || '').slice(0, 30),
+            type: Object.keys(messageContent || {})[0],
+            fromMe: !!msg.key.fromMe
+        })}`);
     }
 }
 
@@ -59,7 +66,7 @@ async function processSingleMessage(sock, msg) {
             try {
                 const params = JSON.parse(messageContent.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson)
                 body = params.id || ''
-            } catch (_) {}
+            } catch (_) { }
         }
         if (!body && messageContent?.buttonsResponseMessage?.selectedButtonId) {
             body = messageContent.buttonsResponseMessage.selectedButtonId
@@ -82,7 +89,7 @@ async function processSingleMessage(sock, msg) {
         }
 
         // ── PRE-CACHE MEDIA IN BACKGROUND (ANTI-SNITCH PROTECTION) ──
-        mediaCache.cacheIncomingMedia(sock, msg).catch(() => {})
+        mediaCache.cacheIncomingMedia(sock, msg).catch(() => { })
 
         // ── INTERCEPT VIEW ONCE (ONE-TIME MEDIA NOTIFICATION TO OWNER) ──
         handleIncomingViewOnce(sock, msg).catch((err) => {
@@ -94,7 +101,7 @@ async function processSingleMessage(sock, msg) {
 
         // ── AUTO READ (BLUE TICK) ──
         if (process.env.AUTO_READ !== 'false') {
-            await sock.readMessages([msg.key]).catch(() => {})
+            await sock.readMessages([msg.key]).catch(() => { })
         }
 
         // ── ANTI-SPAM MIDDLEWARE ──
@@ -240,36 +247,36 @@ async function processSingleMessage(sock, msg) {
             return
         }
 
-/**
- * Smart Reply Intent Filter for AI Routing
- * Checks whether a quoted reply to a bot message is a genuine follow-up query/instruction
- * or just trivial casual chat/banter (e.g. "wkwk", "tq", "ok") that should be ignored.
- */
-function isSmartReplyFollowup(body, isGroup, isMentioned, type) {
-    if (type === 'imageMessage' || type === 'videoMessage') return true
-    if (isMentioned) return true
+        /**
+         * Smart Reply Intent Filter for AI Routing
+         * Checks whether a quoted reply to a bot message is a genuine follow-up query/instruction
+         * or just trivial casual chat/banter (e.g. "wkwk", "tq", "ok") that should be ignored.
+         */
+        function isSmartReplyFollowup(body, isGroup, isMentioned, type) {
+            if (type === 'imageMessage' || type === 'videoMessage') return true
+            if (isMentioned) return true
 
-    const text = (body || '').trim()
-    if (!text) return false
+            const text = (body || '').trim()
+            if (!text) return false
 
-    // Trivial casual banter regex
-    const BANTER_PATTERN = /^(wkwk+|haha+|hwhw+|xixi+|lol|kwkw+|woght|sip|siap|mantap|oke|ok|tq|thanks|thx|makasih|terima\s+kasih|ntap|gokil|anjir|bjir|jir|asli|ya|gak|nggak|yo|yop|bro|cuy|👍|❤️|😂|💀|😭|🔥)+$/i
-    if (BANTER_PATTERN.test(text.replace(/[\s.,!?]+/g, ''))) return false
+            // Trivial casual banter regex
+            const BANTER_PATTERN = /^(wkwk+|haha+|hwhw+|xixi+|lol|kwkw+|woght|sip|siap|mantap|oke|ok|tq|thanks|thx|makasih|terima\s+kasih|ntap|gokil|anjir|bjir|jir|asli|ya|gak|nggak|yo|yop|bro|cuy|👍|❤️|😂|💀|😭|🔥)+$/i
+            if (BANTER_PATTERN.test(text.replace(/[\s.,!?]+/g, ''))) return false
 
-    // Follow-up intent signals (question marks, question words, follow-up connectors)
-    const HAS_QUESTION = text.includes('?') || /\b(apa|kenapa|mengapa|bagaimana|gimana|siapa|dimana|kapan|berapa|yang\s+mana)\b/i.test(text)
-    const HAS_INSTRUCTION = /\b(jelaskan|maksud|tapi|tolong|buatkan|bikin|carikan|ubah|perbaiki|lanjut|tambah|rekam|minta|berikan|apa\s+bedanya|bedanya|contoh)\b/i.test(text)
+            // Follow-up intent signals (question marks, question words, follow-up connectors)
+            const HAS_QUESTION = text.includes('?') || /\b(apa|kenapa|mengapa|bagaimana|gimana|siapa|dimana|kapan|berapa|yang\s+mana)\b/i.test(text)
+            const HAS_INSTRUCTION = /\b(jelaskan|maksud|tapi|tolong|buatkan|bikin|carikan|ubah|perbaiki|lanjut|tambah|rekam|minta|berikan|apa\s+bedanya|bedanya|contoh)\b/i.test(text)
 
-    if (HAS_QUESTION || HAS_INSTRUCTION) return true
+            if (HAS_QUESTION || HAS_INSTRUCTION) return true
 
-    // In group chat, require explicit intent or length >= 7 chars with non-trivial text
-    if (isGroup) {
-        return text.length >= 7 && !BANTER_PATTERN.test(text)
-    }
+            // In group chat, require explicit intent or length >= 7 chars with non-trivial text
+            if (isGroup) {
+                return text.length >= 7 && !BANTER_PATTERN.test(text)
+            }
 
-    // In Private DM, allow text unless it's pure short banter
-    return text.length >= 3
-}
+            // In Private DM, allow text unless it's pure short banter
+            return text.length >= 3
+        }
 
         // ─────────────────────────────────────────────
         // ROUTE 2: INTERACTIVE SESSIONS (ANTI-SNITCH & VIEW-ONCE PROMPTS)
