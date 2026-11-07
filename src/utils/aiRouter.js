@@ -392,7 +392,7 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
             }
 
             const cleanPrompt = promptText?.trim() || 'Deskripsikan gambar ini secara detail dan lengkap. Sebutkan semua yang kamu lihat: objek, teks, warna, suasana, dll.'
-            
+
             // Vision analysis using Gemini
             const startMs = Date.now()
             const result = await aiService.analyzeImage(buffer, 'image/jpeg', cleanPrompt)
@@ -457,24 +457,24 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
     let placeholderMsg = null
     try {
         placeholderMsg = await reply(`🔍 *Searching & Reasoning...* (1s)`)
-    } catch (_) {}
+    } catch (_) { }
 
     let seconds = 1
     const timer = setInterval(async () => {
         seconds += 2
         if (placeholderMsg?.key) {
             try {
-                const statusPhase = seconds < 4 
-                    ? `🌐 *Searching Web & Harvesting Knowledge...* (${seconds}s)`
-                    : `🧠 *Synthesizing & Reasoning with DeepSeek R1...* (${seconds}s)`
-                    
+                const statusPhase = seconds < 4
+                    ? `🌐 *Searching & Harvesting Knowledge...* (${seconds}s)`
+                    : `🧠 *Processing...* (${seconds}s)`
+
                 await sock.sendMessage(from, {
                     text: statusPhase,
                     edit: placeholderMsg.key
                 })
-            } catch (_) {}
+            } catch (_) { }
         }
-    }, 2000)
+    }, 5000)
 
     const startMs = Date.now()
     try {
@@ -485,14 +485,14 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
             try {
                 const meta = await ctx.sock.groupMetadata(chatId)
                 if (meta?.subject) groupSubject = meta.subject
-            } catch (_) {}
+            } catch (_) { }
         }
 
         let introspectionPrompt = ''
         try {
             const { botIntrospection } = await import('../services/botIntrospection.js')
             introspectionPrompt = await botIntrospection.getIntrospectionContextPrompt(ctx.sock)
-        } catch (_) {}
+        } catch (_) { }
 
         const aiOptions = {
             isOwner: isSenderOwner,
@@ -518,7 +518,7 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
                 if (placeholderMsg?.key) {
                     try {
                         await sock.sendMessage(from, { delete: placeholderMsg.key })
-                    } catch (_) {}
+                    } catch (_) { }
                 }
                 await react('✅')
                 return true
@@ -554,7 +554,7 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
                 if (placeholderMsg?.key) {
                     try {
                         await sock.sendMessage(from, { delete: placeholderMsg.key })
-                    } catch (_) {}
+                    } catch (_) { }
                 }
                 const sent = await reply(cleanedText, { mentions: mentionJids })
                 if (sent?.key?.id) {
