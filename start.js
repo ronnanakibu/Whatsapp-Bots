@@ -627,13 +627,14 @@ async function printSummary() {
     }
 
     const asciiBanner = `
-${c.cyan} ██╗    ██╗ █████╗ ██████╗  ██████╗ ████████╗    ██████╗     ██████╗ 
- ██║    ██║██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝    ╚════██╗   ██╔═████╗
- ██║ █╗ ██║███████║██████╔╝██║   ██║   ██║        █████╔╝   ██║██╔██║
- ██║███╗██║██╔══██║██╔══██╗██║   ██║   ██║       ██╔═══╝    ████╔╝██║
- ╚███╔███╔╝██║  ██║██████╔╝╚██████╔╝   ██║       ███████╗██╗╚██████╔╝
-  ╚══╝╚══╝ ╚═╝  ╚═╝╚═════╝  ╚═════╝    ╚═╝       ╚══════╝╚═╝ ╚═════╝ ${c.reset}
-  ${c.dim}Autonomous AI Operating System  •  Resource-Aware Agent Orchestration${c.reset}
+${c.brightCyan} ██████╗  ██████╗ ███╗   ██╗███╗   ██╗     █████╗ ██╗
+ ██╔══██╗██╔═══██╗████╗  ██║████╗  ██║    ██╔══██╗██║
+ ██████╔╝██║   ██║██╔██╗ ██║██╔██╗ ██║    ███████║██║
+ ██╔══██╗██║   ██║██║╚██╗██║██║╚██╗██║    ██╔══██║██║
+ ██║  ██║╚██████╔╝██║ ╚████║██║ ╚████║██╗ ██║  ██║██║
+ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═══╝╚═╝ ╚═╝  ╚═╝╚═╝${c.reset}
+  ${c.white}${c.bold}R O N N . A I${c.reset} ${c.gray}•${c.reset} ${c.cyan}Autonomous Agentic Intelligence & Operating Kernel${c.reset}
+  ${c.dim}Model Tier Routing  •  Context Pruning Engine  •  Self-Healing Runtime${c.reset}
 `
     console.log(asciiBanner)
     console.log(`${c.gray}╭─────────────────────────────────────────────────────────────────────────╮${c.reset}`)
