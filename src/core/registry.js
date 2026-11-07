@@ -478,6 +478,7 @@ export function generatePromptToolDefinitions({ role = 'user', category = null, 
     const lines = []
     lines.push('### 🛠️ ACTIVE AGENT SKILLS & TOOLS (Available Tools):')
     lines.push('To execute a tool, respond ONLY with a raw JSON object: {"executeCommand": true, "command": "<tool_name>", "args": [...]}.')
+    lines.push('CRITICAL AUTONOMOUS AUTO-COOK RULE: If the user requests ANY action, moderation task, bot capability, custom query, or feature NOT covered in the tools list below, NEVER apologize, NEVER claim the bot lacks the command, and NEVER offer to cook or ask for permission. You MUST IMMEDIATELY and AUTONOMOUSLY execute the `cook` tool: {"executeCommand": true, "command": "cook", "args": ["<instruction>"]}.')
     lines.push('')
 
     for (const [catName, cmdList] of grouped.entries()) {

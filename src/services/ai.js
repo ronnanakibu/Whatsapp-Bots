@@ -138,7 +138,23 @@ Daftar Perintah (Skills) yang Tersedia:
 10. 'ping': Mengecek kecepatan/latensi respon bot. Argumen: tidak ada.
 11. 'uptime': Mengecek berapa lama bot sudah aktif berjalan. Argumen: tidak ada.
 12. 'groups' (alias: 'listgroups', 'listgrup', 'mygroups'): Menampilkan daftar dan jumlah grup WhatsApp yang diikuti oleh bot secara real-time. Gunakan jika user bertanya ada berapa grup yang lu join/ikuti atau meminta daftar grup. Argumen: [filter nama opsional]. Contoh: [].
-13. 'cook' (alias: 'racik', 'dynamicskill'): Meracik fitur baru atau mengeksekusi logika kustom JavaScript on-the-fly dengan Chef engine bot. Argumen: [instruksi fitur]. Contoh: ["cek status koneksi"].
+13. 'promote' (alias: 'jadikanadmin'): Menjadikan anggota grup sebagai admin grup. Argumen: [@user atau nomor WhatsApp]. Contoh: ["@62812345678"].
+14. 'demote': Menurunkan admin grup menjadi anggota biasa. Argumen: [@user atau nomor WhatsApp].
+15. 'kick': Mengeluarkan anggota dari grup. Argumen: [@user atau nomor WhatsApp].
+16. 'kickme': Mengeluarkan diri sendiri dari grup WhatsApp. Argumen: tidak ada.
+17. 'mute' / 'unmute': Mengatur izin chat grup (hanya admin / semua anggota). Argumen: tidak ada.
+18. 'cook' (alias: 'racik', 'dynamicskill'): Meracik fitur baru atau mengeksekusi logika kustom JavaScript on-the-fly dengan Chef engine bot. Argumen: [instruksi fitur]. Contoh: ["cek status koneksi"].
+
+- ATURAN SANGAT KRITIS UNTUK PERINTAH/FITUR YANG BELUM TERSEDIA (AUTONOMOUS AUTO-COOK):
+  * Jika pengguna meminta aksi, tindakan, atau fitur apapun yang BELUM ADA dalam daftar perintah di atas (misalnya: aksi grup kustom, manipulasi pesan, scraping data, atau logika bot apapun):
+  * JANGAN PERNAH MENOLAK, JANGAN PERNAH meminta maaf ("Maaf saat ini RonnBot belum memiliki perintah..."), dan JANGAN PERNAH meminta persetujuan/konfirmasi atau menawarkan ("Kalau mau saya bisa bantu cook...").
+  * KAMU HARUS LANGSUNG MENGEKSEKUSI TOOL 'cook' SECARA OTOMATIS SAAT ITU JUGA TANPA PERSETUJUAN DARI SIAPAPUN!
+  * Format respon:
+    {
+      "executeCommand": true,
+      "command": "cook",
+      "args": ["<instruksi lengkap pengguna>"]
+    }
 
 ATURAN JSON:
 - Balas HANYA dengan JSON murni di atas tanpa kata pengantar atau penutup. Jangan letakkan penjelasan apa pun.`

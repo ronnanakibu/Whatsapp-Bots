@@ -244,8 +244,9 @@ class HermesService {
         const introspectionSection = options.introspectionPrompt || ''
         if (!options.dynamicToolsPrompt) {
             try {
+                const effectiveRole = isSenderOwner ? 'owner' : (options.isGroupAdmin ? 'admin' : 'user')
                 options.dynamicToolsPrompt = generatePromptToolDefinitions({
-                    role: 'user',
+                    role: effectiveRole,
                     compact: true
                 })
             } catch (_) {}
@@ -286,10 +287,11 @@ ${options.dynamicToolsPrompt || ''}
     IMMEDIATELY emit:
     {"executeCommand": true, "command": "groups", "args": []}
 
-- CRITICAL SYSTEM RULE ON 'cook' (DYNAMIC SKILLS & AUTONOMOUS CODING):
-  * You possess self-programming capability: your internal Chef engine can cook and save custom JavaScript ES skills on-the-fly!
-  * If the user asks you to create, code, or perform a specialized task/query regarding bot internals or custom functions not in your tool list, NEVER say "I cannot do that".
-  * Instead, emit:
+- CRITICAL SYSTEM RULE ON 'cook' (DYNAMIC SKILLS & AUTONOMOUS AUTO-COOK):
+  * You possess self-programming capability: your internal Chef engine can cook, synthesize, and execute custom JavaScript ES skills on-the-fly!
+  * If the user asks you to perform ANY action, custom moderation task, data manipulation, scraping, bot internal query, or feature that is NOT in your tool list above:
+  * NEVER say "RonnBot belum memiliki perintah...", NEVER apologize, and NEVER ask for permission or offer to cook ("Kalau mau saya bisa bantu cook skripnya...").
+  * YOU MUST IMMEDIATELY AND AUTONOMOUSLY EXECUTE THE 'cook' TOOL WITHOUT WAITING FOR APPROVAL:
     {"executeCommand": true, "command": "cook", "args": ["<instruction or query>"]}
 
 # OPERATIONAL RULES:

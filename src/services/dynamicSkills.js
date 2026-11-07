@@ -152,12 +152,6 @@ class DynamicSkillsService {
         if (!skill || !skill.code) throw new Error('Skrip tidak valid')
 
         const sock = getSocket()
-        const contextBundle = {
-            sock,
-            db,
-            store,
-            introspection: botIntrospection
-        }
 
         // Sandbox security check: tolak pemanggilan modul sistem perusak
         const dangerousPatterns = [
@@ -176,6 +170,12 @@ class DynamicSkillsService {
             }
         }
 
+        // Ekstrak target mention dengan fallback lengkap
+        const rawMentions = ctx?.mentionedJids ||
+            ctx?.msg?.message?.extendedTextMessage?.contextInfo?.mentionedJid ||
+            (ctx?.quoted?.sender ? [ctx.quoted.sender] : [])
+        const mentionedJids = Array.isArray(rawMentions) ? rawMentions : []
+
         // Kompilasi dan eksekusi aman via node:vm sandbox (Document 1 §16.3 & Document 2 §Phase 5)
         const sandbox = {
             ctx: {
@@ -183,15 +183,27 @@ class DynamicSkillsService {
                 pushName: ctx?.pushName,
                 isGroup: ctx?.isGroup,
                 chatId: ctx?.chatId || ctx?.remoteJid,
-                args: ctx?.args || []
+                args: ctx?.args || [],
+                mentionedJids,
+                quoted: ctx?.quoted || null,
+                msg: ctx?.msg || null,
+                reply: ctx?.reply || null
             },
             bundle: {
+                sock,
+                db,
+                store,
                 introspection: {
                     getGroupsCount: () => botIntrospection.getGroupsCount(),
                     getGroupsSample: (limit) => botIntrospection.getGroupsSample(limit),
-                    getSystemHealth: () => botIntrospection.getSystemHealth()
+                    getSystemHealth: () => botIntrospection.getSystemHealth(),
+                    getBotIdentity: () => botIntrospection.getBotIdentity(),
+                    getDatabaseSummary: () => botIntrospection.getDatabaseSummary()
                 }
             },
+            sock,
+            db,
+            store,
             console: {
                 log: (...args) => logger.debug('[VMSandbox]', ...args),
                 error: (...args) => logger.error('[VMSandbox]', ...args)
@@ -344,15 +356,25 @@ Tugas Anda adalah membuat satu fungsi JavaScript ES modern untuk menjawab query 
 
 LINGKUNGAN RUNTIME:
 Objek yang dapat diakses di dalam kode:
-- ctx: Konteks chat WhatsApp (sender, pushName, chatId, isGroup, reply, react)
+- ctx: Konteks chat WhatsApp:
+  * ctx.chatId: JID obrolan / grup WhatsApp (cth: "12345@g.us")
+  * ctx.sender: JID WhatsApp pengirim
+  * ctx.pushName: Nama tampilan pengirim
+  * ctx.isGroup: Boolean (apakah di grup)
+  * ctx.mentionedJids: Array target JID yang di-mention (cth: ["6281234@s.whatsapp.net"])
+  * ctx.args: Array argumen kata
 - bundle: Berisi:
+  * sock: Socket Baileys WhatsApp asli untuk aksi:
+    - sock.groupParticipantsUpdate(ctx.chatId, [targetJid], 'promote' | 'demote' | 'remove') -> Mengangkat/menurunkan admin atau mengeluarkan member grup
+    - sock.groupUpdateSubject(ctx.chatId, newSubject) -> Mengubah nama grup
+    - sock.groupSettingUpdate(ctx.chatId, 'announcement' | 'not_announcement') -> Mengatur izin chat grup
+    - sock.sendMessage(ctx.chatId, { text: '...' }) -> Mengirim pesan Baileys
   * introspection: Layanan introspeksi bot dengan method:
     - await introspection.getGroupsCount(): mengembalikan jumlah angka grup yang di-join bot
     - await introspection.getGroupsSample(limit): mengembalikan array [{ id, subject, participantsCount }]
     - introspection.getSystemHealth(): mengembalikan { rssMB, heapUsedMB, uptimeStr, platform, nodeVersion }
     - introspection.getBotIdentity(): mengembalikan { name, version, botNumber, ownerName, ownerNumber, cloudRepo }
     - introspection.getDatabaseSummary(): mengembalikan { usersCount, songsCount, notesCount, dbSizeBytes }
-  * sock: Socket Baileys WhatsApp asli (sock.groupFetchAllParticipating, sock.user, dll.)
   * db: Instance SQLite better-sqlite3 (db.prepare('SELECT ...').all() atau .get())
   * store: Store in-memory Baileys
 
@@ -363,7 +385,7 @@ Keluarkan HANYA format JSON valid berikut (tanpa markdown atau teks lain):
   "name": "Judul Singkat Skill",
   "description": "Deskripsi singkat apa yang dilakukan fungsi ini",
   "keywords": ["variasi pertanyaan 1", "variasi pertanyaan 2", "variasi pertanyaan 3"],
-  "code": "async (ctx, { sock, db, store, introspection }) => {\\n    // Logika JS Anda di sini\\n    return 'Teks hasil yang rapi berformat WhatsApp dengan emoji';\\n}"
+  "code": "async (ctx, { sock, db, store, introspection }) => {\\n    // Jika perlu ambil target mention: const target = ctx.mentionedJids?.[0];\\n    // Logika JS Anda di sini\\n    return 'Teks hasil yang rapi berformat WhatsApp dengan emoji';\\n}"
 }
 
 ATURAN KODE:

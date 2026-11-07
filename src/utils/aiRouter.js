@@ -163,6 +163,48 @@ const COMMAND_PATTERNS = [
             return cleaned ? [cleaned] : []
         }
     },
+    {
+        command: 'promote',
+        requiresMedia: false,
+        patterns: [
+            /\b(jadikan\s+admin|angkat\s+admin|jadikanadmin|promote)\b/i
+        ],
+        extractArgs: (text, ctx) => {
+            const rawMentions = ctx?.mentionedJids || ctx?.msg?.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+            if (rawMentions.length > 0) return [rawMentions[0]]
+            const numMatch = text.match(/(?:@|jadikan\s+|angkat\s+)?(\d{8,16})/)
+            if (numMatch) return [`@${numMatch[1]}`]
+            return []
+        }
+    },
+    {
+        command: 'demote',
+        requiresMedia: false,
+        patterns: [
+            /\b(turunkan\s+admin|copot\s+admin|demote|unadmin)\b/i
+        ],
+        extractArgs: (text, ctx) => {
+            const rawMentions = ctx?.mentionedJids || ctx?.msg?.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+            if (rawMentions.length > 0) return [rawMentions[0]]
+            const numMatch = text.match(/(?:@|turunkan\s+|copot\s+)?(\d{8,16})/)
+            if (numMatch) return [`@${numMatch[1]}`]
+            return []
+        }
+    },
+    {
+        command: 'kick',
+        requiresMedia: false,
+        patterns: [
+            /\b(keluarkan\s+member|kick\s+member|keluarkan\s+dari\s+grup|tendang\s+member|kick)\b/i
+        ],
+        extractArgs: (text, ctx) => {
+            const rawMentions = ctx?.mentionedJids || ctx?.msg?.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+            if (rawMentions.length > 0) return [rawMentions[0]]
+            const numMatch = text.match(/(?:@|keluarkan\s+|kick\s+|tendang\s+)?(\d{8,16})/)
+            if (numMatch) return [`@${numMatch[1]}`]
+            return []
+        }
+    },
 ]
 
 /**
@@ -185,7 +227,7 @@ function detectCommandFromText(userMessage, ctx) {
         if (rule.requiresMedia && !hasMedia) continue
         const matched = rule.patterns.some(p => p.test(userMessage))
         if (matched) {
-            const args = rule.extractArgs(userMessage)
+            const args = rule.extractArgs(userMessage, ctx)
             return { command: rule.command, args }
         }
     }
@@ -494,9 +536,18 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
             introspectionPrompt = await botIntrospection.getIntrospectionContextPrompt(ctx.sock)
         } catch (_) { }
 
+        let isSenderAdmin = false
+        if (isGroup && ctx.sock) {
+            try {
+                const { isGroupAdmin } = await import('../middleware/permission.js')
+                isSenderAdmin = await isGroupAdmin(ctx.sock, chatId, ctx.sender)
+            } catch (_) { }
+        }
+
         const aiOptions = {
             isOwner: isSenderOwner,
             isGroup: Boolean(isGroup),
+            isGroupAdmin: isSenderAdmin,
             groupName: groupSubject,
             senderName: ctx.pushName,
             senderJid: ctx.sender,
