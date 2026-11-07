@@ -163,17 +163,9 @@ async function processSingleMessage(sock, msg) {
         // ─────────────────────────────────────────────
 
         const reply = async (text, options = {}) => {
-            // Note: avoid passing quoted in groups — some groups silently drop messages with invalid quoted refs
-            const sendOpts = isGroup ? {} : { quoted: getCleanQuoted(msg) }
-            try {
-                botLogger.debug('handler', `[reply] sending to jid="${from}" remoteJid="${msg.key.remoteJid}" participant="${msg.key.participant}"`)
-                const sent = await sock.sendMessage(from, { text, ...options }, sendOpts)
-                botLogger.debug('handler', `[reply] sent ok to ${from}, result key=${JSON.stringify(sent?.key)}`)
-                return sent
-            } catch (err) {
-                botLogger.err('handler', err, { jid: from, text })
-                throw err
-            }
+            const sendOpts = { quoted: getCleanQuoted(msg), ...options }
+            const sent = await sock.sendMessage(from, { text, ...options }, sendOpts)
+            return sent
         }
 
         const react = async (emoji) => {
