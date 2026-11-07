@@ -456,6 +456,25 @@ export class Track {
 // RADIO SERVICE
 // ─────────────────────────────────────────────
 
+function normalizeYoutubeUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return rawUrl
+    try {
+        const u = new URL(rawUrl)
+        if (u.hostname === 'youtu.be') {
+            const videoId = u.pathname.slice(1).split('/')[0]
+            if (videoId) return `https://www.youtube.com/watch?v=${videoId}`
+        } else if (u.hostname.includes('youtube.com')) {
+            if (u.pathname.startsWith('/shorts/')) {
+                const videoId = u.pathname.replace('/shorts/', '').split('/')[0]
+                if (videoId) return `https://www.youtube.com/watch?v=${videoId}`
+            } else if (u.searchParams.has('v')) {
+                return `https://www.youtube.com/watch?v=${u.searchParams.get('v')}`
+            }
+        }
+    } catch (_) {}
+    return rawUrl
+}
+
 class RadioService extends EventEmitter {
     #queue = []
     #currentTrack = null
@@ -501,9 +520,10 @@ class RadioService extends EventEmitter {
 
         // ── Strategy 1: YouTube URL langsung (watch, shorts, youtu.be, music.youtube) → yt-dlp ──
         if (isYoutubeUrl) {
-            botLogger.info('radio', `YouTube URL detected, using yt-dlp: ${cleanQuery}`)
+            const normalizedYt = normalizeYoutubeUrl(cleanQuery)
+            botLogger.info('radio', `YouTube URL detected, using yt-dlp: ${normalizedYt}`)
             try {
-                const info = await this.#ytdlpGetInfo(cleanQuery)
+                const info = await this.#ytdlpGetInfo(normalizedYt)
                 return new Track({ ...info, requestedBy: display, requestedByJid, source: 'youtube' })
             } catch (e) {
                 botLogger.warn('radio', `yt-dlp gagal untuk URL: ${e.message}`)
@@ -628,18 +648,33 @@ class RadioService extends EventEmitter {
 
         return new Promise((resolve, reject) => {
             const proc = spawn(ytdlpPath, [
-                '--no-playlist', '--dump-json', '--no-warnings', '--quiet', url
+                '--no-playlist',
+                '--no-check-certificates',
+                '--dump-json',
+                '--no-warnings',
+                '--quiet',
+                '--js-runtimes', 'node',
+                '--extractor-args', 'youtube:player_client=android,web',
+                ...getCookieArgs(),
+                url
             ])
             let output = '', errOutput = ''
             proc.stdout.on('data', d => output += d.toString())
             proc.stderr.on('data', d => errOutput += d.toString())
             proc.on('close', code => {
-                if (code !== 0) return reject(new Error(`yt-dlp info gagal: ${errOutput.slice(0, 200)}`))
+                const trimmed = output.trim()
+                if (code !== 0 || !trimmed) {
+                    const fullErr = errOutput.trim() || `Exit code ${code}`
+                    botLogger.warn('ytdlp', `yt-dlp info detail error:\n${fullErr}`)
+                    const lastLine = fullErr.split('\n').filter(Boolean).pop() || fullErr
+                    return reject(new Error(`yt-dlp info gagal: ${lastLine.slice(0, 300)}`))
+                }
                 try {
-                    const data = JSON.parse(output)
+                    const firstLine = trimmed.split('\n')[0]
+                    const data = JSON.parse(firstLine)
                     resolve({
                         title: data.title || data.fulltitle || 'Unknown',
-                        url: url,
+                        url: data.webpage_url || url,
                         duration: data.duration ? Math.round(data.duration) : 0,
                         thumbnail: data.thumbnail || data.thumbnails?.[0]?.url || null,
                     })
@@ -648,7 +683,7 @@ class RadioService extends EventEmitter {
                 }
             })
             proc.on('error', e => reject(new Error(`yt-dlp spawn error: ${e.message}`)))
-            setTimeout(() => { proc.kill(); reject(new Error('yt-dlp info timeout (15s)')) }, 15_000)
+            setTimeout(() => { proc.kill(); reject(new Error('yt-dlp info timeout (20s)')) }, 20_000)
         })
     }
 
@@ -662,9 +697,12 @@ class RadioService extends EventEmitter {
         return new Promise((resolve, reject) => {
             const proc = spawn(ytdlpPath, [
                 '--no-playlist',
+                '--no-check-certificates',
                 '--dump-json',
                 '--no-warnings',
                 '--quiet',
+                '--js-runtimes', 'node',
+                '--extractor-args', 'youtube:player_client=android,web',
                 ...getCookieArgs(),
                 `ytsearch1:${query}`
             ])
@@ -673,7 +711,12 @@ class RadioService extends EventEmitter {
             proc.stderr.on('data', d => errOutput += d.toString())
             proc.on('close', code => {
                 const trimmed = output.trim()
-                if (code !== 0 || !trimmed) return reject(new Error(`yt-dlp search gagal: ${errOutput.slice(0, 200)}`))
+                if (code !== 0 || !trimmed) {
+                    const fullErr = errOutput.trim() || `Exit code ${code}`
+                    botLogger.warn('ytdlp', `yt-dlp search detail error:\n${fullErr}`)
+                    const lastLine = fullErr.split('\n').filter(Boolean).pop() || fullErr
+                    return reject(new Error(`yt-dlp search gagal: ${lastLine.slice(0, 300)}`))
+                }
                 try {
                     const firstLine = trimmed.split('\n')[0]
                     const data = JSON.parse(firstLine)
