@@ -601,20 +601,54 @@ async function printSummary() {
     const hasFfmpeg = commandExists('ffmpeg') || fs.existsSync(FFMPEG_PATH)
     const hasYtdlp = fs.existsSync(YTDLP_SCRIPT_PATH)
     const tz = process.env.TZ || 'Asia/Jakarta'
+    const owner = process.env.OWNER_NUMBER ?? 'not set'
+    const prefix = process.env.BOT_PREFIX ?? '!'
+    const memUsage = process.memoryUsage()
+    const rssMB = Math.round(memUsage.rss / (1024 * 1024))
+    const heapMB = Math.round(memUsage.heapUsed / (1024 * 1024))
+    const arch = process.arch
+    const platform = process.platform
 
-    console.log('\n' + '─'.repeat(55))
-    console.log('  🤖 RonnBot v2.0 — Bootstrap Summary & Health Check')
-    console.log('─'.repeat(55))
-    console.log(`  Timezone      : ${tz} (GMT+7)`)
-    console.log(`  Fonts         : ${fonts.length > 0 ? fonts.join(', ') : 'none'}`)
-    console.log(`  FFmpeg        : ${hasFfmpeg ? '✅ available' : '❌ not found (radio disabled)'}`)
-    console.log(`  yt-dlp        : ${hasYtdlp ? '✅ ready' : '❌ not found (radio disabled)'}`)
-    console.log(`  Owner         : ${process.env.OWNER_NUMBER ?? 'not set'}`)
-    console.log(`  Prefix        : ${process.env.BOT_PREFIX ?? '!'}`)
-    console.log(`  Node version  : ${process.version}`)
-    console.log('─'.repeat(55))
-    console.log(`  Commands      : ${registered.size} registered commands & aliases`)
-    console.log('─'.repeat(55) + '\n')
+    // ANSI Color palette for ultra-premium terminal aesthetics
+    const c = {
+        reset: '\x1b[0m',
+        bold: '\x1b[1m',
+        dim: '\x1b[2m',
+        cyan: '\x1b[36m',
+        brightCyan: '\x1b[96m',
+        green: '\x1b[32m',
+        brightGreen: '\x1b[92m',
+        yellow: '\x1b[33m',
+        magenta: '\x1b[35m',
+        brightMagenta: '\x1b[95m',
+        blue: '\x1b[34m',
+        white: '\x1b[97m',
+        gray: '\x1b[90m'
+    }
+
+    const asciiBanner = `
+${c.cyan} ██╗    ██╗ █████╗ ██████╗  ██████╗ ████████╗    ██████╗     ██████╗ 
+ ██║    ██║██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝    ╚════██╗   ██╔═████╗
+ ██║ █╗ ██║███████║██████╔╝██║   ██║   ██║        █████╔╝   ██║██╔██║
+ ██║███╗██║██╔══██║██╔══██╗██║   ██║   ██║       ██╔═══╝    ████╔╝██║
+ ╚███╔███╔╝██║  ██║██████╔╝╚██████╔╝   ██║       ███████╗██╗╚██████╔╝
+  ╚══╝╚══╝ ╚═╝  ╚═╝╚═════╝  ╚═════╝    ╚═╝       ╚══════╝╚═╝ ╚═════╝ ${c.reset}
+  ${c.dim}Autonomous AI Operating System  •  Resource-Aware Agent Orchestration${c.reset}
+`
+    console.log(asciiBanner)
+    console.log(`${c.gray}╭─────────────────────────────────────────────────────────────────────────╮${c.reset}`)
+    console.log(`${c.gray}│${c.reset}  ${c.brightCyan}SYSTEM KERNEL & RUNTIME${c.reset}                                                ${c.gray}│${c.reset}`)
+    console.log(`${c.gray}│${c.reset}  ${c.gray}Node.js Engine  :${c.reset} ${c.white}${process.version} (${platform}-${arch})${c.reset}`)
+    console.log(`${c.gray}│${c.reset}  ${c.gray}Memory Footprint:${c.reset} ${c.brightGreen}${rssMB} MB RSS${c.reset} ${c.gray}|${c.reset} ${c.green}${heapMB} MB Heap${c.reset}`)
+    console.log(`${c.gray}│${c.reset}  ${c.gray}Local Timezone  :${c.reset} ${c.white}${tz} (WIB / GMT+7)${c.reset}`)
+    console.log(`${c.gray}│${c.reset}  ${c.gray}Command Prefix  :${c.reset} ${c.brightMagenta}${prefix}${c.reset}  ${c.gray}| Master Owner:${c.reset} ${c.white}${owner}${c.reset}`)
+    console.log(`${c.gray}├─────────────────────────────────────────────────────────────────────────┤${c.reset}`)
+    console.log(`${c.gray}│${c.reset}  ${c.brightCyan}SUBSYSTEM & ENGINE STATUS${c.reset}                                              ${c.gray}│${c.reset}`)
+    console.log(`${c.gray}│${c.reset}  ${c.gray}Media Engine    :${c.reset} ${hasFfmpeg ? `${c.brightGreen}● OPERATIONAL${c.reset} (FFmpeg & Libvips Ready)` : `${c.yellow}○ DISABLED (FFmpeg Missing)${c.reset}`}`)
+    console.log(`${c.gray}│${c.reset}  ${c.gray}Audio Streamer  :${c.reset} ${hasYtdlp ? `${c.brightGreen}● READY${c.reset} (yt-dlp Core Present)` : `${c.yellow}○ DISABLED (yt-dlp Missing)${c.reset}`}`)
+    console.log(`${c.gray}│${c.reset}  ${c.gray}Typography Subsys:${c.reset} ${c.white}${fonts.length} fonts loaded${c.reset} ${c.gray}(Impact, Arial, Noto Color Emoji)${c.reset}`)
+    console.log(`${c.gray}│${c.reset}  ${c.gray}Command Registry:${c.reset} ${c.brightGreen}${registered.size} active commands & aliases loaded${c.reset}`)
+    console.log(`${c.gray}╰─────────────────────────────────────────────────────────────────────────╯${c.reset}\n`)
 }
 
 // ─────────────────────────────────────────────
@@ -622,7 +656,7 @@ async function printSummary() {
 // ─────────────────────────────────────────────
 
 async function launchBot() {
-    inf('Launching bot in unified process...\n')
+    process.stdout.write(`\x1b[96m⚡ [Kernel] Initializing Autonomous WhatsApp Agent Socket...\x1b[0m\n\n`)
     await import('./src/core/bot.js')
 }
 
