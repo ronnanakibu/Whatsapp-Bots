@@ -508,15 +508,34 @@ class RadioService extends EventEmitter {
             }
         }
 
-        // ── Strategy 2: Text query → YouTube search (play-dl) + yt-dlp extract ──
+        // ── Strategy 2: Text query → YouTube search via yt-dlp first! ──
         if (!isUrl) {
             try {
-                botLogger.info('radio', `Searching YouTube: ${query}`)
+                botLogger.info('radio', `Searching YouTube via yt-dlp: ${query}`)
+                const info = await this.#ytdlpSearch(query)
+                if (info && info.url) {
+                    botLogger.info('radio', `YouTube found (yt-dlp): ${info.title} → ${info.url}`)
+                    return new Track({
+                        title: info.title,
+                        url: info.url,
+                        duration: info.duration,
+                        thumbnail: info.thumbnail,
+                        requestedBy: display,
+                        requestedByJid,
+                        source: 'youtube'
+                    })
+                }
+            } catch (e) {
+                botLogger.warn('radio', `yt-dlp search gagal: ${e.message}, mencoba play-dl...`)
+            }
+
+            try {
+                botLogger.info('radio', `Searching YouTube via play-dl: ${query}`)
                 const ytResults = await playdl.search(query, { limit: 1, source: { youtube: 'video' } })
                 if (ytResults?.length > 0) {
                     const v = ytResults[0]
                     const ytUrl = `https://www.youtube.com/watch?v=${v.id}`
-                    botLogger.info('radio', `YouTube found: ${v.title} → ${ytUrl}`)
+                    botLogger.info('radio', `YouTube found (play-dl): ${v.title} → ${ytUrl}`)
                     return new Track({
                         title: v.title || 'Unknown',
                         url: ytUrl,
@@ -601,6 +620,48 @@ class RadioService extends EventEmitter {
             })
             proc.on('error', e => reject(new Error(`yt-dlp spawn error: ${e.message}`)))
             setTimeout(() => { proc.kill(); reject(new Error('yt-dlp info timeout (15s)')) }, 15_000)
+        })
+    }
+
+    /**
+     * Search YouTube via yt-dlp ytsearch1 --dump-json (kebal header overflow & anti-bot)
+     */
+    async #ytdlpSearch(query) {
+        const ytdlpPath = getYtdlpPath()
+        if (!ytdlpPath) throw new Error('yt-dlp binary tidak tersedia')
+
+        return new Promise((resolve, reject) => {
+            const proc = spawn(ytdlpPath, [
+                '--no-playlist',
+                '--dump-json',
+                '--no-warnings',
+                '--quiet',
+                ...getCookieArgs(),
+                `ytsearch1:${query}`
+            ])
+            let output = '', errOutput = ''
+            proc.stdout.on('data', d => output += d.toString())
+            proc.stderr.on('data', d => errOutput += d.toString())
+            proc.on('close', code => {
+                const trimmed = output.trim()
+                if (code !== 0 || !trimmed) return reject(new Error(`yt-dlp search gagal: ${errOutput.slice(0, 200)}`))
+                try {
+                    const firstLine = trimmed.split('\n')[0]
+                    const data = JSON.parse(firstLine)
+                    const videoUrl = data.webpage_url || (data.id ? `https://www.youtube.com/watch?v=${data.id}` : null)
+                    if (!videoUrl) return reject(new Error('yt-dlp tidak mengembalikan URL video valid'))
+                    resolve({
+                        title: data.title || data.fulltitle || 'Unknown',
+                        url: videoUrl,
+                        duration: data.duration ? Math.round(data.duration) : 0,
+                        thumbnail: data.thumbnail || data.thumbnails?.[0]?.url || null,
+                    })
+                } catch (e) {
+                    reject(new Error(`yt-dlp search parse error: ${e.message}`))
+                }
+            })
+            proc.on('error', e => reject(new Error(`yt-dlp spawn error: ${e.message}`)))
+            setTimeout(() => { proc.kill(); reject(new Error('yt-dlp search timeout (20s)')) }, 20_000)
         })
     }
 
@@ -819,6 +880,21 @@ class RadioService extends EventEmitter {
                             botLogger.warn('radio', `[yt-dlp] Gagal memproduksi data stream (Pipe error).\n====== DETAIL YT-DLP ERROR ======\n${detailError}\n=================================`)
                             tempYtProc.kill()
 
+                            // ── Strategy 1.05: Direct CDN audio URL extraction via yt-dlp ──
+                            if (!inputStream) {
+                                try {
+                                    botLogger.info('radio', `[yt-dlp-cdn] Meminta direct CDN audio URL untuk: ${track.url}`)
+                                    const cdnUrl = await ytdlpGetAudioUrl(track.url)
+                                    if (cdnUrl && cdnUrl.startsWith('http')) {
+                                        inputStream = cdnUrl
+                                        streamType = 'yt-dlp-direct-cdn'
+                                        botLogger.info('radio', `[yt-dlp-cdn] Sukses dapatkan direct CDN URL → passing to ffmpeg`)
+                                    }
+                                } catch (cdnErr) {
+                                    botLogger.warn('radio', `[yt-dlp-cdn] Gagal extract CDN URL: ${cdnErr.message}`)
+                                }
+                            }
+
                             // ── Strategy 1.1: Hugging Face space downloader fallback ──
                             const hfUrl = process.env.HF_API_URL
                             if (hfUrl) {
@@ -946,7 +1022,19 @@ class RadioService extends EventEmitter {
                         streamType = `play-dl(${streamData.type})`
                         botLogger.info('radio', `[play-dl] Stream OK: ${streamData.type}`)
                     } catch (pdErr) {
-                        return reject(new Error(`Semua metode stream gagal.\nyt-dlp: ${isYoutubeTrack ? 'tried' : 'skipped'}\nSC-fallback: tried\nplay-dl: ${pdErr.message}`))
+                        botLogger.warn('radio', `[play-dl] Gagal: ${pdErr.message}. Mencoba yt-dlp fallback untuk URL ini...`)
+                        try {
+                            const cdnUrl = await ytdlpGetAudioUrl(track.url)
+                            if (cdnUrl && cdnUrl.startsWith('http')) {
+                                inputStream = cdnUrl
+                                streamType = 'yt-dlp-fallback-cdn'
+                                botLogger.info('radio', `[yt-dlp-fallback-cdn] Berhasil ekstrak stream URL → passing to ffmpeg`)
+                            } else {
+                                throw new Error('yt-dlp tidak mengembalikan audio stream URL')
+                            }
+                        } catch (ytUrlErr) {
+                            return reject(new Error(`Semua metode stream gagal.\nyt-dlp: ${isYoutubeTrack ? 'tried' : 'skipped'}\nSC-fallback: tried\nplay-dl: ${pdErr.message}\nyt-dlp fallback: ${ytUrlErr.message}`))
+                        }
                     }
                 }
 

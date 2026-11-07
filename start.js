@@ -20,6 +20,9 @@ import { pathToFileURL } from 'url'
 
 // Set local timezone to Asia/Jakarta (WIB / GMT+7) for Pterodactyl console & app logs
 process.env.TZ = process.env.BOT_TIMEZONE || 'Asia/Jakarta'
+if (!process.env.NODE_OPTIONS || !process.env.NODE_OPTIONS.includes('max-http-header-size')) {
+    process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} --max-http-header-size=65536`.trim()
+}
 
 dns.setDefaultResultOrder('ipv4first')
 try {

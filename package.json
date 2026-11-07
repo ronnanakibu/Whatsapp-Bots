@@ -5,9 +5,9 @@
     "main": "start.js",
     "type": "module",
     "scripts": {
-        "dev": "nodemon --watch src --ext js src/core/bot.js",
-        "start": "node --max-old-space-size=384 --expose-gc start.js",
-        "start:bot-direct": "node --max-old-space-size=384 --expose-gc src/core/bot.js",
+        "dev": "nodemon --watch src --ext js --node-args=\"--max-http-header-size=65536\" src/core/bot.js",
+        "start": "node --max-http-header-size=65536 --max-old-space-size=384 --expose-gc start.js",
+        "start:bot-direct": "node --max-http-header-size=65536 --max-old-space-size=384 --expose-gc src/core/bot.js",
         "start:pm2": "pm2 start ecosystem.config.js",
         "lint": "eslint src/",
         "test": "node tests/e2e/runAll.js",
