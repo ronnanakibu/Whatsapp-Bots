@@ -476,12 +476,6 @@ export const botLogger = {
         sendWhatsAppLog(logMsg)
         sendErrorToOwner(logMsg)
     },
-        )
-        const logMsg = `❌ *[ERROR]* [${module.toUpperCase()}] ${context ? `(${context}) ` : ''}${errMsg}${stack}`
-        sendWhatsAppLog(logMsg)
-        // Kirim log error langsung ke WhatsApp owner
-        sendErrorToOwner(logMsg)
-    },
 
     /** Separator / section header */
     section: (title) => {
