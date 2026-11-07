@@ -1,4 +1,37 @@
-// src/utils/message.js
+/**
+ * Converts standard Markdown formatting from LLMs into clean WhatsApp native formatting:
+ * - Replaces Markdown bold `**text**` with WhatsApp bold `*text*`
+ * - Replaces Markdown bold-italic `***text***` with WhatsApp bold-italic `*_text_*`
+ * - Converts headers (`#`, `##`, `###`) into bold titles `*Title*`
+ * - Cleanses redundant asterisks
+ */
+export function formatMarkdownForWhatsApp(text) {
+    if (!text || typeof text !== 'string') return text
+
+    // 1. Convert markdown headers: ### Title -> *Title*
+    let formatted = text.replace(/^#{1,6}\s+([^\n]+)$/gm, '*$1*')
+
+    // 2. Convert standard markdown bold **bold** -> *bold*
+    // Using string splitting by '**' avoids regex nesting bugs across punctuation
+    const boldParts = formatted.split('**')
+    if (boldParts.length > 1) {
+        formatted = boldParts.reduce((acc, part, idx) => {
+            // Even indexes are normal text, odd indexes are bold text
+            if (idx % 2 === 1) {
+                // If the bold content itself already starts or ends with *, clean it
+                const cleanPart = part.replace(/^\*+|\*+$/g, '').trim()
+                return acc + (cleanPart ? `*${cleanPart}*` : '')
+            }
+            return acc + part
+        }, '')
+    }
+
+    // 3. Clean any triple asterisks leftover (***text*** -> *_text_*)
+    formatted = formatted.replace(/\*{3,}([^*]+?)\*{3,}/g, '*_$1_*')
+
+    return formatted
+}
+
 
 /**
  * Recursively unwrap nested wrappers (ephemeral, view-once, documentWithCaption, etc.) from a message object.

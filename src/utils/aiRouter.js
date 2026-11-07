@@ -3,6 +3,7 @@ import { commands } from '../core/loader.js'
 import { botLogger } from './logger.js'
 import { aiService } from '../services/ai.js'
 import { isOwner } from './permissions.js'
+import { formatMarkdownForWhatsApp } from './message.js'
 
 // ─────────────────────────────────────────────
 // KEYWORD PRE-ROUTER
@@ -525,8 +526,11 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         }
 
         if (text) {
+            // Convert standard LLM Markdown (**bold**, ### Header) into clean WhatsApp formatting (*bold*, *Header*)
+            let cleanedText = formatMarkdownForWhatsApp(text)
+
             // Clean up messy mention formats like @+20 404... into valid WhatsApp format @20404...
-            let cleanedText = text.replace(/@\+?(\d[\d\s-]{6,18}\d)/g, (match, digits) => {
+            cleanedText = cleanedText.replace(/@\+?(\d[\d\s-]{6,18}\d)/g, (match, digits) => {
                 const pureDigits = digits.replace(/[\s-]/g, '')
                 return pureDigits.length >= 8 && pureDigits.length <= 16 ? `@${pureDigits}` : match
             })
