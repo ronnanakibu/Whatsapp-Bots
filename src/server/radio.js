@@ -14,7 +14,7 @@ import { radioService } from '../services/radio.js'
 import { logger, addLogListener, removeLogListener, addMessageListener, removeMessageListener, getSocket, getLogHistory } from '../utils/logger.js'
 import qrcode from 'qrcode'
 import { metricsService } from '../services/metrics.js'
-import { commands } from '../core/loader.js'
+import { commands, getAllCommands, initializeRegistry } from '../core/registry.js'
 import { memoryService } from '../services/memory.js'
 import { moderatorService } from '../services/moderator.js'
 import { eventBus } from '../events/bus.js'
@@ -1135,21 +1135,29 @@ export function startRadioServer() {
     app.get('/api/radio/history', (req, res) => {
         res.json({ success: true, data: { history: recentlyPlayed, total: recentlyPlayed.length } })
     })
-    app.get('/api/bot/commands', (req, res) => {
-        const cmdList = []
-        for (const [name, cmd] of commands.entries()) {
-            if (cmd.name === name) {
-                cmdList.push({
-                    name: cmd.name,
-                    category: cmd.category || 'general',
-                    description: cmd.description || '',
-                    aliases: cmd.aliases || [],
-                    usage: cmd.usage || '',
-                    permissions: cmd.permissions || ['user']
-                })
+    app.get('/api/bot/commands', async (req, res) => {
+        try {
+            if (commands.size === 0) {
+                await initializeRegistry()
             }
+            const allCmds = getAllCommands()
+            const cmdList = []
+            for (const [name, cmd] of allCmds.entries()) {
+                if (cmd.name === name) {
+                    cmdList.push({
+                        name: cmd.name.startsWith('.') ? cmd.name : `.${cmd.name}`,
+                        category: cmd.category || 'general',
+                        description: cmd.description || '',
+                        aliases: (cmd.aliases || []).map(a => a.startsWith('.') ? a : `.${a}`),
+                        usage: cmd.usage || `.${cmd.name}`,
+                        permissions: cmd.permissions || ['user']
+                    })
+                }
+            }
+            res.json({ success: true, total: cmdList.length, data: cmdList })
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message })
         }
-        res.json({ success: true, total: cmdList.length, data: cmdList })
     })
 
     // REST API /history endpoint
