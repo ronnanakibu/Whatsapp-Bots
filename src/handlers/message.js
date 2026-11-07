@@ -18,13 +18,8 @@ export async function handleIncomingMessage(sock, { messages }) {
     for (const msg of messages) {
         if (!msg?.message) continue
         await processSingleMessage(sock, msg)
-        botLogger.debug('handler', `Incoming msg: ${JSON.stringify({
-            jid: from,
-            isGroup,
-            bodyPreview: (msg.message?.conversation || '').slice(0, 30),
-            type: Object.keys(messageContent || {})[0],
-            fromMe: !!msg.key.fromMe
-        })}`);
+        // Debug log moved after variable extraction to avoid undefined 'from'
+
     }
 }
 
