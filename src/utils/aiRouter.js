@@ -461,7 +461,7 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
 
     let seconds = 1
     const timer = setInterval(async () => {
-        seconds += 2
+        seconds += 5
         if (placeholderMsg?.key) {
             try {
                 const statusPhase = seconds < 4
