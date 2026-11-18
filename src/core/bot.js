@@ -16,6 +16,7 @@ try {
 
 import makeWASocket, {
     useMultiFileAuthState,
+    makeCacheableSignalKeyStore,
     DisconnectReason,
     fetchLatestBaileysVersion,
     Browsers
@@ -46,6 +47,9 @@ const pinoLogger = logger.child({ module: 'baileys' })
 
 let reconnectCount = 0
 let isStopping = false
+let currentSocket = null
+let isInitialized = false
+let isShutdownRegistered = false
 const MAX_RECONNECT_ATTEMPTS = 5
 
 // ─────────────────────────────────────────────
@@ -90,26 +94,29 @@ async function startBot() {
     botLogger.section('BOT STARTUP')
     botLogger.system('Initializing...')
 
-    // 0. Instant Port Binding: Open Port 7860 immediately so Render / UptimeRobot gets 200 OK in <1s
-    try {
-        startRadioServer()
-        botLogger.system('Web & Radio server started (Instant Port Binding) ✓')
-    } catch (err) {
-        botLogger.err('server', err, 'startRadioServer')
-    }
+    // 0. Instant Port Binding & Command Loading (only on initial bootstrap)
+    if (!isInitialized) {
+        try {
+            startRadioServer()
+            botLogger.system('Web & Radio server started (Instant Port Binding) ✓')
+        } catch (err) {
+            botLogger.err('server', err, 'startRadioServer')
+        }
 
-    // 1. Load all commands
-    botLogger.system('Loading commands...')
-    try {
-        await loadCommands()
-        botLogger.system('Commands loaded ✓')
-        
-        // Start Discord Bot if token exists
-        const { startDiscordBot } = await import('../discord/index.js')
-        startDiscordBot()
-        botLogger.system('Discord bot initialized ✓')
-    } catch (err) {
-        botLogger.err('bot', err, 'loadCommands')
+        // 1. Load all commands
+        botLogger.system('Loading commands...')
+        try {
+            await loadCommands()
+            botLogger.system('Commands loaded ✓')
+            
+            // Start Discord Bot if token exists
+            const { startDiscordBot } = await import('../discord/index.js')
+            startDiscordBot()
+            botLogger.system('Discord bot initialized ✓')
+        } catch (err) {
+            botLogger.err('bot', err, 'loadCommands')
+        }
+        isInitialized = true
     }
 
     // 2. Fetch WA version
@@ -137,11 +144,22 @@ async function startBot() {
         return
     }
 
-    // 4. Create socket
+    // Clean up previous socket if reconnecting
+    if (currentSocket) {
+        try {
+            currentSocket.ws?.close()
+            currentSocket.ev?.removeAllListeners()
+        } catch (_) {}
+    }
+
+    // 4. Create socket with cacheable signal key store
     botLogger.system('Connecting to WhatsApp...')
     const sock = makeWASocket({
         version,
-        auth: state,
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pinoLogger)
+        },
         logger: pinoLogger.child({ level: 'fatal' }), // Sembunyikan log internal Baileys yang nyepam
         printQRInTerminal: false, // kita handle manual
         browser: Browsers.ubuntu('Chrome'),
@@ -150,6 +168,7 @@ async function startBot() {
             return msg?.message || undefined
         }
     })
+    currentSocket = sock
 
 
     // Daftarkan socket instance ke logger untuk WhatsApp channel logging
@@ -345,10 +364,17 @@ async function startBot() {
         } catch (_) {}
     })
 
-    // ─────────────────────────────────────────────
-    // GRACEFUL SHUTDOWN
-    // ─────────────────────────────────────────────
-    
+    registerGracefulShutdown()
+}
+
+// ─────────────────────────────────────────────
+// GRACEFUL SHUTDOWN (Registered once at process level)
+// ─────────────────────────────────────────────
+
+function registerGracefulShutdown() {
+    if (isShutdownRegistered) return
+    isShutdownRegistered = true
+
     const shutdown = async (signal) => {
         botLogger.warn('bot', `Received ${signal}. Gracefully shutting down...`)
 
@@ -367,7 +393,7 @@ async function startBot() {
         } catch (_) {}
 
         try {
-            sock.end(undefined)
+            currentSocket?.end(undefined)
         } catch (_) {}
         process.exit(0)
     }

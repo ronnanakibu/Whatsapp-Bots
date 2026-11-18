@@ -1,6 +1,7 @@
 // src/commands/media/sticker.js
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import mediaService from '../../services/media.js'
+import { batchStickerService } from '../../services/batchSticker.js'
 import { logger } from '../../utils/logger.js'
 import { unwrapMessage, getCleanQuoted } from '../../utils/message.js'
 
@@ -8,8 +9,8 @@ export default {
     name: 'sticker',
     aliases: ['s', 'stiker'],
     category: 'media',
-    description: 'Convert media to sticker (Original Ratio: --1 | Remove BG: --rmbg | Speed: --s2x | Max Duration: --max [sec] | Low Quality: --lq [1-100])',
-    usage: '.sticker [--1] [--rmbg] [--s2x] [--max] [--lq 80] Teks Atas | Teks Bawah',
+    description: 'Convert media to sticker (Original Ratio: --1 | Remove BG: --rmbg | Speed: --s2x | Max Duration: --max [sec] | Low Quality: --lq [1-100] | Batch: --batch)',
+    usage: '.sticker [--1] [--rmbg] [--s2x] [--max] [--lq 80] [--batch] Teks Atas | Teks Bawah',
     example: '.sticker (reply gambar/video) | .sticker Teks Atas | Teks Bawah',
     cooldown: 5,
     permissions: ['user'],
@@ -143,6 +144,18 @@ export default {
                 fullText = fullText.replace(/--lq\s*\d{0,3}/gi, '').trim()
             }
 
+            // Deteksi flag --batch atau --nobatch
+            let forceBatch = false
+            let disableBatch = false
+            if (fullText.includes('--batch')) {
+                forceBatch = true
+                fullText = fullText.replace(/--batch/g, '').trim()
+            }
+            if (fullText.includes('--nobatch')) {
+                disableBatch = true
+                fullText = fullText.replace(/--nobatch/g, '').trim()
+            }
+
             // Normalkan space yang ganda akibat proses replace regex di atas
             fullText = fullText.replace(/\s+/g, ' ').trim()
 
@@ -153,6 +166,23 @@ export default {
                 const parts = fullText.split('|')
                 topText = parts[0] ? parts[0].trim() : ''
                 bottomText = parts[1] ? parts[1].trim() : ''
+            }
+
+            // ── 📦 BATCH STICKER PROCESSING HOOK (ALBUM / BURST DETECTION) ──
+            if (!disableBatch && hasDirectMedia) {
+                const isBatchHandled = await batchStickerService.handleStickerCommand(ctx, {
+                    topText,
+                    bottomText,
+                    noCrop,
+                    removeBg,
+                    lqPercent,
+                    speedMultiplier,
+                    maxDuration,
+                    forceBatch
+                })
+                if (isBatchHandled) {
+                    return // Selesai diproses secara batch!
+                }
             }
 
             // 2. Deteksi status animasi media (Video / GIF / Sticker Animasi)

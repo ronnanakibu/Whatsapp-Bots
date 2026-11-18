@@ -12,6 +12,7 @@ import { interactiveService } from '../services/interactive.js'
 import { unwrapMessage, getCleanQuoted } from '../utils/message.js'
 import { mediaCache } from '../services/mediaCache.js'
 import { handleIncomingViewOnce } from './viewOnce.js'
+import { batchStickerService } from '../services/batchSticker.js'
 
 export async function handleIncomingMessage(sock, { messages }) {
     if (!Array.isArray(messages)) return
@@ -94,13 +95,17 @@ async function processSingleMessage(sock, msg) {
         // Filter: abaikan respon command / AI untuk pesan dari bot sendiri
         if (msg.key.fromMe) return
 
+        // ── RECORD MEDIA FOR BATCH PROCESSING (ALBUM / BURST DETECTION) ──
+        batchStickerService.recordMedia(from, sender, msg)
+
         // ── AUTO READ (BLUE TICK) ──
         if (process.env.AUTO_READ !== 'false') {
             await sock.readMessages([msg.key]).catch(() => { })
         }
 
-        // ── ANTI-SPAM MIDDLEWARE ──
-        if (isSpamming(sender)) {
+        // ── ANTI-SPAM MIDDLEWARE (Bypass for Album/Batch Media to prevent blocking) ──
+        const isBatchMedia = batchStickerService.shouldBypassSpam(from, sender, msg)
+        if (!isBatchMedia && isSpamming(sender)) {
             botLogger.warn('handler', `Anti-spam: blocked message from ${sender}`)
             return
         }
