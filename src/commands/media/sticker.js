@@ -1,6 +1,7 @@
 // src/commands/media/sticker.js
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import mediaService from '../../services/media.js'
+import { soundStickerService } from '../../services/soundSticker.js'
 import { batchStickerService } from '../../services/batchSticker.js'
 import { logger } from '../../utils/logger.js'
 import { unwrapMessage, getCleanQuoted } from '../../utils/message.js'
@@ -9,8 +10,8 @@ export default {
     name: 'sticker',
     aliases: ['s', 'stiker'],
     category: 'media',
-    description: 'Convert media to sticker (Original Ratio: --1 | Remove BG: --rmbg | Speed: --s2x | Max Duration: --max [sec] | Low Quality: --lq [1-100] | Batch: --batch)',
-    usage: '.sticker [--1] [--rmbg] [--s2x] [--max] [--lq 80] [--batch] Teks Atas | Teks Bawah',
+    description: 'Convert media to sticker (Original Ratio: --1 | Remove BG: --rmbg | Speed: --s2x | Max Duration: --max [sec] | Low Quality: --lq [1-100] | Batch: --batch | Sound: --sound / --suara)',
+    usage: '.sticker [--1] [--rmbg] [--s2x] [--max] [--lq 80] [--batch] [--sound] Teks Atas | Teks Bawah',
     example: '.sticker (reply gambar/video) | .sticker Teks Atas | Teks Bawah',
     cooldown: 5,
     permissions: ['user'],
@@ -156,6 +157,17 @@ export default {
                 fullText = fullText.replace(/--nobatch/g, '').trim()
             }
 
+            // Deteksi flag --sound atau --suara
+            let withSound = false
+            if (fullText.includes('--sound')) {
+                withSound = true
+                fullText = fullText.replace(/--sound/g, '').trim()
+            }
+            if (fullText.includes('--suara')) {
+                withSound = true
+                fullText = fullText.replace(/--suara/g, '').trim()
+            }
+
             // Normalkan space yang ganda akibat proses replace regex di atas
             fullText = fullText.replace(/\s+/g, ' ').trim()
 
@@ -199,6 +211,40 @@ export default {
             }
 
             // 3. Alirkan buffer ke core service pemrosesan masing-masing
+            if (withSound) {
+                logger.info(`🔊 Menjalankan rendering STIKER BERSUARA (Sound Sticker)...`)
+                const soundData = await soundStickerService.createSoundStickerData(buffer, {
+                    topText,
+                    bottomText,
+                    noCrop,
+                    removeBg,
+                    lqPercent,
+                    speedMultiplier,
+                    maxDuration: Math.min(10, maxDuration),
+                    isStatic: !isAnimated
+                })
+
+                if (soundData.hasAudio && soundData.audio) {
+                    await soundStickerService.sendSoundSticker(sock, from, {
+                        sticker: soundData.sticker,
+                        audio: soundData.audio,
+                        durationMs: soundData.durationMs,
+                        quoted: getCleanQuoted(msg)
+                    })
+                    await react('🔊')
+                } else {
+                    await sock.sendMessage(from, { sticker: soundData.sticker }, { quoted: getCleanQuoted(msg) })
+                    await react('✅')
+                    await reply('⚠️ *Catatan:* Media ini tidak memiliki audio track, jadi dikirim sebagai stiker biasa ya cuy!')
+                }
+
+                if (process.env.LOG_CHANNEL_JID) {
+                    const { logToChannel } = await import('../../utils/channelLogger.js')
+                    await logToChannel(sock, { sticker: soundData.sticker })
+                }
+                return
+            }
+
             let stickerBuffer
             if (isAnimated) {
                 logger.info(`⏳ Menjalankan rendering ANIMASI (noCrop: ${noCrop}, removeBg: ${removeBg}, lq: ${lqPercent}%, speed: ${speedMultiplier}x, duration: ${maxDuration}s)`)
