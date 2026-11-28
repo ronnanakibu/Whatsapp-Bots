@@ -254,6 +254,9 @@ async function startBot() {
                 if (!err) process.stdout.write(url + '\n')
             })
             updateBotStatus('qr', qr)
+            try {
+                await qrcode.toFile('./storage/qr.png', qr, { width: 512, margin: 2 })
+            } catch (_) {}
         }
 
         if (connection === 'connecting') {

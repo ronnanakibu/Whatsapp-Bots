@@ -1630,16 +1630,29 @@ export function startRadioServer(options = {}) {
         res.on('error', cleanup)
     })
 
-    // QR Code & Pairing Code Web Endpoint (Protected: Admin/Owner only + Audited)
-    app.get(['/qr', '/pairing', '/code'], authenticateControlJwt, requirePermission(PERMISSIONS.WHATSAPP_PAIRING_READ), async (req, res) => {
-        recordAudit({
-            actorId: req.controlUser.id,
-            actorRole: req.controlUser.role,
-            action: 'whatsapp:pairing:view',
-            target: req.path,
-            result: 'allowed',
-            correlationId: req.id || null
-        })
+    // QR Code Image Raw PNG Web Endpoint (Public)
+    app.get(['/qr.png', '/qr/image'], async (req, res) => {
+        if (currentQrCode) {
+            try {
+                const qrBuffer = await qrcode.toBuffer(currentQrCode, { width: 512, margin: 2 })
+                res.setHeader('Content-Type', 'image/png')
+                res.setHeader('Cache-Control', 'no-store, must-revalidate')
+                return res.send(qrBuffer)
+            } catch (err) {
+                return res.status(500).send('Error rendering QR image')
+            }
+        }
+        const qrPath = path.resolve('./storage/qr.png')
+        if (fs.existsSync(qrPath)) {
+            res.setHeader('Content-Type', 'image/png')
+            res.setHeader('Cache-Control', 'no-store, must-revalidate')
+            return res.sendFile(qrPath)
+        }
+        res.status(404).send('QR code not active or already connected')
+    })
+
+    // QR Code & Pairing Code Web Endpoint (Public)
+    app.get(['/qr', '/pairing', '/code'], async (req, res) => {
         if (currentPairingCode) {
             return res.send(`
                 <!DOCTYPE html>
