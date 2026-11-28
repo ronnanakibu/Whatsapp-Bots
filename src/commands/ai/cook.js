@@ -68,18 +68,32 @@ export default {
             }
 
             await react('✅')
-            // Eksekusi langsung hasil racikan baru
-            const output = await dynamicSkills.executeSkill(newSkill, ctx)
-            return reply(
-                `🎉 *Skill Baru Berhasil Dirancang & Disimpan!*\n` +
-                `🏷️ *Nama:* ${newSkill.name}\n` +
-                `👨‍🍳 *Chef:* ${newSkill.createdByChef || 'Autonomous AI'}\n` +
-                `🔑 *Trigger:* ${newSkill.keywords.join(', ')}\n\n` +
-                `━━━━━━━━━━━━━━━━━━━━\n` +
-                `${output}\n` +
-                `━━━━━━━━━━━━━━━━━━━━\n` +
-                `_Skrip ini telah disimpan secara permanen di cache bot. Pertanyaan serupa berikutnya akan dieksekusi instan tanpa token!_`
-            )
+            const isExecutionAllowed = process.env.ENABLE_DYNAMIC_SKILL_EXECUTION === 'true'
+            if (isExecutionAllowed) {
+                const output = await dynamicSkills.executeSkill(newSkill, ctx)
+                return reply(
+                    `🎉 *Skill Baru Berhasil Dirancang & Disimpan!*\n` +
+                    `🏷️ *Nama:* ${newSkill.name}\n` +
+                    `👨‍🍳 *Chef:* ${newSkill.createdByChef || 'Autonomous AI'}\n` +
+                    `🔑 *Trigger:* ${newSkill.keywords.join(', ')}\n\n` +
+                    `━━━━━━━━━━━━━━━━━━━━\n` +
+                    `${output}\n` +
+                    `━━━━━━━━━━━━━━━━━━━━\n` +
+                    `_Skrip ini telah disimpan secara permanen di cache bot._`
+                )
+            } else {
+                return reply(
+                    `🎉 *Proposal Skill Baru Berhasil Dirancang!*\n` +
+                    `🏷️ *Nama:* ${newSkill.name}\n` +
+                    `👨‍🍳 *Chef:* ${newSkill.createdByChef || 'Autonomous AI'}\n` +
+                    `📝 *Deskripsi:* ${newSkill.description}\n` +
+                    `🔑 *Trigger:* ${newSkill.keywords.join(', ')}\n\n` +
+                    `━━━━━━━━━━━━━━━━━━━━\n` +
+                    `📋 *Template Skrip Proposal:*\n\`\`\`javascript\n${newSkill.code}\n\`\`\`\n` +
+                    `━━━━━━━━━━━━━━━━━━━━\n` +
+                    `💡 _Proposal skill tersimpan secara aman di cache bot. Sesuai kebijakan keamanan SEC-001, eksekusi arbitrary JavaScript dinonaktifkan secara default. Ajukan kepada owner untuk diintegrasikan sebagai modul perintah resmi._`
+                )
+            }
         } catch (err) {
             await react('❌')
             return reply(`❌ Terjadi error saat mengeksekusi skill baru: ${err.message}`)

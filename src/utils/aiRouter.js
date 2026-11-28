@@ -483,7 +483,7 @@ export async function executeAiFlow(ctx, promptText, forcedProvider = null) {
         const matchedSkill = dynamicSkills.findMatchingSkill(promptText)
         if (matchedSkill) {
             botLogger.system(`⚡ [AIRouter] Executing cached dynamic skill: "${matchedSkill.name}"`)
-            const resultText = await dynamicSkills.executeSkill(matchedSkill, ctx)
+            const resultText = await dynamicSkills.executeSkill(matchedSkill, ctx, { silent: true })
             if (resultText && typeof resultText === 'string') {
                 await reply(resultText)
                 await react('⚡')

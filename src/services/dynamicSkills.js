@@ -10,6 +10,32 @@ import { botIntrospection } from './botIntrospection.js'
 import { db } from './db.js'
 import { store } from './store.js'
 
+export const BUILTIN_HANDLERS = {
+    'bot_groups_count': async () => {
+        const count = await botIntrospection.getGroupsCount()
+        const sample = await botIntrospection.getGroupsSample(5)
+        let text = `Saat ini bot join di *${count} grup WhatsApp aktif*! 🚀\n\n`
+        if (sample && sample.length > 0) {
+            text += 'Beberapa di antaranya:\n'
+            sample.forEach((g, idx) => {
+                text += `${idx + 1}. *${g.subject}* (${g.participantsCount} member)\n`
+            })
+        }
+        return text.trim()
+    },
+    'bot_system_specs': async () => {
+        const h = botIntrospection.getSystemHealth()
+        const id = botIntrospection.getBotIdentity()
+        return '⚙️ *STATUS SISTEM & IDENTITAS MESIN*\n\n' +
+            '• *Bot:* ' + id.name + ' v' + id.version + '\n' +
+            '• *Platform:* ' + h.platform + '\n' +
+            '• *Runtime:* Node.js ' + h.nodeVersion + '\n' +
+            '• *Penggunaan RAM:* ' + h.rssMB + ' MB RSS (' + h.heapUsedMB + ' MB Heap)\n' +
+            '• *Masa Aktif:* ' + h.uptimeStr + '\n' +
+            '• *Penyimpanan Cloud:* ' + id.cloudRepo
+    }
+}
+
 class DynamicSkillsService {
     constructor() {
         this.storagePath = path.resolve('./storage/dynamic_skills.json')
@@ -148,10 +174,28 @@ class DynamicSkillsService {
     /**
      * Eksekusi skrip skill di dalam lingkungan terisolasi yang aman
      */
-    async executeSkill(skill, ctx) {
-        if (!skill || !skill.code) throw new Error('Skrip tidak valid')
+    async executeSkill(skill, ctx, options = {}) {
+        if (!skill) throw new Error('Skill tidak valid')
 
-        const sock = getSocket()
+        // 1. Prioritaskan Builtin Handlers yang aman dan teruji
+        if (BUILTIN_HANDLERS[skill.id]) {
+            const result = await BUILTIN_HANDLERS[skill.id](ctx)
+            skill.usageCount = (skill.usageCount || 0) + 1
+            skill.lastExecutedAt = new Date().toISOString()
+            this.saveStorage()
+            return result
+        }
+
+        // 2. SEC-001: P0 Containment - Nonaktifkan eksekusi arbitrary JavaScript secara default
+        const isExecutionAllowed = process.env.ENABLE_DYNAMIC_SKILL_EXECUTION === 'true'
+        if (!isExecutionAllowed) {
+            if (options?.silent) {
+                return null
+            }
+            return '⚠️ Eksekusi skrip dinamis dinonaktifkan secara default untuk keamanan sistem (SEC-001 policy). Fitur baru harus didaftarkan melalui modul perintah resmi.'
+        }
+
+        if (!skill.code) throw new Error('Skrip tidak valid')
 
         // Sandbox security check: tolak pemanggilan modul sistem perusak
         const dangerousPatterns = [
@@ -161,7 +205,10 @@ class DynamicSkillsService {
             /\bspawnSync\b/i,
             /\brmSync\b/i,
             /\bunlinkSync\b/i,
-            /\bwriteFileSync\b/i
+            /\bwriteFileSync\b/i,
+            /\beval\b/i,
+            /\bFunction\s*\(/,
+            /\bnew\s+Function\b/
         ]
 
         for (const pattern of dangerousPatterns) {
@@ -176,7 +223,8 @@ class DynamicSkillsService {
             (ctx?.quoted?.sender ? [ctx.quoted.sender] : [])
         const mentionedJids = Array.isArray(rawMentions) ? rawMentions : []
 
-        // Kompilasi dan eksekusi aman via node:vm sandbox (Document 1 §16.3 & Document 2 §Phase 5)
+        // SEC-001 Containment: Sandbox HANYA berisi konteks baca & introspeksi aman.
+        // DILARANG keras menyuntikkan raw sock, db, store, fs, atau process!
         const sandbox = {
             ctx: {
                 sender: ctx?.sender,
@@ -184,15 +232,9 @@ class DynamicSkillsService {
                 isGroup: ctx?.isGroup,
                 chatId: ctx?.chatId || ctx?.remoteJid,
                 args: ctx?.args || [],
-                mentionedJids,
-                quoted: ctx?.quoted || null,
-                msg: ctx?.msg || null,
-                reply: ctx?.reply || null
+                mentionedJids
             },
             bundle: {
-                sock,
-                db,
-                store,
                 introspection: {
                     getGroupsCount: () => botIntrospection.getGroupsCount(),
                     getGroupsSample: (limit) => botIntrospection.getGroupsSample(limit),
@@ -201,9 +243,6 @@ class DynamicSkillsService {
                     getDatabaseSummary: () => botIntrospection.getDatabaseSummary()
                 }
             },
-            sock,
-            db,
-            store,
             console: {
                 log: (...args) => logger.debug('[VMSandbox]', ...args),
                 error: (...args) => logger.error('[VMSandbox]', ...args)
@@ -351,10 +390,10 @@ class DynamicSkillsService {
         this.isSynthesizing = true
 
         const prompt = `Anda adalah Master JavaScript Skill Architect untuk RonnBot (Baileys WhatsApp Bot Modular).
-Tugas Anda adalah membuat satu fungsi JavaScript ES modern untuk menjawab query pengguna berikut:
+Tugas Anda adalah merancang proposal fungsi/skill JavaScript baru untuk menjawab query pengguna berikut:
 "${userQuery}"
 
-LINGKUNGAN RUNTIME:
+LINGKUNGAN RUNTIME (SAFE READ-ONLY CONTEXT):
 Objek yang dapat diakses di dalam kode:
 - ctx: Konteks chat WhatsApp:
   * ctx.chatId: JID obrolan / grup WhatsApp (cth: "12345@g.us")
@@ -363,20 +402,16 @@ Objek yang dapat diakses di dalam kode:
   * ctx.isGroup: Boolean (apakah di grup)
   * ctx.mentionedJids: Array target JID yang di-mention (cth: ["6281234@s.whatsapp.net"])
   * ctx.args: Array argumen kata
-- bundle: Berisi:
-  * sock: Socket Baileys WhatsApp asli untuk aksi:
-    - sock.groupParticipantsUpdate(ctx.chatId, [targetJid], 'promote' | 'demote' | 'remove') -> Mengangkat/menurunkan admin atau mengeluarkan member grup
-    - sock.groupUpdateSubject(ctx.chatId, newSubject) -> Mengubah nama grup
-    - sock.groupSettingUpdate(ctx.chatId, 'announcement' | 'not_announcement') -> Mengatur izin chat grup
-    - sock.sendMessage(ctx.chatId, { text: '...' }) -> Mengirim pesan Baileys
+- bundle: Berisi introspeksi baca aman:
   * introspection: Layanan introspeksi bot dengan method:
     - await introspection.getGroupsCount(): mengembalikan jumlah angka grup yang di-join bot
     - await introspection.getGroupsSample(limit): mengembalikan array [{ id, subject, participantsCount }]
     - introspection.getSystemHealth(): mengembalikan { rssMB, heapUsedMB, uptimeStr, platform, nodeVersion }
     - introspection.getBotIdentity(): mengembalikan { name, version, botNumber, ownerName, ownerNumber, cloudRepo }
     - introspection.getDatabaseSummary(): mengembalikan { usersCount, songsCount, notesCount, dbSizeBytes }
-  * db: Instance SQLite better-sqlite3 (db.prepare('SELECT ...').all() atau .get())
-  * store: Store in-memory Baileys
+
+CATATAN KEAMANAN (SEC-001):
+Akses langsung ke socket (sock), mutasi basis data (db), dan store Baileys TIDAK diizinkan dalam kode dinamis.
 
 SYARAT OUTPUT:
 Keluarkan HANYA format JSON valid berikut (tanpa markdown atau teks lain):
@@ -385,7 +420,7 @@ Keluarkan HANYA format JSON valid berikut (tanpa markdown atau teks lain):
   "name": "Judul Singkat Skill",
   "description": "Deskripsi singkat apa yang dilakukan fungsi ini",
   "keywords": ["variasi pertanyaan 1", "variasi pertanyaan 2", "variasi pertanyaan 3"],
-  "code": "async (ctx, { sock, db, store, introspection }) => {\\n    // Jika perlu ambil target mention: const target = ctx.mentionedJids?.[0];\\n    // Logika JS Anda di sini\\n    return 'Teks hasil yang rapi berformat WhatsApp dengan emoji';\\n}"
+  "code": "async (ctx, { introspection }) => {\\n    // Logika baca/introspeksi aman di sini\\n    return 'Teks hasil yang rapi berformat WhatsApp dengan emoji';\\n}"
 }
 
 ATURAN KODE:

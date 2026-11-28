@@ -176,13 +176,32 @@ function setupDirectories() {
     ok('Folder structure ready.')
 }
 
-async function migrateArchivesToTelegram() {
+export async function migrateArchivesToTelegram() {
     const tgToken = process.env.TELEGRAM_BOT_TOKEN
     const tgChannel = process.env.TELEGRAM_CHANNEL_ID
     const archiveDirs = [
         { dir: './storage/media/viewonce', activity: 'View Once' },
         { dir: './storage/media/revoked', activity: 'Anti-Delete' }
     ]
+
+    if (!tgToken || !tgChannel) {
+        inf('Skipping Telegram archive migration: TELEGRAM_BOT_TOKEN or TELEGRAM_CHANNEL_ID not set.')
+        return
+    }
+
+    const manifestDir = path.resolve('./storage/media')
+    if (!fs.existsSync(manifestDir)) {
+        try { fs.mkdirSync(manifestDir, { recursive: true }) } catch {}
+    }
+    const manifestPath = path.join(manifestDir, 'migration_manifest.json')
+    let manifest = {}
+    try {
+        if (fs.existsSync(manifestPath)) {
+            manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+        }
+    } catch (_) {
+        manifest = {}
+    }
 
     let sqliteDb = null
     try {
@@ -193,16 +212,20 @@ async function migrateArchivesToTelegram() {
         }
     } catch {}
 
-    for (const item of archiveDirs) {
-        const fullDir = path.resolve(item.dir)
-        if (!fs.existsSync(fullDir)) continue
-        const files = fs.readdirSync(fullDir)
-        if (files.length === 0) continue
+    try {
+        for (const item of archiveDirs) {
+            const fullDir = path.resolve(item.dir)
+            if (!fs.existsSync(fullDir)) continue
+            const files = fs.readdirSync(fullDir)
+            if (files.length === 0) continue
 
-        inf(`Migrating ${files.length} archived media files from ${item.dir} to Telegram...`)
-        for (const file of files) {
-            const filePath = path.join(fullDir, file)
-            if (tgToken && tgChannel) {
+            inf(`Migrating ${files.length} archived media files from ${item.dir} to Telegram...`)
+            for (const file of files) {
+                if (manifest[file]?.status === 'completed') {
+                    continue
+                }
+
+                const filePath = path.join(fullDir, file)
                 try {
                     const buf = fs.readFileSync(filePath)
                     const stats = fs.statSync(filePath)
@@ -259,19 +282,29 @@ async function migrateArchivesToTelegram() {
                         method: 'POST',
                         body: fd
                     })
-                    const data = await res.json()
-                    if (data.ok) {
+                    const data = await res.json().catch(() => null)
+                    if (res.ok && data?.ok === true && data.result?.message_id) {
+                        manifest[file] = {
+                            migratedAt: new Date().toISOString(),
+                            messageId: data.result.message_id,
+                            status: 'completed'
+                        }
                         try { fs.unlinkSync(filePath) } catch {}
-                        continue
+                    } else {
+                        wrn(`Telegram upload failed for ${file}: ${data?.description || ('HTTP ' + res.status)}`)
                     }
-                } catch {}
+                } catch (err) {
+                    wrn(`Error migrating file ${file}: ${err.message}`)
+                }
             }
-            try { fs.unlinkSync(filePath) } catch {}
         }
-    }
-
-    if (sqliteDb) {
-        try { sqliteDb.close() } catch {}
+    } finally {
+        try {
+            fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8')
+        } catch {}
+        if (sqliteDb) {
+            try { sqliteDb.close() } catch {}
+        }
     }
 }
 
@@ -679,6 +712,9 @@ async function main() {
         renderStepProgress('Storage Trees', 'verifying directories')
         setupDirectories()
 
+        renderStepProgress('Security & Env', 'sanitizing environment')
+        validateEnv()
+
         renderStepProgress('Telegram Cloud', 'archive vault')
         await migrateArchivesToTelegram()
 
@@ -693,9 +729,6 @@ async function main() {
 
         renderStepProgress('Crypto / OpenSSL', 'handshake security')
         await setupOpenssl()
-
-        renderStepProgress('Security & Env', 'sanitizing environment')
-        validateEnv()
 
         renderStepProgress('HF Session Sync', 'restoring Baileys state')
         // Try restoring WhatsApp session, database & memory from Hugging Face Dataset
@@ -717,4 +750,11 @@ async function main() {
     }
 }
 
-main()
+const isDirectExecution = process.argv[1] && (
+    path.resolve(process.argv[1]) === path.resolve('./start.js') ||
+    import.meta.url === pathToFileURL(process.argv[1]).href
+)
+
+if (isDirectExecution) {
+    main()
+}
