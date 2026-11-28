@@ -771,11 +771,17 @@ async function main() {
     }
 }
 
-const isDirectExecution = process.argv[1] && (
+const isDirectExecution = Boolean(
+    process.env.pm_id !== undefined ||
+    process.env.PM2_HOME !== undefined ||
+    !process.argv[1] ||
+    process.argv[1].endsWith('start.js') ||
     path.resolve(process.argv[1]) === path.resolve('./start.js') ||
-    import.meta.url === pathToFileURL(process.argv[1]).href
+    (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
 )
 
 if (isDirectExecution) {
     main()
 }
+
+export { main }
