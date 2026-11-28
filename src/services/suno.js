@@ -10,7 +10,7 @@ import { uploadToDrive } from './gdrive.js'
 import { eventBus } from '../events/bus.js'
 import { logger, getSocket } from '../utils/logger.js'
 import dotenv from 'dotenv'
-dotenv.config({ override: true })
+dotenv.config({ override: false, quiet: true })
 
 let sharp = null
 try {

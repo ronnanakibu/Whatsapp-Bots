@@ -17,6 +17,7 @@ import path from 'path'
 import https from 'https'
 import dns from 'dns'
 import { pathToFileURL } from 'url'
+import { isStageSafeMode, assertStagingIsolation } from './src/services/stagingMode.js'
 
 // Set local timezone to Asia/Jakarta (WIB / GMT+7) for Pterodactyl console & app logs
 process.env.TZ = process.env.BOT_TIMEZONE || 'Asia/Jakarta'
@@ -716,14 +717,23 @@ async function launchBot() {
 async function main() {
     process.stdout.write('\n\x1b[96m🚀 [ronn.ai] Bootstrapping Autonomous Kernel & Security Layers...\x1b[0m\n\n')
     try {
+        const stageSafe = isStageSafeMode()
+        if (stageSafe) {
+            assertStagingIsolation()
+        }
+
         renderStepProgress('Storage Trees', 'verifying directories')
         setupDirectories()
 
         renderStepProgress('Security & Env', 'sanitizing environment')
         validateEnv()
 
-        renderStepProgress('Telegram Cloud', 'archive vault')
-        await migrateArchivesToTelegram()
+        renderStepProgress('Telegram Cloud', stageSafe ? 'disabled in staging-safe mode' : 'archive vault')
+        if (!stageSafe) {
+            await migrateArchivesToTelegram()
+        } else {
+            ok('Skipped Telegram archive migration (RONNBOT_STAGE_SAFE_MODE=1).')
+        }
 
         renderStepProgress('Typography', 'Impact, Arial, Emoji')
         await setupFonts()
@@ -737,12 +747,16 @@ async function main() {
         renderStepProgress('Crypto / OpenSSL', 'handshake security')
         await setupOpenssl()
 
-        renderStepProgress('HF Session Sync', 'restoring Baileys state')
-        // Try restoring WhatsApp session, database & memory from Hugging Face Dataset
-        try {
-            const { sessionSync } = await import('./src/services/sessionSync.js')
-            await sessionSync.restoreAll()
-        } catch (_) {}
+        renderStepProgress('HF Session Sync', stageSafe ? 'disabled in staging-safe mode' : 'restoring Baileys state')
+        if (!stageSafe) {
+            // Try restoring WhatsApp session, database & memory from Hugging Face Dataset
+            try {
+                const { sessionSync } = await import('./src/services/sessionSync.js')
+                await sessionSync.restoreAll()
+            } catch (_) {}
+        } else {
+            ok('Skipped Hugging Face production session restore (RONNBOT_STAGE_SAFE_MODE=1).')
+        }
 
         renderStepProgress('Prisma Engine', 'SQLite schema ready')
         await setupPrisma()

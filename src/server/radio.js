@@ -26,6 +26,7 @@ import { db as sharedDb } from '../services/db.js'
 import { buildAiProviderTelemetry, buildControlAnalyticsSnapshot, buildControlMetricsSnapshot } from './telemetry.js'
 import { getWhatsAppStatusSnapshot, recordWhatsAppStateChange } from './whatsappOps.js'
 import { startSunoPipeline, getActiveJobs, confirmThumbnail, startPlaylistPipeline } from '../services/suno.js'
+import { isStageSafeMode } from '../services/stagingMode.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -1357,20 +1358,22 @@ export function startRadioServer(options = {}) {
         }
 
         const sock = getSocket()
-        const waConnected = Boolean(sock?.user) || currentBotStatus === 'open'
+        const stagingSafe = isStageSafeMode()
+        const waConnected = stagingSafe ? false : (Boolean(sock?.user) || currentBotStatus === 'open')
         const mem = process.memoryUsage()
         const coreOk = sqliteOk && leaseHealthy && secretsConfigured
         const overallStatus = !coreOk ? 'unhealthy' : waConnected ? 'healthy' : 'degraded'
 
         return {
             status: overallStatus,
+            runtimeMode: stagingSafe ? 'staging' : 'production',
             timestamp: new Date().toISOString(),
             uptime: Math.floor(process.uptime()),
             checks: {
                 sqlite: sqliteOk ? 'pass' : 'fail',
                 runtimeSingleton: leaseHealthy ? 'pass' : 'fail',
                 secrets: secretsConfigured ? 'pass' : 'fail',
-                whatsapp: waConnected ? 'pass' : 'degraded',
+                whatsapp: stagingSafe ? 'staging_simulation' : (waConnected ? 'pass' : 'degraded'),
                 http: serverInstance?.listening ? 'pass' : 'fail',
                 socket: io ? 'pass' : 'fail'
             },

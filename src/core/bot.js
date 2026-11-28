@@ -47,6 +47,7 @@ import { assertSingleProcessTopology, acquireRuntimeLease, releaseRuntimeLease }
 import { sessionSync } from '../services/sessionSync.js'
 import { db as sqliteDb, dbService } from '../services/db.js'
 import { isOwner } from '../utils/permissions.js'
+import { isStageSafeMode, assertStagingIsolation } from '../services/stagingMode.js'
 
 const pinoLogger = logger.child({ module: 'baileys' })
 
@@ -128,15 +129,27 @@ async function startBot() {
         try {
             await loadCommands()
             botLogger.system('Commands loaded ✓')
-            
-            // Start Discord Bot if token exists
-            const { startDiscordBot } = await import('../discord/index.js')
-            startDiscordBot()
-            botLogger.system('Discord bot initialized ✓')
+
+            if (!isStageSafeMode()) {
+                // Start Discord Bot if token exists
+                const { startDiscordBot } = await import('../discord/index.js')
+                startDiscordBot()
+                botLogger.system('Discord bot initialized ✓')
+            } else {
+                botLogger.warn('bot', 'Discord bot disabled under RONNBOT_STAGE_SAFE_MODE=1.')
+            }
         } catch (err) {
             botLogger.err('bot', err, 'loadCommands')
         }
         isInitialized = true
+    }
+
+    if (isStageSafeMode()) {
+        assertStagingIsolation()
+        updateBotStatus('STAGING_SIMULATION')
+        botLogger.warn('bot', 'RONNBOT_STAGE_SAFE_MODE=1 active: skipping Baileys auth state, live WhatsApp WebSocket, and production schedulers.')
+        registerGracefulShutdown()
+        return
     }
 
     // 2. Fetch WA live version dynamically with fallbacks
@@ -468,11 +481,13 @@ function registerGracefulShutdown() {
         try { store.unbind() } catch (_) {}
         try { socketProvider.clear() } catch (_) {}
 
-        // Backup sesi WhatsApp & database ke Hugging Face Dataset sebelum shutdown
-        try {
-            const { sessionSync } = await import('../services/sessionSync.js')
-            await sessionSync.backupAll('shutdown')
-        } catch (_) {}
+        // Backup sesi WhatsApp & database ke Hugging Face Dataset sebelum shutdown (production only)
+        if (!isStageSafeMode()) {
+            try {
+                const { sessionSync } = await import('../services/sessionSync.js')
+                await sessionSync.backupAll('shutdown')
+            } catch (_) {}
+        }
 
         try {
             stopRadioServer()

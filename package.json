@@ -23,6 +23,7 @@
         "backup:verify": "node scripts/backup.js --verify",
         "release:check": "node scripts/release-check.js",
         "release:manifest": "node scripts/release-check.js --manifest",
+        "release:bundle": "node scripts/build-release-archive.js",
         "postdeploy:smoke": "node scripts/self-check.js --mode=post-deploy --json",
         "db:migrate": "node scripts/migrate.js",
         "push": "node deploy.js",
