@@ -7,6 +7,10 @@ const MAX_IN_MEMORY_PER_CHAT = 25
 const MAX_CHATS_IN_MEMORY = 50
 
 class DatabaseBackedStore {
+    #currentEv = null
+    #upsertHandler = null
+    #pruneInterval = null
+
     constructor() {
         this.memoryCache = new Map() // chatJid -> Map(msgId -> msg)
     }
@@ -19,7 +23,24 @@ class DatabaseBackedStore {
     }
 
     bind(ev) {
-        ev.on('messages.upsert', ({ messages }) => {
+        if (!ev) return
+        // Idempotent guard: if already bound to this exact ev emitter, do not attach duplicate listeners
+        if (this.#currentEv === ev) return
+
+        // If previously bound to another emitter, unbind listener from old emitter
+        if (this.#currentEv && this.#upsertHandler) {
+            try {
+                if (typeof this.#currentEv.off === 'function') {
+                    this.#currentEv.off('messages.upsert', this.#upsertHandler)
+                } else if (typeof this.#currentEv.removeListener === 'function') {
+                    this.#currentEv.removeListener('messages.upsert', this.#upsertHandler)
+                }
+            } catch (_) {}
+        }
+
+        this.#currentEv = ev
+        this.#upsertHandler = ({ messages }) => {
+            if (!Array.isArray(messages)) return
             for (const msg of messages) {
                 if (!msg?.key?.remoteJid || !msg.message) continue
                 const jid = msg.key.remoteJid
@@ -55,7 +76,6 @@ class DatabaseBackedStore {
 
                     const isViewOnce = isViewOnceMessage(msg)
 
-
                     dbService.saveMessage({
                         id,
                         chatJid: jid,
@@ -71,14 +91,49 @@ class DatabaseBackedStore {
                     logger.debug?.(`[Store] Failed to persist message ${id}: ${err.message}`)
                 }
             }
-        })
+        }
 
-        // Auto-prune messages older than 14 days every 24 hours
-        setInterval(() => {
+        ev.on('messages.upsert', this.#upsertHandler)
+
+        // Auto-prune messages older than 14 days every 24 hours (bounded single timer)
+        if (!this.#pruneInterval) {
+            this.#pruneInterval = setInterval(() => {
+                try {
+                    dbService.pruneMessages(14)
+                } catch (_) {}
+            }, 24 * 60 * 60 * 1000)
+        }
+    }
+
+    unbind() {
+        if (this.#currentEv && this.#upsertHandler) {
             try {
-                dbService.pruneMessages(14)
+                if (typeof this.#currentEv.off === 'function') {
+                    this.#currentEv.off('messages.upsert', this.#upsertHandler)
+                } else if (typeof this.#currentEv.removeListener === 'function') {
+                    this.#currentEv.removeListener('messages.upsert', this.#upsertHandler)
+                }
             } catch (_) {}
-        }, 24 * 60 * 60 * 1000)
+        }
+        this.#currentEv = null
+        this.#upsertHandler = null
+
+        if (this.#pruneInterval) {
+            clearInterval(this.#pruneInterval)
+            this.#pruneInterval = null
+        }
+    }
+
+    getPruneIntervalActive() {
+        return this.#pruneInterval !== null
+    }
+
+    getBoundEmitter() {
+        return this.#currentEv
+    }
+
+    clearCache() {
+        this.memoryCache.clear()
     }
 
     loadMessage(jid, id) {

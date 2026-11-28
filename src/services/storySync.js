@@ -8,6 +8,7 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import { logger, botLogger } from '../utils/logger.js'
+import { socketProvider } from '../core/socketProvider.js'
 
 // Konfigurasi & Variabel Lingkungan
 const WEB_API_URL = process.env.CEF_WEB_URL || 'https://cef25.my.id/api/stories'
@@ -356,33 +357,52 @@ export async function syncInstagramStories(sock = null, options = {}) {
 /**
  * Inisialisasi background scheduler untuk polling story otomatis
  */
+let _sock = null
 let _storySchedulerStarted = false
+let _initialTimeout = null
+let _storyInterval = null
 
 export function initStorySyncScheduler(sock) {
+    if (sock) _sock = sock
     if (_storySchedulerStarted) return
     _storySchedulerStarted = true
 
     botLogger.system(`Instagram Story Sync scheduler started ✓ (Interval: setiap ${INTERVAL_MINUTES} menit)`)
 
     // Polling pertama setelah bot online 10 detik agar koneksi stabil
-    setTimeout(async () => {
+    _initialTimeout = setTimeout(async () => {
         try {
+            const activeSock = socketProvider.getCurrent() || _sock
             botLogger.info('story-sync', 'Menjalankan pengecekan story Instagram awal...')
-            await syncInstagramStories(sock)
+            await syncInstagramStories(activeSock)
         } catch (err) {
             botLogger.warn('story-sync', `Pengecekan awal gagal: ${err.message}`)
         }
     }, 10000)
 
     // Polling berkala setiap INTERVAL_MINUTES menit
-    setInterval(async () => {
+    _storyInterval = setInterval(async () => {
         try {
+            const activeSock = socketProvider.getCurrent() || _sock
             botLogger.info('story-sync', `[Scheduler] Menjalankan pengecekan story berkala (${INTERVAL_MINUTES}m)...`)
-            await syncInstagramStories(sock)
+            await syncInstagramStories(activeSock)
         } catch (err) {
             botLogger.warn('story-sync', `[Scheduler] Gagal sync story: ${err.message}`)
         }
     }, INTERVAL_MINUTES * 60 * 1000)
+}
+
+export function stopStorySyncScheduler() {
+    if (_initialTimeout) {
+        clearTimeout(_initialTimeout)
+        _initialTimeout = null
+    }
+    if (_storyInterval) {
+        clearInterval(_storyInterval)
+        _storyInterval = null
+    }
+    _storySchedulerStarted = false
+    _sock = null
 }
 
 export default {
@@ -394,4 +414,5 @@ export default {
     fetchTargetStories,
     syncInstagramStories,
     initStorySyncScheduler,
+    stopStorySyncScheduler,
 }

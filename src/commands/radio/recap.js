@@ -3,6 +3,7 @@
 
 import { db } from '../../services/db.js'
 import { logger } from '../../utils/logger.js'
+import { socketProvider } from '../../core/socketProvider.js'
 
 function getWeekRange(offset = 0) {
     const now = new Date()
@@ -131,9 +132,12 @@ export function generateWeeklyRecap(offset = 0) {
 // SCHEDULER WEEKLY RECAP
 // ─────────────────────────────────────────────
 
+let _sock = null
 let _recapSchedulerStarted = false
+let _recapInterval = null
 
 export function initRecapScheduler(sock) {
+    if (sock) _sock = sock
     if (_recapSchedulerStarted) return
     _recapSchedulerStarted = true
 
@@ -141,8 +145,11 @@ export function initRecapScheduler(sock) {
 
     let lastTriggerWeekStr = ''
 
-    setInterval(async () => {
+    _recapInterval = setInterval(async () => {
         try {
+            const activeSock = socketProvider.getCurrent() || _sock
+            if (!activeSock) return
+
             // Gunakan manual offset (GMT+7)
             const offsetMs = 7 * 60 * 60 * 1000
             const nowJakarta = new Date(Date.now() + offsetMs)
@@ -174,7 +181,7 @@ export function initRecapScheduler(sock) {
 
                 for (const sub of subs) {
                     try {
-                        await sock.sendMessage(sub.chat_id, {
+                        await activeSock.sendMessage(sub.chat_id, {
                             text: `🔔 *LAPORAN REKAP RADIO MINGGUAN OTOMATIS*\n\n${text}`
                         })
                     } catch (err) {
@@ -186,6 +193,15 @@ export function initRecapScheduler(sock) {
             logger.error('[Recap Scheduler] Error in recap scheduler tick:', err.message)
         }
     }, 30_000)
+}
+
+export function stopRecapScheduler() {
+    if (_recapInterval) {
+        clearInterval(_recapInterval)
+        _recapInterval = null
+    }
+    _recapSchedulerStarted = false
+    _sock = null
 }
 
 export default {

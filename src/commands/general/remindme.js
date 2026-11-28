@@ -5,6 +5,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { triggerAlarm } from '../../services/alarm.js'
 import { logger } from '../../utils/logger.js'
+import { socketProvider } from '../../core/socketProvider.js'
 
 const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db')
 
@@ -315,16 +316,20 @@ function formatDate(unixTs) {
 
 let _sock = null
 let _schedulerStarted = false
+let _reminderInterval = null
 
 export function initReminderScheduler(sock) {
+    if (sock) _sock = sock
     if (_schedulerStarted) return
     _schedulerStarted = true
-    _sock = sock
 
     logger.info('Reminder scheduler started')
 
-    setInterval(async () => {
+    _reminderInterval = setInterval(async () => {
         try {
+            const activeSock = socketProvider.getCurrent() || _sock
+            if (!activeSock) return
+
             const db = getDb()
             const now = Math.floor(Date.now() / 1000)
             const due = db.prepare(`
@@ -339,7 +344,7 @@ export function initReminderScheduler(sock) {
 
                     const skipSpam = reminder.user_jid === 'system'
                     // triggerAlarm sudah handle react spam sendiri (bisa dilewati dengan skipSpam)
-                    await triggerAlarm(_sock, reminder.chat_id, reminder.message, false, reminder.quoted_msg, skipSpam)
+                    await triggerAlarm(activeSock, reminder.chat_id, reminder.message, false, reminder.quoted_msg, skipSpam)
 
                     db.prepare('UPDATE reminders SET fired = 1 WHERE id = ?').run(reminder.id)
                 } catch (e) {
@@ -350,6 +355,15 @@ export function initReminderScheduler(sock) {
             logger.error('[Reminder] Scheduler tick error:', e.message)
         }
     }, 30_000)
+}
+
+export function stopReminderScheduler() {
+    if (_reminderInterval) {
+        clearInterval(_reminderInterval)
+        _reminderInterval = null
+    }
+    _schedulerStarted = false
+    _sock = null
 }
 
 // ─────────────────────────────────────────────

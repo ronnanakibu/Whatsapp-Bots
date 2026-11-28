@@ -32,11 +32,12 @@ import { store } from '../services/store.js'
 import { handleIncomingMessage } from '../handlers/message.js'
 import { handleRevokeMessage } from '../handlers/revoke.js'
 import { logger, botLogger, setSocket } from '../utils/logger.js'
-import { initReminderScheduler } from '../commands/general/remindme.js'
-import { initWeatherScheduler } from '../commands/utility/cuaca.js'
-import { initRecapScheduler } from '../commands/radio/recap.js'
-import { initStorySyncScheduler } from '../services/storySync.js'
-import { initScheduleSync } from '../services/scheduleSync.js'
+import { initReminderScheduler, stopReminderScheduler } from '../commands/general/remindme.js'
+import { initWeatherScheduler, stopWeatherScheduler } from '../commands/utility/cuaca.js'
+import { initRecapScheduler, stopRecapScheduler } from '../commands/radio/recap.js'
+import { initStorySyncScheduler, stopStorySyncScheduler } from '../services/storySync.js'
+import { initScheduleSync, stopScheduleSync } from '../services/scheduleSync.js'
+import { socketProvider } from './socketProvider.js'
 import { startRadioServer, stopRadioServer, updateBotStatus } from '../server/radio.js'
 import { markSessionCredsUpdated } from '../server/whatsappOps.js'
 import { metricsService } from '../services/metrics.js'
@@ -203,7 +204,7 @@ async function startBot() {
         }
     })
     currentSocket = sock
-
+    socketProvider.setSocket(sock)
 
     // Daftarkan socket instance ke logger untuk WhatsApp channel logging
     setSocket(sock)
@@ -271,6 +272,7 @@ async function startBot() {
                 if (fs.existsSync(qrFile)) fs.unlinkSync(qrFile)
             } catch (_) {}
             reconnectCount = 0
+            socketProvider.setSocket(sock)
             botLogger.connect('open', `Logged in as ${sock.user?.name ?? sock.user?.id}`)
             metricsService.setWhatsAppStatus('online')
             botLogger.section('BOT READY 🚀')
@@ -335,6 +337,7 @@ async function startBot() {
 
             // 401 Logged Out / Stale Session auto-recovery
             if (isLoggedOut && !isStopping) {
+                socketProvider.clear()
                 botLogger.warn('bot', 'Session logged out (status 401). Purging stale session locally and from cloud storage...')
                 try {
                     sock.ws?.close()
@@ -454,6 +457,16 @@ function registerGracefulShutdown() {
         } catch (e) {
             console.error('❌ Gagal mengirim log shutdown:', e)
         }
+
+        // Clean up schedulers, timers, store listener, and socket provider
+        try { stopReminderScheduler() } catch (_) {}
+        try { stopWeatherScheduler() } catch (_) {}
+        try { stopRecapScheduler() } catch (_) {}
+        try { stopStorySyncScheduler() } catch (_) {}
+        try { stopScheduleSync() } catch (_) {}
+        try { sessionSync.stopScheduler() } catch (_) {}
+        try { store.unbind() } catch (_) {}
+        try { socketProvider.clear() } catch (_) {}
 
         // Backup sesi WhatsApp & database ke Hugging Face Dataset sebelum shutdown
         try {

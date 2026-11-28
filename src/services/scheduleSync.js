@@ -1,10 +1,12 @@
 import axios from 'axios'
 import { logger } from '../utils/logger.js'
+import { socketProvider } from '../core/socketProvider.js'
 import Database from 'better-sqlite3'
 import path from 'path'
 
 let _sock = null
 let _scheduleSyncStarted = false
+let _scheduleInterval = null
 
 /**
  * Format string waktu agar mudah dibaca
@@ -27,14 +29,14 @@ function timeToTodayUnix(timeStr) {
  * Sync jadwal setiap jam 05:00 AM
  */
 export function initScheduleSync(sock) {
+    if (sock) _sock = sock
     if (_scheduleSyncStarted) return
     _scheduleSyncStarted = true
-    _sock = sock
 
     logger.info('Schedule Sync scheduler started')
 
     // Cek setiap menit apakah jam 05:00 AM
-    setInterval(async () => {
+    _scheduleInterval = setInterval(async () => {
         const now = new Date()
         // Konversi ke Timezone bot jika perlu, atau gunakan waktu sistem (asumsi sudah diset via BOT_TIMEZONE)
         
@@ -45,11 +47,26 @@ export function initScheduleSync(sock) {
     }, 60 * 1000)
 }
 
+export function stopScheduleSync() {
+    if (_scheduleInterval) {
+        clearInterval(_scheduleInterval)
+        _scheduleInterval = null
+    }
+    _scheduleSyncStarted = false
+    _sock = null
+}
+
 /**
  * Fungsi untuk menjalankan proses ambil data dan broadcast
  */
-export async function runDailyScheduleBroadcast() {
+export async function runDailyScheduleBroadcast(explicitSock = null) {
     try {
+        const activeSock = explicitSock || socketProvider.getCurrent() || _sock
+        if (!activeSock) {
+            logger.warn('[ScheduleSync] No active socket available for broadcast.')
+            return
+        }
+
         const groupId = process.env.CEF_GROUP_JID
         if (!groupId) {
             logger.warn('[ScheduleSync] CEF_GROUP_JID belum diset. Lewati broadcast.')
@@ -98,11 +115,11 @@ export async function runDailyScheduleBroadcast() {
         text += `Jangan sampai telat cuy! Semangat ngoding! 💻🔥`
 
         // Ambil metadata grup untuk memention semua member
-        const metadata = await _sock.groupMetadata(groupId)
+        const metadata = await activeSock.groupMetadata(groupId)
         const participants = metadata.participants.map(p => p.id)
 
         // Kirim pesan dengan mention all
-        await _sock.sendMessage(groupId, {
+        await activeSock.sendMessage(groupId, {
             text,
             mentions: participants
         })
@@ -131,7 +148,7 @@ export async function runDailyScheduleBroadcast() {
                     db.prepare(`
                         INSERT INTO reminders (user_jid, chat_id, message, fire_at, quoted_msg)
                         VALUES (?, ?, ?, ?, ?)
-                    `).run(_sock.user?.id || 'system', groupId, msg, fireAt, null)
+                    `).run(activeSock.user?.id || 'system', groupId, msg, fireAt, null)
                     
                     logger.info(`[ScheduleSync] Menambahkan auto-reminder istirahat pada ${current.endTime}`)
                 }

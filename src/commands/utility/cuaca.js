@@ -5,6 +5,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import { logger } from '../../utils/logger.js'
+import { socketProvider } from '../../core/socketProvider.js'
 
 const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db')
 
@@ -912,19 +913,23 @@ export async function getDetailedWeatherReport(city) {
 
 let _sock = null
 let _schedulerStarted = false
+let _weatherInterval = null
 
 let _lastTriggerDay = -1
 
 export function initWeatherScheduler(sock) {
+    if (sock) _sock = sock
     if (_schedulerStarted) return
     _schedulerStarted = true
-    _sock = sock
 
     logger.info('Weather scheduler initialized')
 
     // Cek setiap 30 detik untuk memastikan kita tidak kelewatan menit 00
-    setInterval(async () => {
+    _weatherInterval = setInterval(async () => {
         try {
+            const activeSock = socketProvider.getCurrent() || _sock
+            if (!activeSock) return
+
             // Gunakan manual offset (GMT+7) untuk menghindari masalah Intl di Alpine Linux
             const offsetMs = 7 * 60 * 60 * 1000
             const nowJakarta = new Date(Date.now() + offsetMs)
@@ -956,7 +961,7 @@ export function initWeatherScheduler(sock) {
                             weatherCache.set(sub.city.toLowerCase(), text)
                         }
 
-                        await _sock.sendMessage(sub.chat_id, {
+                        await activeSock.sendMessage(sub.chat_id, {
                             text: `🔔 *LAPORAN CUACA HARIAN OTOMATIS*\n\n${text}`
                         })
                     } catch (err) {
@@ -968,6 +973,16 @@ export function initWeatherScheduler(sock) {
             logger.error('[Weather Scheduler] Error in tick:', err.message)
         }
     }, 30_000)
+}
+
+export function stopWeatherScheduler() {
+    if (_weatherInterval) {
+        clearInterval(_weatherInterval)
+        _weatherInterval = null
+    }
+    _schedulerStarted = false
+    _sock = null
+    _lastTriggerDay = -1
 }
 
 // ─────────────────────────────────────────────

@@ -506,6 +506,20 @@ class SessionSyncService {
         }, intervalMs)
         logger.info(`☁️ [CloudSync] Auto-sync scheduler active (interval: ${intervalMs / 60000}m)`)
     }
+
+    /**
+     * Stop background recurring sync & pending debounces
+     */
+    stopScheduler() {
+        if (this.schedulerInterval) {
+            clearInterval(this.schedulerInterval)
+            this.schedulerInterval = null
+        }
+        if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer)
+            this.debounceTimer = null
+        }
+    }
 }
 
 export const sessionSync = new SessionSyncService()
