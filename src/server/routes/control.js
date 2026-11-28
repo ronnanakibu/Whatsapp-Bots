@@ -159,7 +159,7 @@ router.post('/users', authenticateControlJwt, requirePermission(PERMISSIONS.USER
     }
 
     try {
-        const created = createControlUser({ username, password, role, extraPermissions })
+        const created = createControlUser({ username, password, role, extraPermissions, grantor: req.controlUser })
         recordAudit({
             actorId: req.controlUser.id,
             actorRole: req.controlUser.role,
@@ -214,7 +214,7 @@ router.patch('/users/:id', authenticateControlJwt, requirePermission(PERMISSIONS
     }
 
     try {
-        const updated = updateControlUser(target.id, { role, isActive, extraPermissions, password })
+        const updated = updateControlUser(target.id, { role, isActive, extraPermissions, password }, req.controlUser)
         recordAudit({
             actorId: req.controlUser.id,
             actorRole: req.controlUser.role,

@@ -9,6 +9,7 @@ import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { hermesService } from '../../services/hermes.js'
 import { unwrapMessage } from '../../utils/message.js'
 import { logger } from '../../utils/logger.js'
+import { safeFetch } from '../../utils/safeOutboundUrl.js'
 
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null
@@ -18,14 +19,13 @@ const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GE
  */
 async function fetchCleanWebContent(targetUrl) {
     try {
-        const response = await axios.get(targetUrl, {
+        const response = await safeFetch(targetUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7'
             },
-            timeout: 15000,
-            maxContentLength: 10 * 1024 * 1024
+            timeoutMs: 15000,
+            maxBytes: 10 * 1024 * 1024
         })
 
         const html = response.data

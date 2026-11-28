@@ -1,5 +1,6 @@
 // src/commands/utility/uptime.js
 // !uptime [url] — Cek apakah website up atau down
+import { safeFetch } from '../../utils/safeOutboundUrl.js'
 
 export default {
     name: 'uptime',
@@ -33,8 +34,6 @@ export default {
         ]
     },
 
-
-
     async execute(ctx) {
         const { args, reply, react } = ctx
         if (!args.length) return reply('*Usage:* !uptime [url]\n\nContoh:\n!uptime https://google.com\n!uptime discord.com')
@@ -50,16 +49,11 @@ export default {
 
         const start = Date.now()
         try {
-            const controller = new AbortController()
-            const timeout = setTimeout(() => controller.abort(), 8000)
-
-            const res = await fetch(url, {
+            const res = await safeFetch(url, {
                 method: 'HEAD',
-                signal: controller.signal,
-                redirect: 'follow',
-                headers: { 'User-Agent': 'WA-Bot-UptimeCheck/2.0' }
+                timeoutMs: 8000,
+                userAgent: 'WA-Bot-UptimeCheck/2.0'
             })
-            clearTimeout(timeout)
 
             const latency = Date.now() - start
             const isUp = res.status < 500
@@ -78,13 +72,17 @@ export default {
 
         } catch (err) {
             const latency = Date.now() - start
-            const isTimeout = err.name === 'AbortError'
+            const isTimeout = err.name === 'AbortError' || err.message?.includes('timed out')
+            const isSsrfBlocked = err.message?.includes('private or reserved') ||
+                err.message?.includes('Forbidden host') ||
+                err.message?.includes('Forbidden protocol') ||
+                err.message?.includes('resolves to local')
 
             await reply(
                 `❌ *Website Status*\n\n` +
                 `🌐 URL: ${url}\n` +
-                `📋 Kondisi: *DOWN*\n` +
-                `💬 Error: ${isTimeout ? 'Request timeout (>8s)' : err.message}`
+                `📋 Kondisi: *DOWN / BLOCKED*\n` +
+                `💬 Keterangan: ${isSsrfBlocked ? '⚠️ Akses ke IP/host internal diblokir (SSRF Protection).' : isTimeout ? 'Request timeout (>8s)' : err.message}`
             )
             await react('❌')
         }

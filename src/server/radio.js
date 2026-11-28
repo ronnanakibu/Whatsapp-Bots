@@ -427,6 +427,10 @@ export function updateBotStatus(state, data = null, meta = {}) {
     } else if (state === 'open' || state === 'close' || state === 'logged_out' || state === 'error') {
         currentQrCode = null
         currentPairingCode = null
+        try {
+            const qrFile = path.resolve('./storage/qr.png')
+            if (fs.existsSync(qrFile)) fs.unlinkSync(qrFile)
+        } catch (_) {}
     }
     recordWhatsAppStateChange(state, data, meta)
     const waSnapshot = getWhatsAppStatusSnapshot()
@@ -1149,54 +1153,20 @@ export function startRadioServer(options = {}) {
     app.get('/stream', (req, res) => {
         const tokenStr = req.query.token
 
-        // Exceptions check (Bypass token validation for web dashboard, local dev, Discord bot, and Android APK players)
-        const remoteIp = req.socket.remoteAddress || ''
-        const isLocal = remoteIp.includes('127.0.0.1') || remoteIp === '::1' || remoteIp.includes('localhost')
-
-        const referer = (req.headers['referer'] || '').toLowerCase()
-        const isRefererValid = referer && (
-            referer.includes('/radio') ||
-            referer.includes('/dashboard') ||
-            referer.includes('ronnproject') ||
-            referer.includes('localhost') ||
-            referer.includes(':5173')
-        )
-
-        const hasCacheBuster = req.query.t !== undefined || req.query.web !== undefined || req.query.stream !== undefined
-
-        const incomingUa = req.headers['user-agent'] || ''
-        const incomingNormalized = normalizeUserAgent(incomingUa)
-        const isAndroidPlayer = incomingNormalized === 'android-radio-client'
-
-        // Web browsers and direct media requests bypass token requirement
-        const isMediaRequest = req.headers['accept']?.includes('audio') || req.headers['accept']?.includes('*/*')
-        const shouldBypass = isLocal || isRefererValid || hasCacheBuster || isAndroidPlayer || !tokenStr
-
+        // SEC-003: Explicit Separation between Anonymous and Authenticated Modes
+        // 1. Explicit Anonymous Mode (when token is omitted):
+        // Receives a server-generated anonymous ID only. Query ?jid= is strictly ignored to prevent identity spoofing!
         let userId = 'anonymous'
 
-        if (shouldBypass && !tokenStr) {
-            // Retrieve JID from query if available during bypass (e.g. from APK or browser testing)
-            const queryJid = req.query.jid
-            if (queryJid && typeof queryJid === 'string' && queryJid.includes('@')) {
-                userId = queryJid
-            }
-            logger.info(`[Stream/Auth] Connection bypassed. RemoteIP: ${remoteIp}, Referer: ${referer}, UA: ${incomingUa}, JID: ${userId}`)
+        if (!tokenStr) {
+            userId = 'anon_' + crypto.randomBytes(4).toString('hex')
+            logger.info(`[Stream/Auth] Public anonymous stream connected. Assigned ID: ${userId}`)
         } else {
-            // Strict token enforcement
-            if (!tokenStr) {
-                logger.warn(`[Stream/Auth] Connection rejected: Missing token. RemoteIP: ${remoteIp}, Referer: ${referer}, UA: ${incomingUa}`)
-                return res.status(403).json({
-                    success: false,
-                    error: {
-                        code: 'FORBIDDEN',
-                        message: 'Token stream diperlukan.'
-                    }
-                })
-            }
-
+            // 2. Authenticated Mode: Strict one-time token enforcement
             const tokenObj = streamTokens.get(tokenStr)
             if (!tokenObj || tokenObj.consumed || tokenObj.expiresAt < Date.now()) {
-                logger.warn(`[Stream/Auth] Connection rejected: Invalid, consumed, or expired token (${tokenStr})`)
+                const redactedToken = String(tokenStr).slice(0, 4) + '...'
+                logger.warn(`[Stream/Auth] Connection rejected: Invalid, consumed, or expired token (${redactedToken})`)
                 return res.status(403).json({
                     success: false,
                     error: {
@@ -1207,6 +1177,8 @@ export function startRadioServer(options = {}) {
             }
 
             // Validate UA Hash
+            const incomingUa = req.headers['user-agent'] || ''
+            const incomingNormalized = normalizeUserAgent(incomingUa)
             const incomingUaHash = crypto.createHash('sha256').update(incomingNormalized).digest('hex')
             if (incomingUaHash !== tokenObj.userAgentHash) {
                 logger.warn(`[Stream/Security] ALERT: User-Agent hash mismatch for token. Expected: ${tokenObj.userAgentHash}, got: ${incomingUaHash} (Raw UA: ${incomingUa})`)
@@ -1630,29 +1602,39 @@ export function startRadioServer(options = {}) {
         res.on('error', cleanup)
     })
 
-    // QR Code Image Raw PNG Web Endpoint (Public)
-    app.get(['/qr.png', '/qr/image'], async (req, res) => {
+    // SEC-002: Default to Control JWT + WHATSAPP_PAIRING_READ for QR/Pairing endpoints.
+    // Public bootstrap pairing is allowed only when explicitly enabled via ALLOW_PUBLIC_PAIRING='true'
+    const pairingGateMiddleware = (req, res, next) => {
+        if (process.env.ALLOW_PUBLIC_PAIRING === 'true') {
+            const setupToken = process.env.PAIRING_SETUP_TOKEN
+            if (!setupToken || req.query.setup_token === setupToken || req.headers['x-setup-token'] === setupToken) {
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+                return next()
+            }
+        }
+        return authenticateControlJwt(req, res, () => {
+            return requirePermission(PERMISSIONS.WHATSAPP_PAIRING_READ)(req, res, next)
+        })
+    }
+
+    // QR Code Image Raw PNG Web Endpoint
+    app.get(['/qr.png', '/qr/image'], pairingGateMiddleware, async (req, res) => {
         if (currentQrCode) {
             try {
                 const qrBuffer = await qrcode.toBuffer(currentQrCode, { width: 512, margin: 2 })
                 res.setHeader('Content-Type', 'image/png')
-                res.setHeader('Cache-Control', 'no-store, must-revalidate')
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
                 return res.send(qrBuffer)
             } catch (err) {
                 return res.status(500).send('Error rendering QR image')
             }
         }
-        const qrPath = path.resolve('./storage/qr.png')
-        if (fs.existsSync(qrPath)) {
-            res.setHeader('Content-Type', 'image/png')
-            res.setHeader('Cache-Control', 'no-store, must-revalidate')
-            return res.sendFile(qrPath)
-        }
-        res.status(404).send('QR code not active or already connected')
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+        return res.status(404).send('QR code not active or already connected')
     })
 
-    // QR Code & Pairing Code Web Endpoint (Public)
-    app.get(['/qr', '/pairing', '/code'], async (req, res) => {
+    // QR Code & Pairing Code Web Endpoint
+    app.get(['/qr', '/pairing', '/code'], pairingGateMiddleware, async (req, res) => {
         if (currentPairingCode) {
             return res.send(`
                 <!DOCTYPE html>

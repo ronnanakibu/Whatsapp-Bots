@@ -266,6 +266,10 @@ async function startBot() {
         }
 
         if (connection === 'open') {
+            try {
+                const qrFile = path.resolve('./storage/qr.png')
+                if (fs.existsSync(qrFile)) fs.unlinkSync(qrFile)
+            } catch (_) {}
             reconnectCount = 0
             botLogger.connect('open', `Logged in as ${sock.user?.name ?? sock.user?.id}`)
             metricsService.setWhatsAppStatus('online')
@@ -310,6 +314,10 @@ async function startBot() {
         }
 
         if (connection === 'close') {
+            try {
+                const qrFile = path.resolve('./storage/qr.png')
+                if (fs.existsSync(qrFile)) fs.unlinkSync(qrFile)
+            } catch (_) {}
             const error = lastDisconnect?.error
             const statusCode = new Boom(error)?.output?.statusCode
             const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401

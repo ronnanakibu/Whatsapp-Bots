@@ -5,7 +5,7 @@
 import crypto from 'crypto'
 import { db } from '../../services/db.js'
 import { logger } from '../../utils/logger.js'
-import { ROLES, SCOPES, VALID_ROLES, getEffectivePermissions } from './rbac.js'
+import { ROLES, SCOPES, VALID_ROLES, VALID_PERMISSIONS, OWNER_ONLY_PERMISSIONS, getEffectivePermissions } from './rbac.js'
 import { redactSensitive } from './redaction.js'
 
 const WEAK_KNOWN_SECRETS = new Set([
@@ -82,11 +82,40 @@ export function timingSafeEqualStr(a, b) {
     return crypto.timingSafeEqual(ha, hb)
 }
 
-function validateDistinctProductionDualSecrets() {
+export function isPlaceholderSecret(secret) {
+    if (!secret || typeof secret !== 'string') return true
+    const s = secret.trim().toLowerCase()
+    if (
+        s.startsWith('replace_with_') ||
+        s.startsWith('your_') ||
+        s.includes('placeholder') ||
+        s.includes('example') ||
+        s.includes('insert_secret') ||
+        s.includes('changeme')
+    ) {
+        return true
+    }
+    return WEAK_KNOWN_SECRETS.has(s)
+}
+
+export function validateDistinctProductionDualSecrets() {
     if (process.env.NODE_ENV !== 'production') return
     const ctrl = (process.env.CONTROL_JWT_SECRET || '').trim()
     const radio = (process.env.RADIO_JWT_SECRET || '').trim()
-    if (ctrl && radio && timingSafeEqualStr(ctrl, radio)) {
+
+    if (!ctrl) {
+        throw new Error('FATAL: CONTROL_JWT_SECRET must be explicitly set in production.')
+    }
+    if (!radio) {
+        throw new Error('FATAL: RADIO_JWT_SECRET must be explicitly set in production.')
+    }
+    if (isPlaceholderSecret(ctrl) || ctrl.length < 32) {
+        throw new Error('FATAL: CONTROL_JWT_SECRET contains a placeholder or weak template value in production (must be >= 32 chars).')
+    }
+    if (isPlaceholderSecret(radio) || radio.length < 32) {
+        throw new Error('FATAL: RADIO_JWT_SECRET contains a placeholder or weak template value in production (must be >= 32 chars).')
+    }
+    if (timingSafeEqualStr(ctrl, radio)) {
         throw new Error('FATAL: CONTROL_JWT_SECRET and RADIO_JWT_SECRET must be distinct in production.')
     }
 }
@@ -95,15 +124,22 @@ function resolveScopedJwtSecret(primaryKey, fallbackKey, scopeName) {
     validateDistinctProductionDualSecrets()
     const primaryRaw = (process.env[primaryKey] || '').trim()
     const fallbackRaw = (process.env[fallbackKey] || '').trim()
+
+    if (process.env.NODE_ENV === 'production') {
+        if (!primaryRaw) {
+            throw new Error(`FATAL: ${primaryKey} must be independently configured in production (shared ${fallbackKey} fallback is disabled in production).`)
+        }
+        if (isPlaceholderSecret(primaryRaw) || primaryRaw.length < 32) {
+            throw new Error(`FATAL: ${primaryKey} must be set to a strong secret (>= 32 chars) in production.`)
+        }
+        return primaryRaw
+    }
+
     const raw = primaryRaw || fallbackRaw
-    const isWeak = !raw || raw.length < 16 || WEAK_KNOWN_SECRETS.has(raw)
+    const isWeak = !raw || raw.length < 16 || isPlaceholderSecret(raw)
 
     if (!isWeak) {
         return raw
-    }
-
-    if (process.env.NODE_ENV === 'production') {
-        throw new Error(`FATAL: ${primaryKey} (or ${fallbackKey}) must be set to a strong secret (>= 16 chars) in production.`)
     }
 
     if (!ephemeralDevSecrets[scopeName]) {
@@ -248,13 +284,41 @@ function parseExtraPermissions(raw) {
     }
 }
 
-export function createControlUser({ username, password, role, extraPermissions = [] }) {
+export function validateGrantAuthority(grantor, targetRole, extraPermissions = []) {
+    if (!grantor) return // internal / bootstrap initialization
+
+    const isGrantorOwner = grantor.role === ROLES.OWNER
+    if (targetRole === ROLES.OWNER && !isGrantorOwner) {
+        throw new Error('Only an Owner can assign the Owner role.')
+    }
+
+    const grantorPerms = new Set(grantor.permissions || getEffectivePermissions(grantor))
+
+    for (const perm of extraPermissions) {
+        if (!VALID_PERMISSIONS.has(perm)) {
+            throw new Error(`Unknown permission: "${perm}".`)
+        }
+        if (!isGrantorOwner) {
+            if (OWNER_ONLY_PERMISSIONS.has(perm)) {
+                throw new Error(`Permission "${perm}" is highly sensitive and can only be granted by an Owner.`)
+            }
+            if (!grantorPerms.has(perm)) {
+                throw new Error(`Cannot delegate permission "${perm}" which is not held by the grantor.`)
+            }
+        }
+    }
+}
+
+export function createControlUser({ username, password, role, extraPermissions = [], grantor = null }) {
     const cleanUser = String(username || '').trim()
     if (!/^[a-zA-Z0-9._-]{3,50}$/.test(cleanUser)) {
         throw new Error('Username must be 3-50 alphanumeric, dot, underscore, or dash characters.')
     }
     if (!VALID_ROLES.includes(role)) {
         throw new Error('Invalid role specified.')
+    }
+    if (grantor) {
+        validateGrantAuthority(grantor, role, extraPermissions)
     }
     const passwordHash = hashPassword(password)
     const id = crypto.randomUUID()
@@ -404,7 +468,7 @@ export function getControlUserById(id) {
     }
 }
 
-export function updateControlUser(id, patch = {}) {
+export function updateControlUser(id, patch = {}, grantor = null) {
     const existing = db.prepare('SELECT * FROM control_users WHERE id = ?').get(id)
     if (!existing) return null
 
@@ -413,9 +477,28 @@ export function updateControlUser(id, patch = {}) {
         throw new Error('Invalid role.')
     }
     const nextActive = patch.isActive !== undefined ? (patch.isActive ? 1 : 0) : existing.is_active
-    const nextExtra = patch.extraPermissions !== undefined
-        ? JSON.stringify(Array.isArray(patch.extraPermissions) ? patch.extraPermissions : [])
-        : existing.extra_permissions
+    const nextExtraArray = patch.extraPermissions !== undefined
+        ? (Array.isArray(patch.extraPermissions) ? patch.extraPermissions : [])
+        : parseExtraPermissions(existing.extra_permissions)
+
+    if (grantor) {
+        validateGrantAuthority(grantor, nextRole, nextExtraArray)
+    }
+
+    // Last-Owner protection: Prevent demoting or deactivating the last active owner
+    if (existing.role === ROLES.OWNER) {
+        const isDemoting = nextRole !== ROLES.OWNER
+        const isDeactivating = nextActive === 0
+        if (isDemoting || isDeactivating) {
+            const row = db.prepare('SELECT COUNT(*) as count FROM control_users WHERE role = ? AND is_active = 1').get(ROLES.OWNER)
+            const activeOwners = row?.count || 0
+            if (activeOwners <= 1) {
+                throw new Error('Cannot demote or deactivate the last remaining active Owner.')
+            }
+        }
+    }
+
+    const nextExtra = JSON.stringify(nextExtraArray)
     const nextHash = patch.password ? hashPassword(patch.password) : existing.password_hash
 
     db.prepare(`
@@ -424,7 +507,9 @@ export function updateControlUser(id, patch = {}) {
         WHERE id = ?
     `).run(nextRole, nextActive, nextExtra, nextHash, id)
 
-    if (!nextActive || nextRole !== existing.role) {
+    // Revoke sessions if role, active status, or extra permissions changed
+    const permissionsChanged = nextExtra !== existing.extra_permissions
+    if (!nextActive || nextRole !== existing.role || permissionsChanged) {
         db.prepare('UPDATE control_sessions SET revoked = 1 WHERE user_id = ?').run(id)
     }
 
