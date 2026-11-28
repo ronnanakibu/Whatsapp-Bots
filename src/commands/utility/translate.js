@@ -50,19 +50,37 @@ const LANG_NAMES = {
     'auto': '🔍 Auto-detect',
 }
 
-async function translateText(text, targetLang, sourceLang = 'auto') {
+export async function translateText(text, targetLang, sourceLang = 'auto') {
+    if (!text || typeof text !== 'string' || !text.trim()) {
+        throw new Error('Teks yang akan diterjemahkan tidak boleh kosong.')
+    }
+
+    const resolvedTarget = LANG_ALIASES[targetLang?.toLowerCase()?.trim()] || targetLang || 'id'
+    const resolvedSource = LANG_ALIASES[sourceLang?.toLowerCase()?.trim()] || sourceLang || 'auto'
+
     const url = 'https://translate.googleapis.com/translate_a/single'
     const res = await axios.get(url, {
+        params: {
+            client: 'gtx',
+            sl: resolvedSource,
+            tl: resolvedTarget,
+            dt: 't',
+            q: text
+        },
         headers: { 'User-Agent': 'Mozilla/5.0' },
         timeout: 10000
     })
 
     // Response structure: [ [ ["translated", "original", ...], ...], null, "detected_lang", ...]
     const data = res.data
-    const translated = data[0]?.map(chunk => chunk?.[0]).filter(Boolean).join('') ?? ''
-    const detectedLang = data[2] ?? sourceLang
+    if (!Array.isArray(data) || !Array.isArray(data[0])) {
+        throw new Error('Respon dari server translasi tidak valid.')
+    }
 
-    return { translated, detectedLang }
+    const translated = data[0]?.map(chunk => chunk?.[0]).filter(Boolean).join('') ?? ''
+    const detectedLang = data[2] ?? resolvedSource
+
+    return { translated, detectedLang, targetLang: resolvedTarget }
 }
 
 export default {

@@ -55,7 +55,15 @@ export const PRIVILEGE_LEVELS = Object.freeze({
     USER: 'user'
 });
 
+/**
+ * Orchestrator operational status indicator.
+ * Designated as experimental per Phase 5 architectural audit; not an active production gateway.
+ */
+export const ORCHESTRATOR_STATUS = 'experimental'
+
 export class RuntimeOrchestrator extends EventEmitter {
+    static status = 'experimental'
+    static isExperimental = true
     constructor(options = {}) {
         super();
         this.budget = options.budgetManager || budgetManager;

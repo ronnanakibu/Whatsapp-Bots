@@ -143,18 +143,11 @@ Daftar Perintah (Skills) yang Tersedia:
 15. 'kick': Mengeluarkan anggota dari grup. Argumen: [@user atau nomor WhatsApp].
 16. 'kickme': Mengeluarkan diri sendiri dari grup WhatsApp. Argumen: tidak ada.
 17. 'mute' / 'unmute': Mengatur izin chat grup (hanya admin / semua anggota). Argumen: tidak ada.
-18. 'cook' (alias: 'racik', 'dynamicskill'): Meracik fitur baru atau mengeksekusi logika kustom JavaScript on-the-fly dengan Chef engine bot. Argumen: [instruksi fitur]. Contoh: ["cek status koneksi"].
+18. 'cook' (alias: 'racik', 'dynamicskill'): Menampilkan proposal template fitur baru (alur review aman non-eksekusi). Argumen: [instruksi fitur].
 
-- ATURAN SANGAT KRITIS UNTUK PERINTAH/FITUR YANG BELUM TERSEDIA (AUTONOMOUS AUTO-COOK):
-  * Jika pengguna meminta aksi, tindakan, atau fitur apapun yang BELUM ADA dalam daftar perintah di atas (misalnya: aksi grup kustom, manipulasi pesan, scraping data, atau logika bot apapun):
-  * JANGAN PERNAH MENOLAK, JANGAN PERNAH meminta maaf ("Maaf saat ini RonnBot belum memiliki perintah..."), dan JANGAN PERNAH meminta persetujuan/konfirmasi atau menawarkan ("Kalau mau saya bisa bantu cook...").
-  * KAMU HARUS LANGSUNG MENGEKSEKUSI TOOL 'cook' SECARA OTOMATIS SAAT ITU JUGA TANPA PERSETUJUAN DARI SIAPAPUN!
-  * Format respon:
-    {
-      "executeCommand": true,
-      "command": "cook",
-      "args": ["<instruksi lengkap pengguna>"]
-    }
+- ATURAN PERINTAH:
+  * Pilih HANYA perintah yang terdaftar di atas jika relevan.
+  * Jika permintaan pengguna tidak dapat dipenuhi oleh alat yang tersedia, jawab secara percakapan ramah dan wajar tanpa membuat perintah baru atau memanggil script eksekusi.
 
 ATURAN JSON:
 - Balas HANYA dengan JSON murni di atas tanpa kata pengantar atau penutup. Jangan letakkan penjelasan apa pun.`

@@ -1653,7 +1653,7 @@ export function startRadioServer(options = {}) {
                             <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:6px;color:#38bdf8;">${currentPairingCode}</span>
                         </div>
                         <p style="color:#64748b;font-size:12px;margin:0;">Kode ini berlaku ~60 detik. Refresh jika expired.</p>
-                        <p style="margin-top:20px;margin-bottom:0;"><a href="/api/system/app.log" style="color:#38bdf8;text-decoration:none;font-size:13px;">📄 Lihat Server Logs</a></p>
+                        <p style="margin-top:20px;margin-bottom:0;"><a href="/control" style="color:#38bdf8;text-decoration:none;font-size:13px;">⚙️ Control Center</a></p>
                     </div>
                 </body>
                 </html>
@@ -1678,7 +1678,7 @@ export function startRadioServer(options = {}) {
                             <p style="color:#94a3b8;font-size:14px;margin:0 0 20px 0;">Buka WhatsApp &gt; Perangkat Tertaut &gt; Tautkan Perangkat</p>
                             <img src="${dataUrl}" style="background:white;padding:16px;border-radius:12px;width:240px;height:240px;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:block;margin:0 auto;"/>
                             <p style="color:#64748b;font-size:12px;margin-top:20px;margin-bottom:0;">Refresh halaman jika QR code kadaluarsa.</p>
-                            <p style="margin-top:16px;margin-bottom:0;"><a href="/api/system/app.log" style="color:#38bdf8;text-decoration:none;font-size:13px;">📄 Lihat Server Logs</a></p>
+                            <p style="margin-top:16px;margin-bottom:0;"><a href="/control" style="color:#38bdf8;text-decoration:none;font-size:13px;">⚙️ Control Center</a></p>
                         </div>
                     </body>
                     </html>
@@ -1701,7 +1701,7 @@ export function startRadioServer(options = {}) {
                     <div style="font-size:36px;margin-bottom:12px;">${currentBotStatus === 'open' ? '✅' : '⏳'}</div>
                     <h2 style="margin:0 0 8px 0;font-size:20px;">${currentBotStatus === 'open' ? 'Bot WhatsApp Terhubung!' : 'Menunggu Sesi WhatsApp...'}</h2>
                     <p style="color:#94a3b8;font-size:14px;margin:0;">Status saat ini: <strong>${currentBotStatus}</strong></p>
-                    <p style="margin-top:16px;"><a href="/api/system/app.log" style="color:#38bdf8;text-decoration:none;">📄 Lihat Live Log Server</a></p>
+                    <p style="margin-top:16px;"><a href="/control" style="color:#38bdf8;text-decoration:none;">⚙️ Control Center</a></p>
                 </div>
             </body>
             </html>

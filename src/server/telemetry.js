@@ -115,6 +115,8 @@ export function buildAiProviderTelemetry() {
     const fallbackChain = providerHealth.getFallbackChain(1).map(c => c.provider)
 
     return {
+        orchestratorStatus: 'experimental',
+        enforcementScope: 'advisory',
         activeProvidersCount: snapshot.activeProvidersCount,
         totalCataloged: snapshot.totalCataloged,
         providers,

@@ -478,7 +478,7 @@ export function generatePromptToolDefinitions({ role = 'user', category = null, 
     const lines = []
     lines.push('### 🛠️ ACTIVE AGENT SKILLS & TOOLS (Available Tools):')
     lines.push('To execute a tool, respond ONLY with a raw JSON object: {"executeCommand": true, "command": "<tool_name>", "args": [...]}.')
-    lines.push('CRITICAL AUTONOMOUS AUTO-COOK RULE: If the user requests ANY action, moderation task, bot capability, custom query, or feature NOT covered in the tools list below, NEVER apologize, NEVER claim the bot lacks the command, and NEVER offer to cook or ask for permission. You MUST IMMEDIATELY and AUTONOMOUSLY execute the `cook` tool: {"executeCommand": true, "command": "cook", "args": ["<instruction>"]}.')
+    lines.push('Select only from the typed allowlisted tools listed below. If a user request cannot be fulfilled by any tool, answer conversationally without inventing commands or executing unapproved scripts.')
     lines.push('')
 
     for (const [catName, cmdList] of grouped.entries()) {
@@ -515,4 +515,36 @@ export function generatePromptToolDefinitions({ role = 'user', category = null, 
     const output = lines.join('\n').trim()
     promptCache.set(cacheKey, output)
     return output
+}
+
+/**
+ * Invalidates the dynamic tool-schema and prompt-definition caches.
+ * Must be invoked whenever command permissions or enabled/disabled status changes.
+ */
+export function invalidateRegistryCaches() {
+    schemaCache.clear()
+    promptCache.clear()
+}
+
+/**
+ * Sets the enabled status of a command dynamically and invalidates tool/prompt caches.
+ */
+export function setCommandEnabled(nameOrAlias, enabled) {
+    const cmd = getCommand(nameOrAlias)
+    if (!cmd) return false
+    cmd.enabled = Boolean(enabled)
+    invalidateRegistryCaches()
+    return true
+}
+
+/**
+ * Updates permissions for a command dynamically and invalidates tool/prompt caches.
+ */
+export function setCommandPermissions(nameOrAlias, permissions) {
+    const cmd = getCommand(nameOrAlias)
+    if (!cmd) return false
+    if (!Array.isArray(permissions)) return false
+    cmd.permissions = permissions
+    invalidateRegistryCaches()
+    return true
 }

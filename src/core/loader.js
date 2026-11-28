@@ -11,7 +11,10 @@ import {
     CANONICAL_CATEGORIES,
     normalizeCategory,
     isAllowedForRole,
-    compileParameters
+    compileParameters,
+    invalidateRegistryCaches,
+    setCommandEnabled,
+    setCommandPermissions
 } from './registry.js'
 
 export {
@@ -25,7 +28,10 @@ export {
     CANONICAL_CATEGORIES,
     normalizeCategory,
     isAllowedForRole,
-    compileParameters
+    compileParameters,
+    invalidateRegistryCaches,
+    setCommandEnabled,
+    setCommandPermissions
 }
 
 /**

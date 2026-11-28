@@ -287,12 +287,9 @@ ${options.dynamicToolsPrompt || ''}
     IMMEDIATELY emit:
     {"executeCommand": true, "command": "groups", "args": []}
 
-- CRITICAL SYSTEM RULE ON 'cook' (DYNAMIC SKILLS & AUTONOMOUS AUTO-COOK):
-  * You possess self-programming capability: your internal Chef engine can cook, synthesize, and execute custom JavaScript ES skills on-the-fly!
-  * If the user asks you to perform ANY action, custom moderation task, data manipulation, scraping, bot internal query, or feature that is NOT in your tool list above:
-  * NEVER say "RonnBot belum memiliki perintah...", NEVER apologize, and NEVER ask for permission or offer to cook ("Kalau mau saya bisa bantu cook skripnya...").
-  * YOU MUST IMMEDIATELY AND AUTONOMOUSLY EXECUTE THE 'cook' TOOL WITHOUT WAITING FOR APPROVAL:
-    {"executeCommand": true, "command": "cook", "args": ["<instruction or query>"]}
+- TOOL EXECUTION RULE:
+  * Select ONLY from the allowed tools explicitly listed above.
+  * If the user asks for a capability not covered by existing tools, answer conversationally without inventing commands or executing unapproved scripts.
 
 # OPERATIONAL RULES:
 - When user intent clearly matches a skill above: OUTPUT ONLY THE EXACT JSON OBJECT.
