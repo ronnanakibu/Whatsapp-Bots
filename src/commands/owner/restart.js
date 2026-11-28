@@ -28,12 +28,24 @@ export default {
             return
         }
 
-        if (args.length > 0) {
-            return reply('⚠️ Perintah `.restart` tidak menerima argumen tambahan, cuy.')
+        const shouldPull = args.includes('--pull') || args.includes('-p') || args.includes('update')
+        if (args.length > 0 && !shouldPull) {
+            return reply('⚠️ Gunakan `.restart` untuk restart biasa atau `.restart --pull` untuk tarik kode terbaru dari GitHub lalu restart.')
         }
 
         await react('🔄')
-        await reply('🔄 *Pterodactyl Reboot:* Mengirim sinyal restart ke panel... Tunggu sebentar ya, cuy.')
+
+        if (shouldPull) {
+            try {
+                const { execSync } = await import('child_process')
+                const pullOutput = execSync('git pull origin main', { encoding: 'utf8', timeout: 30000 })
+                await reply(`📦 *Git Pull Sukses:*\n\`\`\`\n${pullOutput.trim()}\n\`\`\``)
+            } catch (gitErr) {
+                await reply(`⚠️ *Git Pull Gagal:* ${gitErr.message}\nTetap melanjutkan proses restart...`)
+            }
+        }
+
+        await reply('🔄 *Rebooting Bot:* Mengirim sinyal restart ke PM2/Server... Tunggu sebentar ya, cuy.')
 
         // Simpan sesi room chat biar pas bot up, dia bisa ngirim pesan broadcast sukses
         const restartSession = { chatId, active: true, time: Date.now() }
