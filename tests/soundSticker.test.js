@@ -55,3 +55,39 @@ test('SoundSticker: createStreamingSidecar computes correct chunked HMAC hashes'
     assert.ok(Buffer.isBuffer(sidecar), 'Sidecar should be a Buffer')
     assert.equal(sidecar.length, 10, 'Single chunk <= 64KB should have a 10-byte HMAC')
 })
+
+test('SoundSticker: parseSoundStickerFromBytes and installSoundStickerDecoder decodes field 134 wrapper', async () => {
+    const {
+        parseSoundStickerFromBytes,
+        installSoundStickerDecoder,
+        extractSoundSticker
+    } = await import('../src/services/soundSticker.js')
+
+    installSoundStickerDecoder()
+
+    const dummySticker = { url: 'https://example.com/stk.webp', mimetype: 'image/webp', isAnimated: true }
+    const dummyAudio = { url: 'https://example.com/aud.ogg', mimetype: 'audio/ogg; codecs=opus', seconds: 4 }
+    const wrapper = buildSoundStickerWrapper(dummySticker, dummyAudio)
+
+    const markedMsg = { [SOUND_STICKER_BYTES]: wrapper }
+    const encoded = proto.Message.encode(markedMsg).finish()
+
+    // 1. Direct byte parsing
+    const parsed = parseSoundStickerFromBytes(encoded)
+    assert.ok(parsed, 'parseSoundStickerFromBytes should unpack payload')
+    assert.equal(parsed.stickerMessage.url, 'https://example.com/stk.webp')
+    assert.equal(parsed.audioMessage.url, 'https://example.com/aud.ogg')
+    assert.equal(parsed.isSoundSticker, true)
+
+    // 2. Patched proto.Message.decode
+    const decoded = proto.Message.decode(encoded)
+    assert.ok(decoded.stickerMessage, 'Patched decode should populate stickerMessage')
+    assert.ok(decoded.stickerMessage.audioMessage, 'Patched decode should populate audioMessage')
+    assert.equal(decoded.stickerMessage.audioMessage.url, 'https://example.com/aud.ogg')
+
+    // 3. extractSoundSticker helper
+    const extracted = extractSoundSticker(decoded)
+    assert.ok(extracted, 'extractSoundSticker should find sound sticker')
+    assert.equal(extracted.stickerMessage.url, 'https://example.com/stk.webp')
+    assert.equal(extracted.audioMessage.url, 'https://example.com/aud.ogg')
+})

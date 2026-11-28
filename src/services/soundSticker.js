@@ -65,6 +65,180 @@ export function installSoundStickerEncoder() {
     encoderInstalled = true
 }
 
+export function readVarint(buf, offset = 0) {
+    let res = 0, shift = 0, pos = offset
+    while (pos < buf.length) {
+        const b = buf[pos++]
+        res |= (b & 0x7f) << shift
+        if (!(b & 0x80)) break
+        shift += 7
+    }
+    return { val: res, bytesRead: pos - offset }
+}
+
+export function parseSoundStickerFromBytes(buffer) {
+    if (!buffer || !Buffer.isBuffer(buffer)) return null
+    let pos = 0
+    let stickerMessage = null
+    let audioMessage = null
+
+    try {
+        while (pos < buffer.length) {
+            const tagInfo = readVarint(buffer, pos)
+            pos += tagInfo.bytesRead
+            const wireType = tagInfo.val & 7
+            const fieldNum = tagInfo.val >>> 3
+
+            if (wireType === 2) {
+                const lenInfo = readVarint(buffer, pos)
+                pos += lenInfo.bytesRead
+                const payload = buffer.subarray(pos, pos + lenInfo.val)
+                pos += lenInfo.val
+
+                if (fieldNum === FIELD_SOUND_WRAPPER) {
+                    let fPos = 0
+                    while (fPos < payload.length) {
+                        const fTag = readVarint(payload, fPos)
+                        fPos += fTag.bytesRead
+                        const fWire = fTag.val & 7
+                        const fNum = fTag.val >>> 3
+                        if (fWire === 2) {
+                            const fLen = readVarint(payload, fPos)
+                            fPos += fLen.bytesRead
+                            const fPayload = payload.subarray(fPos, fPos + fLen.val)
+                            fPos += fLen.val
+                            if (fNum === FIELD_FUTURE_PROOF_MESSAGE) {
+                                let sPos = 0
+                                while (sPos < fPayload.length) {
+                                    const sTag = readVarint(fPayload, sPos)
+                                    sPos += sTag.bytesRead
+                                    const sWire = sTag.val & 7
+                                    const sNum = sTag.val >>> 3
+                                    if (sWire === 2) {
+                                        const sLen = readVarint(fPayload, sPos)
+                                        sPos += sLen.bytesRead
+                                        const sPayload = fPayload.subarray(sPos, sPos + sLen.val)
+                                        sPos += sLen.val
+                                        if (sNum === FIELD_STICKER) {
+                                            stickerMessage = proto.Message.StickerMessage.decode(sPayload)
+                                            let aPos = 0
+                                            while (aPos < sPayload.length) {
+                                                const aTag = readVarint(sPayload, aPos)
+                                                aPos += aTag.bytesRead
+                                                const aWire = aTag.val & 7
+                                                const aNum = aTag.val >>> 3
+                                                if (aWire === 2) {
+                                                    const aLen = readVarint(sPayload, aPos)
+                                                    aPos += aLen.bytesRead
+                                                    const aPayload = sPayload.subarray(aPos, aPos + aLen.val)
+                                                    aPos += aLen.val
+                                                    if (aNum === FIELD_STICKER_AUDIO) {
+                                                        audioMessage = proto.Message.AudioMessage.decode(aPayload)
+                                                    }
+                                                } else if (aWire === 0) {
+                                                    const v = readVarint(sPayload, aPos)
+                                                    aPos += v.bytesRead
+                                                } else if (aWire === 1) {
+                                                    aPos += 8
+                                                } else if (aWire === 5) {
+                                                    aPos += 4
+                                                }
+                                            }
+                                        }
+                                    } else if (sWire === 0) {
+                                        const v = readVarint(fPayload, sPos)
+                                        sPos += v.bytesRead
+                                    } else if (sWire === 1) {
+                                        sPos += 8
+                                    } else if (sWire === 5) {
+                                        sPos += 4
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (wireType === 0) {
+                const v = readVarint(buffer, pos)
+                pos += v.bytesRead
+            } else if (wireType === 1) {
+                pos += 8
+            } else if (wireType === 5) {
+                pos += 4
+            }
+        }
+    } catch (_) {}
+
+    if (stickerMessage && audioMessage) {
+        stickerMessage.audioMessage = audioMessage
+        stickerMessage.isSoundSticker = true
+        return { stickerMessage, audioMessage, isSoundSticker: true }
+    }
+    return null
+}
+
+let decoderInstalled = false
+
+export function installSoundStickerDecoder() {
+    if (decoderInstalled) return
+    const originalDecode = proto.Message.decode
+    proto.Message.decode = function decode(reader, length, expected) {
+        const rawBuf = Buffer.isBuffer(reader) ? reader : (reader?.buf ? Buffer.from(reader.buf) : null)
+        const msg = originalDecode.call(proto.Message, reader, length, expected)
+        if (rawBuf && msg) {
+            const soundSticker = parseSoundStickerFromBytes(rawBuf)
+            if (soundSticker) {
+                msg.stickerMessage = soundSticker.stickerMessage
+                msg.stickerMessage.audioMessage = soundSticker.audioMessage
+                msg.stickerMessage.isSoundSticker = true
+            }
+        }
+        return msg
+    }
+    decoderInstalled = true
+}
+
+export function extractSoundSticker(msgOrContext) {
+    if (!msgOrContext || typeof msgOrContext !== 'object') return null
+
+    // 1. Direct sticker with audioMessage
+    if (msgOrContext.stickerMessage?.audioMessage) {
+        return {
+            stickerMessage: msgOrContext.stickerMessage,
+            audioMessage: msgOrContext.stickerMessage.audioMessage,
+            isSoundSticker: true
+        }
+    }
+
+    if (msgOrContext.stickerMessage && msgOrContext.audioMessage) {
+        return {
+            stickerMessage: msgOrContext.stickerMessage,
+            audioMessage: msgOrContext.audioMessage,
+            isSoundSticker: true
+        }
+    }
+
+    // 2. FutureProof wrapper
+    if (msgOrContext.futureProofMessage?.message) {
+        return extractSoundSticker(msgOrContext.futureProofMessage.message)
+    }
+
+    // 3. SOUND_STICKER_BYTES symbol
+    const wrapper = msgOrContext[SOUND_STICKER_BYTES]
+    if (wrapper && Buffer.isBuffer(wrapper)) {
+        const parsed = parseSoundStickerFromBytes(wrapper)
+        if (parsed) return parsed
+    }
+
+    // 4. Raw buffer if present
+    if (msgOrContext.raw && Buffer.isBuffer(msgOrContext.raw)) {
+        const parsed = parseSoundStickerFromBytes(msgOrContext.raw)
+        if (parsed) return parsed
+    }
+
+    return null
+}
+
 export async function createStreamingSidecar(audio, mediaKey, fileEncSha256) {
     const { iv, cipherKey, macKey } = await getMediaKeys(Buffer.from(mediaKey), 'audio')
     if (!iv || !cipherKey || !macKey) throw new Error('Gagal menurunkan media key audio WhatsApp.')
@@ -87,6 +261,11 @@ export async function createStreamingSidecar(audio, mediaKey, fileEncSha256) {
 class SoundStickerService {
     constructor() {
         installSoundStickerEncoder()
+        installSoundStickerDecoder()
+    }
+
+    extractSoundSticker(msgOrContext) {
+        return extractSoundSticker(msgOrContext)
     }
 
     /**

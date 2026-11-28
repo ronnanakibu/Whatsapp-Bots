@@ -2,6 +2,7 @@ import { downloadContentFromMessage } from '@whiskeysockets/baileys'
 import { unwrapMessage, getCleanQuoted } from '../../utils/message.js'
 import { logger } from '../../utils/logger.js'
 import { getFfmpegPath } from '../../services/media.js'
+import soundStickerService, { extractSoundSticker } from '../../services/soundSticker.js'
 import sharp from 'sharp'
 import { exec } from 'child_process'
 import util from 'util'
@@ -68,17 +69,21 @@ export default {
         // Cari quoted message
         const quotedMsg = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage
         const unwrappedQuoted = unwrapMessage(quotedMsg)
-        if (!unwrappedQuoted) {
+        if (!unwrappedQuoted && !quotedMsg) {
             return reply('⚠️ Balas stikernya dong pakai perintah .bongkar')
         }
 
-        const finalQuotedType = Object.keys(unwrappedQuoted)[0]
-        if (finalQuotedType !== 'stickerMessage') {
+        // Deteksi stiker bersuara (WhatsApp Sound Sticker)
+        const soundSticker = extractSoundSticker(unwrappedQuoted) || extractSoundSticker(quotedMsg)
+
+        const finalQuotedType = unwrappedQuoted ? Object.keys(unwrappedQuoted)[0] : null
+        if (!soundSticker && finalQuotedType !== 'stickerMessage') {
             return reply('⚠️ Yang dibalas harus berupa stiker, bukan teks atau gambar/video langsung.')
         }
 
         await react('⏳')
-        const stickerMsg = unwrappedQuoted.stickerMessage
+        const stickerMsg = soundSticker ? soundSticker.stickerMessage : unwrappedQuoted.stickerMessage
+        const audioMsg = soundSticker?.audioMessage || stickerMsg?.audioMessage || null
 
         try {
             // Download sticker buffer
@@ -94,6 +99,75 @@ export default {
 
             // Robust multi-layer animation detection
             const isAnimated = await detectWebPAnimated(buffer, stickerMsg.isAnimated)
+
+            const tmpDir = path.resolve('./storage/media/tmp')
+            if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+            const ffmpegBin = getFfmpegPath()
+
+            // ── JIKA STIKER BERSUARA (SOUND STICKER) → HASILKAN MP4 DENGAN AUDIO ──
+            if (audioMsg) {
+                logger.info('[Bongkar] Stiker bersuara terdeteksi, mengunduh audio dan mengonversi ke MP4...')
+                const audioStream = await downloadContentFromMessage(audioMsg, 'audio')
+                let audioBuffer = Buffer.from([])
+                for await (const chunk of audioStream) {
+                    audioBuffer = Buffer.concat([audioBuffer, chunk])
+                }
+
+                if (audioBuffer && audioBuffer.length > 0) {
+                    const id = crypto.randomBytes(4).toString('hex')
+                    const inputWebpPath = path.join(tmpDir, `${id}_snd_in.webp`)
+                    const inputAudioPath = path.join(tmpDir, `${id}_snd_in.ogg`)
+                    const fallbackGifPath = path.join(tmpDir, `${id}_snd_fallback.gif`)
+                    const outputPath = path.join(tmpDir, `${id}_snd_out.mp4`)
+
+                    fs.writeFileSync(inputWebpPath, buffer)
+                    fs.writeFileSync(inputAudioPath, audioBuffer)
+
+                    try {
+                        if (isAnimated) {
+                            try {
+                                await execPromise(
+                                    `${ffmpegBin} -y -stream_loop -1 -i "${inputWebpPath}" -i "${inputAudioPath}" -map 0:v -map 1:a -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -pix_fmt yuv420p -preset fast -c:a aac -b:a 128k -shortest -movflags +faststart "${outputPath}"`
+                                )
+                            } catch (directAnimErr) {
+                                logger.warn('[Bongkar] Direct animated WebP merge failed, attempting GIF bridge fallback:', directAnimErr.message)
+                                const gifBuffer = await sharp(buffer, { animated: true }).gif().toBuffer()
+                                fs.writeFileSync(fallbackGifPath, gifBuffer)
+                                await execPromise(
+                                    `${ffmpegBin} -y -stream_loop -1 -i "${fallbackGifPath}" -i "${inputAudioPath}" -map 0:v -map 1:a -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -pix_fmt yuv420p -preset fast -c:a aac -b:a 128k -shortest -movflags +faststart "${outputPath}"`
+                                )
+                            }
+                        } else {
+                            await execPromise(
+                                `${ffmpegBin} -y -loop 1 -i "${inputWebpPath}" -i "${inputAudioPath}" -map 0:v -map 1:a -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -tune stillimage -pix_fmt yuv420p -preset fast -c:a aac -b:a 128k -shortest -movflags +faststart "${outputPath}"`
+                            )
+                        }
+
+                        const mp4Buffer = fs.readFileSync(outputPath)
+                        await sock.sendMessage(from, {
+                            video: mp4Buffer,
+                            mimetype: 'video/mp4',
+                            caption: '🔊 Stiker bersuara berhasil dibongkar menjadi video MP4!'
+                        }, { quoted: getCleanQuoted(msg) })
+
+                        if (process.env.LOG_CHANNEL_JID) {
+                            const { logToChannel } = await import('../../utils/channelLogger.js')
+                            await logToChannel(sock, {
+                                video: mp4Buffer,
+                                caption: `[LOG BONGKAR]\nDibongkar oleh: ${ctx.pushName} (@${ctx.sender.split('@')[0]}) (Sound Sticker)`
+                            })
+                        }
+
+                        await react('🔊')
+                        return
+                    } finally {
+                        if (fs.existsSync(inputWebpPath)) fs.unlinkSync(inputWebpPath)
+                        if (fs.existsSync(inputAudioPath)) fs.unlinkSync(inputAudioPath)
+                        if (fs.existsSync(fallbackGifPath)) fs.unlinkSync(fallbackGifPath)
+                        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+                    }
+                }
+            }
 
             if (isAnimated) {
                 // Animated sticker → Direct WebP to MP4 via FFmpeg

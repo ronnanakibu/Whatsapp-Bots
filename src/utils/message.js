@@ -49,7 +49,8 @@ export function unwrapMessage(m) {
         'botInvokeMessage',
         'deviceSentMessage',
         'associatedChildMessage',
-        'groupMentionedMessage'
+        'groupMentionedMessage',
+        'futureProofMessage'
     ]
 
     const ignoredKeys = new Set([
