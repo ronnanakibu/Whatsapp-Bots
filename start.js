@@ -67,12 +67,19 @@ try {
             }
         }
     }
+    // Log retention & bounded rotation (preserves audit history across reboots)
     const logFiles = ['./storage/logs/console.log', './storage/logs/app.log']
+    const MAX_LOG_SIZE = 10 * 1024 * 1024 // 10 MB
     for (const logPath of logFiles) {
         const lp = path.resolve(logPath)
         if (fs.existsSync(lp)) {
             try {
-                fs.writeFileSync(lp, '')
+                const stat = fs.statSync(lp)
+                if (stat.size > MAX_LOG_SIZE) {
+                    const backupPath = `${lp}.1`
+                    try { if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath) } catch {}
+                    fs.renameSync(lp, backupPath)
+                }
             } catch {}
         }
     }

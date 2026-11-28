@@ -7,7 +7,22 @@ let commandsCount = 0
 let downloadsCount = 0
 let waStatus = 'offline' // 'online' | 'offline' | 'connecting'
 let peakListeners = 0
+let streamsStartedTotal = 0
+let lastMidnightDay = new Date().getDate()
 const commandUsages = {}
+
+function checkMidnightRollover() {
+    const today = new Date().getDate()
+    if (today !== lastMidnightDay) {
+        lastMidnightDay = today
+        commandsCount = 0
+        downloadsCount = 0
+        peakListeners = radioService.listenerCount
+        for (const k of Object.keys(commandUsages)) {
+            delete commandUsages[k]
+        }
+    }
+}
 
 // CPU tracking variables
 let lastCpuInfo = getCpuInfo()
@@ -67,6 +82,26 @@ class MetricsService {
             }
         }, 3000)
         timer.unref?.()
+
+        // Track streams started cumulatively
+        if (typeof radioService.on === 'function') {
+            radioService.on('track:start', () => {
+                streamsStartedTotal++
+            })
+        }
+    }
+
+    incrementStreamsStarted() {
+        streamsStartedTotal++
+    }
+
+    resetDailyCounters() {
+        commandsCount = 0
+        downloadsCount = 0
+        peakListeners = radioService.listenerCount
+        for (const k of Object.keys(commandUsages)) {
+            delete commandUsages[k]
+        }
     }
 
     incrementCommands(commandName) {
@@ -121,6 +156,7 @@ class MetricsService {
     }
 
     getAnalyticsData() {
+        checkMidnightRollover()
         const topCommands = Object.entries(commandUsages)
             .map(([name, count]) => ({ name, count }))
             .sort((a, b) => b.count - a.count)
@@ -129,7 +165,8 @@ class MetricsService {
         return {
             commandsToday: commandsCount,
             downloadsToday: downloadsCount,
-            streamsStarted: radioService.isPlaying ? 1 : 0, 
+            streamsStarted: streamsStartedTotal, 
+            isStreaming: radioService.isPlaying,
             peakListeners: peakListeners,
             activeUsers: radioService.listenerCount,
             topCommands,

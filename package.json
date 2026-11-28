@@ -1,6 +1,6 @@
 {
     "name": "wabot2.0",
-    "version": "6.4.3",
+    "version": "6.5.0",
     "description": "WhatsApp Bot Modular Automation based on Baileys.",
     "main": "start.js",
     "type": "module",
@@ -11,6 +11,8 @@
         "start:pm2": "pm2 start ecosystem.config.cjs",
         "lint": "eslint src/",
         "test": "node tests/e2e/runAll.js",
+        "test:security": "node tests/security/phase1P0Containment.test.js && node tests/security/phase2Security.test.js && node tests/security/phase3Data.test.js && node tests/security/phase4Lifecycle.test.js && node tests/security/phase5AiCommands.test.js",
+        "test:all": "npm run test:security && npm test",
         "check:syntax": "node scripts/check-syntax.js",
         "self-check": "node scripts/self-check.js",
         "self-check:local": "node scripts/self-check.js --mode=local",

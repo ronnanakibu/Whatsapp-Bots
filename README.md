@@ -3,9 +3,7 @@ title: WABOT 2.0
 emoji: 🤖
 colorFrom: blue
 colorTo: purple
-sdk: gradio
-sdk_version: 4.44.1
-app_file: app.py
+sdk: docker
 pinned: false
 ---
 
