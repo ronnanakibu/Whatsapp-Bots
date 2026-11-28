@@ -1,6 +1,19 @@
-# ── Runtime Container ──
-# Use standard node:20 which has build-essential & python3 pre-installed
-FROM node:20
+# ── Stage 1: Frontend Dashboard Builder ──
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /build/dashboard
+
+COPY dashboard/package.json dashboard/package-lock.json ./
+RUN npm ci
+
+COPY dashboard/index.html dashboard/vite.config.ts dashboard/tsconfig.json ./
+COPY dashboard/src ./src
+COPY dashboard/public ./public
+
+RUN npm run build
+
+# ── Stage 2: Production Runtime Container ──
+FROM node:20 AS runtime
 
 # OS dependencies (ffmpeg, curl, tar, fontconfig, python3 for media & yt-dlp, noto color emoji)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -11,22 +24,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-color-emoji \
     python3 \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install bot dependencies (copy lockfile for deterministic installs)
+# Install backend production dependencies deterministically and generate Prisma client
 COPY package.json package-lock.json ./
 COPY prisma ./prisma/
-RUN (npm ci --omit=dev || npm install --omit=dev --legacy-peer-deps) && npx prisma generate
+RUN npm ci --omit=dev && npx prisma generate
 
-# Copy bot source code
+# Copy backend source and built Vite dashboard output
+COPY start.js .env.example ./
 COPY src ./src/
 COPY changelogs ./changelogs/
-COPY start.js ./
-COPY .env.example ./
+COPY --from=frontend-builder /build/dashboard/out ./dashboard/out/
 
-# Create storage directory structure, pre-download essential fonts & yt-dlp, and assign ownership to node user (UID 1000)
+# Create runtime storage layout, pre-install fonts & yt-dlp, assign non-root node user (UID 1000)
 RUN mkdir -p storage/sessions storage/database storage/logs \
     storage/media storage/media/tmp storage/bin src/assets/fonts \
     storage/stickers && \
@@ -40,18 +54,18 @@ RUN mkdir -p storage/sessions storage/database storage/logs \
 
 USER node
 
-# Environment defaults
+# Canonical runtime defaults
 ENV TZ=Asia/Jakarta
 ENV NODE_ENV=production
-ENV PORT=7860
+ENV PORT=25637
+ENV RADIO_LISTEN_HOST=0.0.0.0
 ENV HOME=/home/node
 ENV NODE_OPTIONS="--max-old-space-size=384 --expose-gc"
 ENV PATH=/home/node/.local/bin:/app/storage/bin:$PATH
 
-EXPOSE 7860
+EXPOSE 25637
 
-# Health check using the /api/system/ping endpoint on port 7860
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD curl -f http://localhost:7860/api/system/ping || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD sh -c 'curl -fsS "http://localhost:${PORT:-25637}/healthz" || exit 1'
 
 CMD ["node", "start.js"]
