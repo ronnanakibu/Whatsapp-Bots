@@ -19,6 +19,7 @@ import makeWASocket, {
     makeCacheableSignalKeyStore,
     DisconnectReason,
     fetchLatestBaileysVersion,
+    fetchLatestWaWebVersion,
     Browsers
 } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
@@ -36,11 +37,14 @@ import { initWeatherScheduler } from '../commands/utility/cuaca.js'
 import { initRecapScheduler } from '../commands/radio/recap.js'
 import { initStorySyncScheduler } from '../services/storySync.js'
 import { initScheduleSync } from '../services/scheduleSync.js'
-import { startRadioServer, updateBotStatus } from '../server/radio.js'
+import { startRadioServer, stopRadioServer, updateBotStatus } from '../server/radio.js'
+import { markSessionCredsUpdated } from '../server/whatsappOps.js'
 import { metricsService } from '../services/metrics.js'
 import { mediaCache } from '../services/mediaCache.js'
+import { inboxService } from '../services/inbox.js'
+import { assertSingleProcessTopology, acquireRuntimeLease, releaseRuntimeLease } from '../services/runtimeSingleton.js'
 import { sessionSync } from '../services/sessionSync.js'
-import { dbService } from '../services/db.js'
+import { db as sqliteDb, dbService } from '../services/db.js'
 import { isOwner } from '../utils/permissions.js'
 
 const pinoLogger = logger.child({ module: 'baileys' })
@@ -94,8 +98,23 @@ async function startBot() {
     botLogger.section('BOT STARTUP')
     botLogger.system('Initializing...')
 
-    // 0. Instant Port Binding & Command Loading (only on initial bootstrap)
+    // 0. Enforce single-writer topology, then bind port & load commands (only on initial bootstrap)
     if (!isInitialized) {
+        try {
+            assertSingleProcessTopology()
+            const lease = acquireRuntimeLease({ db: sqliteDb })
+            if (!lease.acquired) {
+                botLogger.fatal('bot', `Refusing duplicate active instance (${lease.code}; holder pid=${lease.holder?.pid ?? 'unknown'} host=${lease.holder?.hostname ?? 'unknown'}).`)
+                process.exit(1)
+            }
+            if (lease.recoveredFromPid) {
+                botLogger.warn('bot', `Recovered stale singleton lease from exited local PID ${lease.recoveredFromPid}.`)
+            }
+        } catch (err) {
+            botLogger.fatal('bot', err.message)
+            process.exit(1)
+        }
+
         try {
             startRadioServer()
             botLogger.system('Web & Radio server started (Instant Port Binding) ✓')
@@ -119,14 +138,24 @@ async function startBot() {
         isInitialized = true
     }
 
-    // 2. Fetch WA version
-    let version = [2, 3000, 1017531287]
+    // 2. Fetch WA live version dynamically with fallbacks
+    let version = [2, 3000, 1056453267]
     try {
-        const { version: latestVersion } = await fetchLatestBaileysVersion()
-        version = latestVersion
-        botLogger.system(`WhatsApp Web version: ${version.join('.')}`)
+        const { version: liveVersion } = await fetchLatestWaWebVersion()
+        if (liveVersion) {
+            version = liveVersion
+            botLogger.system(`WhatsApp Web live version: ${version.join('.')}`)
+        }
     } catch (err) {
-        botLogger.warn('bot', `Failed to fetch WA version, using fallback: ${err.message}`)
+        try {
+            const { version: baileysVersion } = await fetchLatestBaileysVersion()
+            if (baileysVersion) {
+                version = baileysVersion
+                botLogger.system(`WhatsApp Web fallback version: ${version.join('.')}`)
+            }
+        } catch (_) {
+            botLogger.warn('bot', `Failed to fetch WA version, using hardcoded fallback: ${err.message}`)
+        }
     }
 
     // 3. Load auth state
@@ -162,7 +191,12 @@ async function startBot() {
         },
         logger: pinoLogger.child({ level: 'fatal' }), // Sembunyikan log internal Baileys yang nyepam
         printQRInTerminal: false, // kita handle manual
-        browser: Browsers.ubuntu('Chrome'),
+        browser: Browsers.macOS('Desktop'),
+        syncFullHistory: false,
+        markOnlineOnConnect: true,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 30000,
         getMessage: async (key) => {
             const msg = await store.loadMessage(key.remoteJid, key.id)
             return msg?.message || undefined
@@ -176,6 +210,9 @@ async function startBot() {
 
     // Hook socket outgoing media untuk universal real-time Telegram archiving
     mediaCache.hookSocketOutgoing(sock)
+
+    // Hook outgoing bot replies for durable Inbox persistence
+    inboxService.hookBaileysSocket(sock)
 
     // Bind In-Memory Store
     store.bind(sock.ev)
@@ -203,6 +240,7 @@ async function startBot() {
 
     sock.ev.on('creds.update', async () => {
         await saveCreds()
+        markSessionCredsUpdated()
         try {
             sessionSync.triggerDebouncedBackup(30000)
         } catch (_) {}
@@ -221,7 +259,7 @@ async function startBot() {
         if (connection === 'connecting') {
             botLogger.connect('connecting')
             metricsService.setWhatsAppStatus('connecting')
-            updateBotStatus('connecting')
+            updateBotStatus('connecting', null, { reconnectCount, maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS })
         }
 
         if (connection === 'open') {
@@ -229,7 +267,7 @@ async function startBot() {
             botLogger.connect('open', `Logged in as ${sock.user?.name ?? sock.user?.id}`)
             metricsService.setWhatsAppStatus('online')
             botLogger.section('BOT READY 🚀')
-            updateBotStatus('open')
+            updateBotStatus('open', null, { reconnectCount: 0, maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS })
 
             // Immediately back up the authenticated session & database to Hugging Face Dataset
             try {
@@ -276,7 +314,13 @@ async function startBot() {
 
             botLogger.connect('close', `status=${statusCode} | ${error?.message ?? 'unknown'}`)
             metricsService.setWhatsAppStatus('offline')
-            updateBotStatus('close')
+            updateBotStatus(isLoggedOut ? 'logged_out' : 'close', null, {
+                statusCode,
+                reason: error?.message ?? 'unknown',
+                isLoggedOut,
+                reconnectCount,
+                maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS
+            })
 
             // 401 Logged Out / Stale Session auto-recovery
             if (isLoggedOut && !isStopping) {
@@ -312,6 +356,12 @@ async function startBot() {
                     reconnectCount++
                     const delay = Math.min(Math.pow(2, reconnectCount) * 1000, 30_000)
                     botLogger.warn('bot', `Reconnecting in ${delay / 1000}s (attempt ${reconnectCount}/${MAX_RECONNECT_ATTEMPTS})`)
+                    updateBotStatus('reconnecting', null, {
+                        statusCode,
+                        reason: error?.message ?? 'unknown',
+                        reconnectCount,
+                        maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS
+                    })
                     setTimeout(() => startBot(), delay)
                 } else {
                     botLogger.fatal('bot', 'Max reconnect attempts reached. Exiting for automatic daemon restart.')
@@ -328,17 +378,25 @@ async function startBot() {
         await handleIncomingMessage(sock, m)
     })
 
-    // 8. Revoke handler (Anti-Delete)
+    // 8. Revoke handler (Anti-Delete) + Inbox delivery/receipt updates
     sock.ev.on('messages.update', async (m) => {
+        inboxService.ingestBaileysStatusUpdate(m)
         await handleRevokeMessage(sock, m)
     })
 
-    // 9. Owner Activity tracking on Read Receipts
+    // 9. Owner Activity tracking on Read Receipts + Inbox receipts
     sock.ev.on('message-receipt.update', async (receipts) => {
         try {
             if (!Array.isArray(receipts)) return
             for (const r of receipts) {
                 const chatJid = r.key?.remoteJid
+                if (chatJid && r.key?.id) {
+                    if (r.receipt?.readTimestamp || r.receipt?.playedTimestamp) {
+                        inboxService.updateMessageStatus(chatJid, r.key.id, 'READ')
+                    } else if (r.receipt?.receiptTimestamp) {
+                        inboxService.updateMessageStatus(chatJid, r.key.id, 'DELIVERED')
+                    }
+                }
                 if (chatJid && chatJid.endsWith('@g.us')) {
                     const user = r.receipt?.userJid || r.key?.participant
                     if (r.key?.fromMe || (user && isOwner(user))) {
@@ -393,7 +451,21 @@ function registerGracefulShutdown() {
         } catch (_) {}
 
         try {
+            stopRadioServer()
+        } catch (_) {}
+
+        try {
             currentSocket?.end(undefined)
+        } catch (_) {}
+
+        try {
+            releaseRuntimeLease()
+        } catch (_) {}
+
+        try {
+            if (sqliteDb && typeof sqliteDb.close === 'function' && sqliteDb.open !== false) {
+                sqliteDb.close()
+            }
         } catch (_) {}
         process.exit(0)
     }
