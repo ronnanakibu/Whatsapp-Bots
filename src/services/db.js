@@ -44,7 +44,22 @@ db.exec(`
         genre TEXT DEFAULT 'General',
         created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+`)
 
+// Additive Schema Migrations for Phase 3 Data Integrity (DATA-002, RAD-001)
+try {
+    db.exec(`
+        ALTER TABLE songs ADD COLUMN origin TEXT DEFAULT 'youtube';
+    `)
+} catch (_) {}
+try {
+    db.exec(`
+        ALTER TABLE users ADD COLUMN app_user_id TEXT;
+        ALTER TABLE users ADD COLUMN whatsapp_jid TEXT;
+    `)
+} catch (_) {}
+
+db.exec(`
     CREATE TABLE IF NOT EXISTS listening_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_jid TEXT NOT NULL,

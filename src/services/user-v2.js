@@ -23,8 +23,12 @@ export class UserService {
    */
   generateToken(user) {
     const header = { alg: 'HS256', typ: 'JWT' };
+    const canonicalAppUserId = user.id;
     const payload = {
-      jid: user.id, // Map id to jid to support legacy WABOT2.0 auth checks
+      sub: canonicalAppUserId,
+      appUserId: canonicalAppUserId,
+      jid: user.whatsappJid || canonicalAppUserId, // Legacy compatibility
+      whatsappJid: user.whatsappJid || null,
       name: user.nickname,
       role: 'user', // Default role for anonymous Radio listener sessions
       scope: 'radio',

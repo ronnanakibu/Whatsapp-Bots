@@ -341,7 +341,7 @@ export function getSongId(url, source) {
 
 export function dbEnsureUser(jid, name = null) {
     try {
-        const resolvedName = name || jid.split('@')[0]
+        const resolvedName = name || (jid.includes('@') ? jid.split('@')[0] : jid)
         db.prepare(`
             INSERT INTO users (jid, name)
             VALUES (?, ?)
@@ -354,6 +354,11 @@ export function dbEnsureUser(jid, name = null) {
 
 export function dbUpsertSong(track) {
     try {
+        // Track origin vs playback provider separation (RAD-001)
+        // Spotify-origin requests stream via YouTube, respecting SQLite CHECK(source IN ('youtube', 'soundcloud'))
+        const playbackProvider = (track.source === 'spotify') ? 'youtube' : (track.source || 'youtube')
+        const trackOrigin = track.origin || track.source || 'youtube'
+
         db.prepare(`
             INSERT INTO songs (song_id, title, artist, duration, thumbnail_url, source, stream_url)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -367,9 +372,13 @@ export function dbUpsertSong(track) {
             track.artist || 'Unknown',
             track.duration || 0,
             track.thumbnail || '',
-            track.source,
+            playbackProvider,
             track.url
         )
+
+        try {
+            db.prepare('UPDATE songs SET origin = ? WHERE song_id = ?').run(trackOrigin, track.songId)
+        } catch (_) {}
     } catch (err) {
         botLogger.error('radio-db', `Failed to upsert song ${track.songId}: ${err.message}`)
     }
@@ -377,7 +386,7 @@ export function dbUpsertSong(track) {
 
 export function dbAddPlayHistory(songId, requestedByJid) {
     try {
-        const jid = (requestedByJid && requestedByJid.includes('@')) ? requestedByJid : null
+        const jid = requestedByJid || null
         if (jid) {
             dbEnsureUser(jid)
         }
@@ -813,11 +822,12 @@ class RadioService extends EventEmitter {
 
         this.#queue.push(track)
 
-        // Save request record to DB
+        // Save request record to DB (supporting canonical appUserId and WhatsApp JIDs)
         try {
             const requestedByJid = track.requestedByJid || track.requestedBy
-            if (requestedByJid && requestedByJid.includes('@')) {
-                dbEnsureUser(requestedByJid, track.requestedBy && !track.requestedBy.includes('@') ? track.requestedBy : null)
+            if (requestedByJid) {
+                const displayName = track.requestedByName || (requestedByJid.includes('@') ? requestedByJid.split('@')[0] : requestedByJid)
+                dbEnsureUser(requestedByJid, displayName)
                 db.prepare(`
                     INSERT INTO requests (user_jid, song_id, status, created_at)
                     VALUES (?, ?, 'pending', unixepoch())
@@ -870,7 +880,7 @@ class RadioService extends EventEmitter {
         // Update request status to played in DB
         try {
             const requestedByJid = this.#currentTrack.requestedByJid || this.#currentTrack.requestedBy
-            if (requestedByJid && requestedByJid.includes('@')) {
+            if (requestedByJid) {
                 db.prepare(`
                     UPDATE requests 
                     SET status = 'played', played_at = unixepoch()
@@ -879,6 +889,13 @@ class RadioService extends EventEmitter {
                 
                 // Evaluate achievements
                 dbEvaluateAchievements(requestedByJid)
+
+                // Authoritative write path for PostgreSQL UserStats
+                try {
+                    import('../repositories/user.repository.js').then(({ default: repo }) => {
+                        repo.updateUserStats(requestedByJid, { songsRequestedIncrement: 1 }).catch(() => {})
+                    }).catch(() => {})
+                } catch (_) {}
             }
         } catch (err) {
             botLogger.error('radio-db', `Failed to update request status: ${err.message}`)
@@ -1353,7 +1370,8 @@ class RadioService extends EventEmitter {
         let sessionId = null
         const joinedAt = Math.floor(Date.now() / 1000)
 
-        if (userJid && userJid.includes('@')) {
+        // Support both canonical appUserId (UUID) and WhatsApp JIDs
+        if (userJid && userJid !== 'anonymous' && !userJid.startsWith('anon_')) {
             try {
                 dbEnsureUser(userJid)
                 const result = db.prepare(`
@@ -1366,14 +1384,18 @@ class RadioService extends EventEmitter {
             }
         }
 
+        let isFinalized = false
         const cleanup = () => {
+            if (isFinalized) return
+            isFinalized = true
+
             this.#clients.delete(res)
             this.emit('listener:leave', this.#clients.size)
 
             if (sessionId) {
                 try {
                     const leftAt = Math.floor(Date.now() / 1000)
-                    const duration = leftAt - joinedAt
+                    const duration = Math.max(0, leftAt - joinedAt)
                     db.prepare(`
                         UPDATE listening_sessions
                         SET left_at = ?, duration_seconds = ?
@@ -1396,6 +1418,13 @@ class RadioService extends EventEmitter {
                                 botLogger.info('radio-level', `User ${userJid} naik level ke ${newLevel}!`)
                             }
                         }
+
+                        // Authoritative stats writer update for PostgreSQL UserStats
+                        try {
+                            import('../repositories/user.repository.js').then(({ default: repo }) => {
+                                repo.updateUserStats(userJid, { listeningTimeMsIncrement: BigInt(duration * 1000) }).catch(() => {})
+                            }).catch(() => {})
+                        } catch (_) {}
                     }
 
                     dbEvaluateAchievements(userJid)

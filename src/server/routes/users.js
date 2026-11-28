@@ -291,33 +291,72 @@ router.get('/users/:userJid/stats', async (req, res) => {
 
 router.get('/leaderboard', async (req, res) => {
     const { timeframe } = req.query
-    try {
-        const rows = await prisma.userStats.findMany({
-            orderBy: {
-                listeningTimeMs: 'desc'
-            },
-            take: 10,
-            include: {
-                user: {
-                    select: {
-                        nickname: true
-                    }
-                }
+    const validTimeframes = new Set(['global', 'all_time', 'weekly', 'monthly', 'daily'])
+    const resolvedTimeframe = (timeframe || 'global').toLowerCase()
+
+    if (!validTimeframes.has(resolvedTimeframe)) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: 'INVALID_TIMEFRAME',
+                message: 'Invalid timeframe. Supported values: global, all_time, weekly, monthly, daily.'
             }
         })
+    }
 
-        const leaderboard = rows.map((row, idx) => ({
-            rank: idx + 1,
-            name: row.user.nickname,
-            userId: row.userId,
-            listeningTimeSeconds: Number(row.listeningTimeMs / 1000n),
-            level: 1
-        }))
+    try {
+        let rows = []
+        try {
+            rows = await prisma.userStats.findMany({
+                orderBy: {
+                    listeningTimeMs: 'desc'
+                },
+                take: 10,
+                include: {
+                    user: {
+                        select: {
+                            nickname: true
+                        }
+                    }
+                }
+            })
+        } catch (_) {
+            rows = []
+        }
+
+        let leaderboard = []
+        if (Array.isArray(rows) && rows.length > 0) {
+            leaderboard = rows.map((row, idx) => ({
+                rank: idx + 1,
+                name: row.user?.nickname || 'Listener',
+                userId: row.userId,
+                listeningTimeSeconds: Number((row.listeningTimeMs || 0n) / 1000n),
+                level: 1
+            }))
+        } else if (db) {
+            // Authoritative fallback: query SQLite users ordered by experience_points & listening time
+            const sqliteRows = db.prepare(`
+                SELECT jid, name, level, experience_points,
+                    (SELECT COALESCE(SUM(duration_seconds), 0) FROM listening_sessions WHERE user_jid = users.jid) as listen_sec
+                FROM users
+                ORDER BY experience_points DESC, listen_sec DESC
+                LIMIT 10
+            `).all()
+
+            leaderboard = sqliteRows.map((r, idx) => ({
+                rank: idx + 1,
+                name: r.name || (r.jid.includes('@') ? r.jid.split('@')[0] : r.jid),
+                userId: r.jid,
+                listeningTimeSeconds: r.listen_sec || 0,
+                level: r.level || 1,
+                experiencePoints: r.experience_points || 0
+            }))
+        }
 
         res.json({
             success: true,
             data: {
-                timeframe: timeframe || 'global',
+                timeframe: resolvedTimeframe,
                 leaderboard
             }
         })
