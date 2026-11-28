@@ -4,13 +4,61 @@ import multer from 'multer'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import { spawnSync } from 'child_process'
 import { radioService } from '../../services/radio.js'
 import { logger } from '../../utils/logger.js'
 import { startSunoPipeline } from '../../services/suno.js'
-import { authenticateJwt, optionalJwt } from '../middleware/auth.js'
+import { authenticateControlJwt, optionalJwt, requirePermission } from '../middleware/auth.js'
+import { PERMISSIONS, hasPermission } from '../security/rbac.js'
+import { createRateLimiter } from '../security/rateLimit.js'
+import { timingSafeEqualStr, setAppSetting, recordAudit } from '../security/controlAuth.js'
+import { safeErrorMessage } from '../security/redaction.js'
 import { db } from '../radio.js'
 
 const router = express.Router()
+
+const ALLOWED_UPLOAD_EXTS = new Set(['.mp3', '.wav', '.mpeg', '.m4a', '.ogg', '.flac', '.png', '.jpg', '.jpeg', '.webp'])
+const ALLOWED_UPLOAD_MIME_PREFIXES = ['audio/', 'image/']
+
+const trimRateLimiter = createRateLimiter({
+    windowMs: 5 * 60 * 1000,
+    max: Number(process.env.YT_TRIM_MAX_REQUESTS || 20),
+    message: 'Too many trim requests. Please try again later.'
+})
+
+function authenticateCreatorOrServiceToken(permission) {
+    return (req, res, next) => {
+        const authHeader = req.headers['authorization']
+        const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
+        const envServiceToken = (process.env.SUNO_SYNC_TOKEN || '').trim()
+
+        if (envServiceToken && bearerToken && timingSafeEqualStr(bearerToken, envServiceToken)) {
+            req.controlUser = { id: 'suno-sync-service', role: 'operator', scope: 'control' }
+            return next()
+        }
+
+        return authenticateControlJwt(req, res, () => {
+            requirePermission(permission)(req, res, next)
+        })
+    }
+}
+
+function validateYouTubeTarget(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return null
+    const trimmed = rawUrl.trim()
+    if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+        return `https://www.youtube.com/watch?v=${trimmed}`
+    }
+    try {
+        const parsed = new URL(trimmed)
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
+        const allowedHosts = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'music.youtube.com'])
+        if (!allowedHosts.has(parsed.hostname.toLowerCase())) return null
+        return parsed.toString()
+    } catch {
+        return null
+    }
+}
 
 // Configure multer for manual music audio upload
 const uploadDir = path.resolve('./storage/media/tmp/uploads')
@@ -23,16 +71,38 @@ const storage = multer.diskStorage({
         cb(null, uploadDir)
     },
     filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname) || '.mp3'
-        const uniqueName = `${crypto.randomUUID()}${ext}`
+        const ext = path.extname(file.originalname || '').toLowerCase()
+        const safeExt = ALLOWED_UPLOAD_EXTS.has(ext) ? ext : '.mp3'
+        const uniqueName = `${crypto.randomUUID()}${safeExt}`
         cb(null, uniqueName)
     }
 })
 
 const upload = multer({
     storage: storage,
-    limits: { fileSize: 50 * 1024 * 1024 } // limit to 50MB
+    limits: { fileSize: 50 * 1024 * 1024 }, // limit to 50MB
+    fileFilter: (req, file, cb) => {
+        const ext = path.extname(file.originalname || '').toLowerCase()
+        const mime = (file.mimetype || '').toLowerCase()
+        const validExt = ALLOWED_UPLOAD_EXTS.has(ext)
+        const validMime = ALLOWED_UPLOAD_MIME_PREFIXES.some(prefix => mime.startsWith(prefix)) || mime === 'application/octet-stream'
+        if (!validExt || !validMime) {
+            return cb(new Error('Unsupported file type. Only allowed audio/image formats are permitted.'))
+        }
+        cb(null, true)
+    }
 })
+
+function uploadSingleSafe(fieldName) {
+    return (req, res, next) => {
+        upload.single(fieldName)(req, res, (err) => {
+            if (err) {
+                return res.status(400).json({ success: false, error: { code: 'INVALID_UPLOAD', message: safeErrorMessage(err) } })
+            }
+            next()
+        })
+    }
+}
 
 // ----------------------------------------------------
 // PUBLIC / API V2 ENDPOINTS
@@ -284,24 +354,16 @@ router.get('/api/v2/music/now-playing', (req, res) => {
 })
 
 // ----------------------------------------------------
-// SUNO SYNC / UPLOAD / CONFIG ENDPOINTS (LEGACY DIRECT APP ROUTING)
+// SUNO SYNC / UPLOAD / CONFIG ENDPOINTS (CONTROL CENTER + SERVICE TOKEN)
 // ----------------------------------------------------
 
-router.post('/api/music/manual-upload', upload.single('audio'), async (req, res) => {
+router.post('/api/music/manual-upload', authenticateCreatorOrServiceToken(PERMISSIONS.CREATOR_OPERATE), uploadSingleSafe('audio'), async (req, res) => {
     try {
-        const authHeader = req.headers.authorization
-        if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
-            if (req.file && fs.existsSync(req.file.path)) {
-                fs.unlinkSync(req.file.path)
-            }
-            return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
-        }
-
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No audio file uploaded.' })
         }
 
-        const { prompt, title, description } = req.body
+        const { prompt, title, description } = req.body || {}
         if (!prompt) {
             if (fs.existsSync(req.file.path)) {
                 fs.unlinkSync(req.file.path)
@@ -310,7 +372,7 @@ router.post('/api/music/manual-upload', upload.single('audio'), async (req, res)
         }
 
         const manualAudioPath = req.file.path
-        logger.info(`[Music] Received manual audio upload. File: ${req.file.originalname} -> ${manualAudioPath}`)
+        logger.info(`[Music] Received manual audio upload. File: ${path.basename(manualAudioPath)}`)
 
         const jobId = startSunoPipeline({
             prompt: prompt,
@@ -319,6 +381,15 @@ router.post('/api/music/manual-upload', upload.single('audio'), async (req, res)
             enhance: false,
             model: 'manual',
             manualAudioPath: manualAudioPath
+        })
+
+        recordAudit({
+            actorId: req.controlUser?.id || null,
+            actorRole: req.controlUser?.role || null,
+            action: 'music:manual_upload',
+            target: jobId || 'suno-job',
+            result: 'allowed',
+            correlationId: req.id || null
         })
 
         res.json({
@@ -331,47 +402,34 @@ router.post('/api/music/manual-upload', upload.single('audio'), async (req, res)
         if (req.file && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path)
         }
-        res.status(500).json({ success: false, message: err.message })
+        res.status(500).json({ success: false, message: safeErrorMessage(err) })
     }
 })
 
-router.post('/api/music/upload-temp', upload.single('file'), async (req, res) => {
+router.post('/api/music/upload-temp', authenticateCreatorOrServiceToken(PERMISSIONS.CREATOR_OPERATE), uploadSingleSafe('file'), async (req, res) => {
     try {
-        const authHeader = req.headers.authorization
-        if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
-            if (req.file && fs.existsSync(req.file.path)) {
-                fs.unlinkSync(req.file.path)
-            }
-            return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
-        }
-
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No file uploaded.' })
         }
 
         const filePath = req.file.path
-        const originalName = req.file.originalname
+        const originalName = path.basename(req.file.originalname || 'upload')
         const size = req.file.size
         const mimeType = req.file.mimetype
 
         let duration = 0
         let metadataTitle = ''
 
-        const isAudio = mimeType.startsWith('audio/') || 
-                        originalName.endsWith('.mp3') || 
-                        originalName.endsWith('.wav') || 
+        const isAudio = mimeType.startsWith('audio/') ||
+                        originalName.endsWith('.mp3') ||
+                        originalName.endsWith('.wav') ||
                         originalName.endsWith('.mpeg') ||
                         originalName.endsWith('.m4a')
 
         if (isAudio) {
             try {
-                const { execSync } = await import('child_process')
-                let output = ''
-                try {
-                    output = execSync(`ffmpeg -i "${filePath}"`, { stdio: 'pipe' }).toString()
-                } catch (err) {
-                    output = (err.stdout || '').toString() + (err.stderr || '').toString()
-                }
+                const probe = spawnSync('ffmpeg', ['-i', filePath], { encoding: 'utf8', timeout: 15000 })
+                const output = `${probe.stdout || ''}${probe.stderr || ''}`
 
                 // Parse duration
                 const durationMatch = output.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/)
@@ -392,7 +450,7 @@ router.post('/api/music/upload-temp', upload.single('file'), async (req, res) =>
             }
         }
 
-        logger.info(`[Music] Received temp file upload. Name: ${originalName}, Size: ${size} bytes, Type: ${mimeType}, Path: ${filePath}, Duration: ${duration}s, Title Tag: ${metadataTitle}`)
+        logger.info(`[Music] Received temp file upload. Stored: ${path.basename(filePath)}, Size: ${size} bytes, Type: ${mimeType}, Duration: ${duration}s`)
 
         res.json({
             success: true,
@@ -410,17 +468,12 @@ router.post('/api/music/upload-temp', upload.single('file'), async (req, res) =>
         if (req.file && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path)
         }
-        res.status(500).json({ success: false, message: err.message })
+        res.status(500).json({ success: false, message: safeErrorMessage(err) })
     }
 })
 
-router.post('/api/music/playlist-generate', express.json(), async (req, res) => {
+router.post('/api/music/playlist-generate', express.json(), authenticateCreatorOrServiceToken(PERMISSIONS.CREATOR_OPERATE), async (req, res) => {
     try {
-        const authHeader = req.headers.authorization
-        if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
-            return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
-        }
-
         const { songs, outputTitle, playlistDescription, transitionStyle, generateMotion, vignetteMode } = req.body || {}
         if (!songs || !Array.isArray(songs) || songs.length === 0) {
             return res.status(400).json({ success: false, message: 'Lagu-lagu playlist tidak boleh kosong.' })
@@ -443,95 +496,96 @@ router.post('/api/music/playlist-generate', express.json(), async (req, res) => 
             chatId: null
         })
 
+        recordAudit({
+            actorId: req.controlUser?.id || null,
+            actorRole: req.controlUser?.role || null,
+            action: 'music:playlist_generate',
+            target: jobId || outputTitle,
+            result: 'allowed',
+            correlationId: req.id || null
+        })
+
         res.json({ success: true, jobId })
     } catch (err) {
         logger.error(`[Music/PlaylistGenerate] Error: ${err.message}`)
-        res.status(500).json({ success: false, message: err.message })
+        res.status(500).json({ success: false, message: safeErrorMessage(err) })
     }
 })
 
 
-router.post('/api/music/update-cookie', express.json(), async (req, res) => {
+router.post('/api/music/update-cookie', express.json(), authenticateControlJwt, requirePermission(PERMISSIONS.SECRETS_MANAGE), async (req, res) => {
     try {
-        const authHeader = req.headers.authorization
-        if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
-            return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
-        }
-
-        const { cookie } = req.body
-        if (!cookie) {
-            return res.status(400).json({ success: false, message: 'Cookie is required.' })
+        const { cookie } = req.body || {}
+        if (!cookie || typeof cookie !== 'string' || /[\r\n]/.test(cookie)) {
+            return res.status(400).json({ success: false, message: 'Valid single-line cookie is required.' })
         }
 
         process.env.SUNO_COOKIE = cookie
-        logger.info('[Music/CookieSync] Suno session cookie successfully updated in-memory.')
+        setAppSetting('SUNO_COOKIE', cookie, req.controlUser.id)
+        logger.info('[Music/CookieSync] Suno session cookie updated in runtime & app_settings.')
 
-        const envPath = path.resolve('./.env')
-        if (fs.existsSync(envPath)) {
-            let envContent = fs.readFileSync(envPath, 'utf8')
-            const regex = /^SUNO_COOKIE=.*$/m
-            if (regex.test(envContent)) {
-                envContent = envContent.replace(regex, `SUNO_COOKIE=${cookie}`)
-            } else {
-                envContent += `\nSUNO_COOKIE=${cookie}`
-            }
-            fs.writeFileSync(envPath, envContent, 'utf8')
-            logger.info('[Music/CookieSync] Suno session cookie successfully written to .env file.')
-        }
+        recordAudit({
+            actorId: req.controlUser.id,
+            actorRole: req.controlUser.role,
+            action: 'secrets:update_suno_cookie',
+            target: 'SUNO_COOKIE',
+            result: 'allowed',
+            correlationId: req.id || null
+        })
 
         res.json({
             success: true,
-            message: 'Suno session cookie successfully synchronized.'
+            message: 'Suno session cookie successfully synchronized (stored in protected runtime settings).'
         })
     } catch (err) {
         logger.error(`[Music/CookieSync] Error: ${err.message}`)
-        res.status(500).json({ success: false, message: err.message })
+        res.status(500).json({ success: false, message: safeErrorMessage(err) })
     }
 })
 
-router.get('/api/music/config', async (req, res) => {
+router.get('/api/music/config', authenticateControlJwt, requirePermission(PERMISSIONS.CREATOR_READ), async (req, res) => {
     try {
-        const authHeader = req.headers.authorization
-        if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
-            return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
-        }
         res.json({
             success: true,
-            tunnelUrl: process.env.SUNO_API_URL || ''
+            tunnelUrl: process.env.SUNO_API_URL || '',
+            cookieConfigured: Boolean(process.env.SUNO_COOKIE)
         })
     } catch (err) {
         logger.error(`[Music/Config] Error: ${err.message}`)
-        res.status(500).json({ success: false, message: err.message })
+        res.status(500).json({ success: false, message: safeErrorMessage(err) })
     }
 })
 
-router.post('/api/music/update-tunnel', express.json(), async (req, res) => {
+router.post('/api/music/update-tunnel', express.json(), authenticateControlJwt, requirePermission(PERMISSIONS.SECRETS_MANAGE), async (req, res) => {
     try {
-        const authHeader = req.headers.authorization
-        if (!authHeader || authHeader !== 'Bearer 6285172013920_2007') {
-            return res.status(401).json({ success: false, message: 'Unauthorized access token.' })
+        const { tunnelUrl } = req.body || {}
+        if (!tunnelUrl || typeof tunnelUrl !== 'string' || /[\r\n]/.test(tunnelUrl)) {
+            return res.status(400).json({ success: false, message: 'Valid Tunnel URL is required.' })
         }
 
-        const { tunnelUrl } = req.body
-        if (!tunnelUrl) {
-            return res.status(400).json({ success: false, message: 'Tunnel URL is required.' })
-        }
-
-        process.env.SUNO_API_URL = tunnelUrl.trim()
-        logger.info(`[Music/TunnelSync] Suno API URL successfully updated in-memory to: ${tunnelUrl}`)
-
-        const envPath = path.resolve('./.env')
-        if (fs.existsSync(envPath)) {
-            let envContent = fs.readFileSync(envPath, 'utf8')
-            const regex = /^SUNO_API_URL=.*$/m
-            if (regex.test(envContent)) {
-                envContent = envContent.replace(regex, `SUNO_API_URL=${tunnelUrl}`)
-            } else {
-                envContent += `\nSUNO_API_URL=${tunnelUrl}`
+        let parsed
+        try {
+            parsed = new URL(tunnelUrl.trim())
+            if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+                throw new Error('Invalid protocol')
             }
-            fs.writeFileSync(envPath, envContent, 'utf8')
-            logger.info('[Music/TunnelSync] Suno API URL successfully written to .env file.')
+        } catch {
+            return res.status(400).json({ success: false, message: 'Tunnel URL must be a valid http/https URL.' })
         }
+
+        const cleanUrl = parsed.toString().replace(/\/$/, '')
+        process.env.SUNO_API_URL = cleanUrl
+        setAppSetting('SUNO_API_URL', cleanUrl, req.controlUser.id)
+        logger.info(`[Music/TunnelSync] Suno API URL updated in runtime & app_settings.`)
+
+        recordAudit({
+            actorId: req.controlUser.id,
+            actorRole: req.controlUser.role,
+            action: 'secrets:update_suno_tunnel',
+            target: 'SUNO_API_URL',
+            result: 'allowed',
+            correlationId: req.id || null
+        })
 
         res.json({
             success: true,
@@ -539,24 +593,28 @@ router.post('/api/music/update-tunnel', express.json(), async (req, res) => {
         })
     } catch (err) {
         logger.error(`[Music/TunnelSync] Error: ${err.message}`)
-        res.status(500).json({ success: false, message: err.message })
+        res.status(500).json({ success: false, message: safeErrorMessage(err) })
     }
 })
 
 // ----------------------------------------------------
 // CE F CLASS PORTAL INTEGRATION: /api/yt/trim & /trim
 // ----------------------------------------------------
-router.get(['/api/yt/trim', '/trim'], async (req, res) => {
+router.get(['/api/yt/trim', '/trim'], trimRateLimiter, async (req, res) => {
     const { url, start = 0, duration = 30 } = req.query
     if (!url) {
         return res.status(400).json({ success: false, error: 'Parameter "url" (YouTube URL atau videoId) wajib diisi.' })
     }
 
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    const targetUrl = validateYouTubeTarget(String(url))
+    if (!targetUrl) {
+        return res.status(400).json({ success: false, error: 'URL atau videoId YouTube tidak valid.' })
+    }
 
-    const targetUrl = url.startsWith('http') ? url : `https://www.youtube.com/watch?v=${url}`
-    logger.info(`[Music/TrimAPI] Trimming: ${targetUrl} [Start: ${start}s, Dur: ${duration}s]`)
+    const safeStart = Math.max(0, Number(start) || 0)
+    const safeDuration = Math.min(Math.max(Number(duration) || 30, 1), 120)
+
+    logger.info(`[Music/TrimAPI] Trimming: ${targetUrl} [Start: ${safeStart}s, Dur: ${safeDuration}s]`)
 
     try {
         const { spawn } = await import('child_process')
@@ -596,8 +654,8 @@ router.get(['/api/yt/trim', '/trim'], async (req, res) => {
             if (ytdlpCode === 0 && directUrl) {
                 const ffmpeg = spawn('ffmpeg', [
                     '-y',
-                    '-ss', String(start),
-                    '-t', String(duration),
+                    '-ss', String(safeStart),
+                    '-t', String(safeDuration),
                     '-i', directUrl,
                     '-f', 'mp3',
                     '-c:a', 'libmp3lame',
@@ -606,12 +664,12 @@ router.get(['/api/yt/trim', '/trim'], async (req, res) => {
                 ])
 
                 res.setHeader('Content-Type', 'audio/mpeg')
-                res.setHeader('Content-Disposition', `inline; filename="trim_${start}_${duration}s.mp3"`)
+                res.setHeader('Content-Disposition', `inline; filename="trim_${safeStart}_${safeDuration}s.mp3"`)
                 ffmpeg.stdout.pipe(res)
 
                 ffmpeg.on('error', err => {
                     logger.error(`[Music/TrimAPI] FFmpeg (yt-dlp) error: ${err.message}`)
-                    if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
+                    if (!res.headersSent) res.status(500).json({ success: false, error: safeErrorMessage(err) })
                 })
                 req.on('close', () => { try { ffmpeg.kill() } catch {} })
                 return
@@ -645,8 +703,8 @@ router.get(['/api/yt/trim', '/trim'], async (req, res) => {
         if (stream) {
             const ffmpeg = spawn('ffmpeg', [
                 '-y',
-                '-ss', String(start),
-                '-t', String(duration),
+                '-ss', String(safeStart),
+                '-t', String(safeDuration),
                 '-i', 'pipe:0',
                 '-f', 'mp3',
                 '-c:a', 'libmp3lame',
@@ -655,13 +713,13 @@ router.get(['/api/yt/trim', '/trim'], async (req, res) => {
             ])
 
             res.setHeader('Content-Type', 'audio/mpeg')
-            res.setHeader('Content-Disposition', `inline; filename="trim_${start}_${duration}s.mp3"`)
+            res.setHeader('Content-Disposition', `inline; filename="trim_${safeStart}_${safeDuration}s.mp3"`)
             stream.pipe(ffmpeg.stdin)
             ffmpeg.stdout.pipe(res)
 
             ffmpeg.on('error', err => {
                 logger.error(`[Music/TrimAPI] FFmpeg (play-dl) error: ${err.message}`)
-                if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
+                if (!res.headersSent) res.status(500).json({ success: false, error: safeErrorMessage(err) })
             })
             req.on('close', () => { try { ffmpeg.kill() } catch {} })
         } else {
@@ -675,8 +733,8 @@ router.get(['/api/yt/trim', '/trim'], async (req, res) => {
 
             const ffmpeg = spawn('ffmpeg', [
                 '-y',
-                '-ss', String(start),
-                '-t', String(duration),
+                '-ss', String(safeStart),
+                '-t', String(safeDuration),
                 '-i', audioFormat.url,
                 '-f', 'mp3',
                 '-c:a', 'libmp3lame',
@@ -685,12 +743,12 @@ router.get(['/api/yt/trim', '/trim'], async (req, res) => {
             ])
 
             res.setHeader('Content-Type', 'audio/mpeg')
-            res.setHeader('Content-Disposition', `inline; filename="trim_${start}_${duration}s.mp3"`)
+            res.setHeader('Content-Disposition', `inline; filename="trim_${safeStart}_${safeDuration}s.mp3"`)
             ffmpeg.stdout.pipe(res)
 
             ffmpeg.on('error', err => {
                 logger.error(`[Music/TrimAPI] FFmpeg (video_info) error: ${err.message}`)
-                if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
+                if (!res.headersSent) res.status(500).json({ success: false, error: safeErrorMessage(err) })
             })
             req.on('close', () => { try { ffmpeg.kill() } catch {} })
         }

@@ -1,30 +1,17 @@
 // src/server/middleware/auth.js
-import crypto from 'crypto'
-
-export const JWT_SECRET = process.env.JWT_SECRET || 'ronnbot-default-jwt-secret-key-123456!'
+import { getControlJwtSecret, getRadioJwtSecret, verifyRadioJwt, verifyControlToken, recordAudit } from '../security/controlAuth.js'
+import { hasPermission } from '../security/rbac.js'
 
 export function verifyJwt(token) {
-    try {
-        const parts = token.split('.')
-        if (parts.length !== 3) return null
-        const [headerB64, payloadB64, signatureB64] = parts
+    return verifyRadioJwt(token)
+}
 
-        const hmac = crypto.createHmac('sha256', JWT_SECRET)
-        hmac.update(`${headerB64}.${payloadB64}`)
-        const expectedSignature = hmac.digest('base64url')
+export function getActiveJwtSecret() {
+    return getRadioJwtSecret()
+}
 
-        if (signatureB64 !== expectedSignature) {
-            return null
-        }
-
-        const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'))
-        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-            return null
-        }
-        return payload
-    } catch (_) {
-        return null
-    }
+export function getActiveControlJwtSecret() {
+    return getControlJwtSecret()
 }
 
 export function normalizeUserAgent(ua) {
@@ -40,16 +27,26 @@ export function normalizeUserAgent(ua) {
     return lower
 }
 
-export function authenticateJwt(req, res, next) {
-    const isDev = process.env.NODE_ENV !== 'production'
-    const bypassEnabled = process.env.DEV_BYPASS_AUTH === 'true'
+function isLoopbackIp(ip = '') {
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
+}
 
-    if (isDev && bypassEnabled) {
-        const testJid = req.headers['x-test-jid'] || req.query.jid || '6285172013920@s.whatsapp.net'
+/**
+ * Public Radio / Listener JWT authentication middleware.
+ * Isolated from Control Center RBAC: must NOT be used to authorize administrative endpoints.
+ */
+export function authenticateJwt(req, res, next) {
+    const isDev = process.env.NODE_ENV === 'development'
+    const bypassEnabled = process.env.DEV_BYPASS_AUTH === 'true'
+    const remoteIp = req.ip || req.socket?.remoteAddress || ''
+
+    if (isDev && bypassEnabled && isLoopbackIp(remoteIp)) {
+        const testJid = req.headers['x-test-jid'] || req.query.jid || 'dev-listener@s.whatsapp.net'
         req.user = {
             jid: String(testJid),
             name: String(testJid).split('@')[0],
-            role: 'owner'
+            role: 'user',
+            scope: 'radio'
         }
         return next()
     }
@@ -65,7 +62,7 @@ export function authenticateJwt(req, res, next) {
         })
     }
 
-    const token = authHeader.substring(7)
+    const token = authHeader.substring(7).trim()
     const payload = verifyJwt(token)
     if (!payload || !payload.jid) {
         return res.status(401).json({
@@ -80,7 +77,8 @@ export function authenticateJwt(req, res, next) {
     req.user = {
         jid: payload.jid,
         name: payload.name || payload.jid.split('@')[0],
-        role: payload.role || 'user'
+        role: payload.role || 'user',
+        scope: payload.scope || 'radio'
     }
     next()
 }
@@ -88,13 +86,14 @@ export function authenticateJwt(req, res, next) {
 export function optionalJwt(req, res, next) {
     const authHeader = req.headers['authorization']
     if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7)
+        const token = authHeader.substring(7).trim()
         const payload = verifyJwt(token)
         if (payload && payload.jid) {
             req.user = {
                 jid: payload.jid,
                 name: payload.name || payload.jid.split('@')[0],
-                role: payload.role || 'user'
+                role: payload.role || 'user',
+                scope: payload.scope || 'radio'
             }
             return next()
         }
@@ -103,7 +102,127 @@ export function optionalJwt(req, res, next) {
     req.user = {
         jid: String(testJid),
         name: 'Web Listener',
-        role: 'guest'
+        role: 'guest',
+        scope: 'radio'
+    }
+    next()
+}
+
+/**
+ * Private Control Center JWT authentication middleware.
+ * Rejects unauthenticated requests (401) and Radio/guest tokens (403).
+ */
+export function authenticateControlJwt(req, res, next) {
+    const authHeader = req.headers['authorization']
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'UNAUTHORIZED',
+                message: 'Control Center authentication required.'
+            }
+        })
+    }
+
+    const token = authHeader.substring(7).trim()
+    const result = verifyControlToken(token)
+    if (!result.user) {
+        return res.status(result.status || 401).json({
+            success: false,
+            error: {
+                code: result.code || 'UNAUTHORIZED',
+                message: result.error || 'Authentication failed.'
+            }
+        })
+    }
+
+    req.controlUser = result.user
+    next()
+}
+
+/**
+ * Enforces a specific Control Center RBAC permission (default-deny).
+ * @param {string} permission
+ */
+export function requirePermission(permission) {
+    return (req, res, next) => {
+        if (!req.controlUser) {
+            return res.status(401).json({
+                success: false,
+                error: { code: 'UNAUTHORIZED', message: 'Authentication required.' }
+            })
+        }
+
+        if (!hasPermission(req.controlUser, permission)) {
+            recordAudit({
+                actorId: req.controlUser.id,
+                actorRole: req.controlUser.role,
+                action: `http:${req.method}:${req.originalUrl || req.url}`,
+                target: permission,
+                result: 'denied',
+                correlationId: req.id || null
+            })
+            return res.status(403).json({
+                success: false,
+                error: {
+                    code: 'FORBIDDEN',
+                    message: `Insufficient permissions: ${permission} required.`
+                }
+            })
+        }
+
+        next()
+    }
+}
+
+/**
+ * Enforces that the authenticated Control Center user holds at least one of the listed permissions.
+ * @param {string[]} permissions
+ */
+export function requireAnyPermission(permissions) {
+    return (req, res, next) => {
+        if (!req.controlUser) {
+            return res.status(401).json({
+                success: false,
+                error: { code: 'UNAUTHORIZED', message: 'Authentication required.' }
+            })
+        }
+
+        const allowed = permissions.some(p => hasPermission(req.controlUser, p))
+        if (!allowed) {
+            recordAudit({
+                actorId: req.controlUser.id,
+                actorRole: req.controlUser.role,
+                action: `http:${req.method}:${req.originalUrl || req.url}`,
+                target: permissions.join('|'),
+                result: 'denied',
+                correlationId: req.id || null
+            })
+            return res.status(403).json({
+                success: false,
+                error: {
+                    code: 'FORBIDDEN',
+                    message: 'Insufficient permissions.'
+                }
+            })
+        }
+
+        next()
+    }
+}
+
+/**
+ * Requires explicit confirmation boolean for destructive or high-impact mutations.
+ */
+export function requireConfirmation(req, res, next) {
+    if (req.body?.confirm !== true) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: 'CONFIRMATION_REQUIRED',
+                message: 'Explicit confirmation ({ confirm: true }) is required for this operation.'
+            }
+        })
     }
     next()
 }

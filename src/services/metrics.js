@@ -58,7 +58,7 @@ export function getMemoryMetrics() {
 class MetricsService {
     constructor() {
         // Automatically start tracking cpu usage
-        setInterval(() => {
+        const timer = setInterval(() => {
             updateCpuUsage()
             // Track peak listeners
             const currentListeners = radioService.listenerCount
@@ -66,6 +66,7 @@ class MetricsService {
                 peakListeners = currentListeners
             }
         }, 3000)
+        timer.unref?.()
     }
 
     incrementCommands(commandName) {
@@ -73,6 +74,15 @@ class MetricsService {
         if (commandName) {
             commandUsages[commandName] = (commandUsages[commandName] || 0) + 1
         }
+    }
+
+    getCommandUsage(commandName) {
+        if (!commandName) return 0
+        return commandUsages[commandName] || 0
+    }
+
+    getAllCommandUsages() {
+        return { ...commandUsages }
     }
 
     incrementDownloads() {
@@ -100,7 +110,7 @@ class MetricsService {
             memoryUsage: mem.percent,
             memoryTotal: mem.total,
             memoryUsed: mem.used,
-            networkHealth: 'online', // Simple mock, server is obviously online if this is running
+            networkHealth: null,
             waStatus: waStatus,
             ffmpegStatus: isFfmpegOnline ? 'online' : 'offline',
             activeStreams: radioService.isPlaying ? 1 : 0,
@@ -116,11 +126,6 @@ class MetricsService {
             .sort((a, b) => b.count - a.count)
             .slice(0, 5)
 
-        // Fill defaults to prevent UI crash
-        while (topCommands.length < 5) {
-            topCommands.push({ name: '—', count: 0 })
-        }
-
         return {
             commandsToday: commandsCount,
             downloadsToday: downloadsCount,
@@ -128,7 +133,7 @@ class MetricsService {
             peakListeners: peakListeners,
             activeUsers: radioService.listenerCount,
             topCommands,
-            avgStreamDuration: '—',
+            avgStreamDuration: null,
         }
     }
 }

@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import userRepository from '../repositories/user.repository.js';
 import { generateNickname } from '../utils/nickname-generator.js';
-import { appConfig } from '../config/index.js';
+import { getRadioJwtSecret } from '../server/security/controlAuth.js';
 
 export class UserService {
   /**
@@ -26,14 +26,15 @@ export class UserService {
     const payload = {
       jid: user.id, // Map id to jid to support legacy WABOT2.0 auth checks
       name: user.nickname,
-      role: 'user', // Default role for anonymous sessions
+      role: 'user', // Default role for anonymous Radio listener sessions
+      scope: 'radio',
       exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60, // 30 days expiration
     };
 
     const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
     const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
     
-    const hmac = crypto.createHmac('sha256', appConfig.jwtSecret);
+    const hmac = crypto.createHmac('sha256', getRadioJwtSecret());
     hmac.update(`${headerB64}.${payloadB64}`);
     const signatureB64 = hmac.digest('base64url');
     

@@ -7,7 +7,6 @@ import { Server as SocketServer } from 'socket.io'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import Database from 'better-sqlite3'
 import crypto from 'crypto'
 
 import { radioService } from '../services/radio.js'
@@ -19,37 +18,86 @@ import { memoryService } from '../services/memory.js'
 import { moderatorService } from '../services/moderator.js'
 import { eventBus } from '../events/bus.js'
 import { userService } from '../services/user-v2.js'
+import { userRepository } from '../repositories/user.repository.js'
 import { chatService } from '../services/chat-v2.js'
 import { mediaService } from '../services/media.js'
 import { prisma } from '../config/database.js'
-import { BRAINS } from '../services/ai.js'
+import { db as sharedDb } from '../services/db.js'
+import { buildAiProviderTelemetry, buildControlAnalyticsSnapshot, buildControlMetricsSnapshot } from './telemetry.js'
+import { getWhatsAppStatusSnapshot, recordWhatsAppStateChange } from './whatsappOps.js'
 import { startSunoPipeline, getActiveJobs, confirmThumbnail, startPlaylistPipeline } from '../services/suno.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-import { verifyJwt, normalizeUserAgent } from './middleware/auth.js'
+import {
+    verifyJwt,
+    normalizeUserAgent,
+    authenticateControlJwt,
+    requirePermission,
+    requireConfirmation
+} from './middleware/auth.js'
 import authRouter from './routes/auth.js'
 import sunoRouter from './routes/suno.js'
 import musicRouter from './routes/music.js'
 import lyricsRouter from './routes/lyrics.js'
 import usersRouter from './routes/users.js'
 import systemRouter from './routes/system.js'
+import controlRouter from './routes/control.js'
+import { PERMISSIONS, ROLES, hasPermission } from './security/rbac.js'
+import {
+    getControlJwtSecret,
+    getRadioJwtSecret,
+    verifyControlToken,
+    recordAudit,
+    bootstrapOwnerFromEnv,
+    getAppSetting
+} from './security/controlAuth.js'
+import { isRuntimeLeaseHealthy } from '../services/runtimeSingleton.js'
+import { redactSensitive, safeErrorMessage } from './security/redaction.js'
+import { appConfig } from '../config/index.js'
 
-const RADIO_PORT = parseInt(process.env.PORT || process.env.RADIO_PORT || '25637')
+const RADIO_PORT = appConfig.port
 const MAX_HISTORY = 20
 
 let server = null
 let serverInstance = null
 export let io = null
+let controlNs = null
 let metricsInterval = null
 let analyticsInterval = null
 let tokenCleanupInterval = null
 let archiverInterval = null
+let selfMonitorInterval = null
+let lastSelfCheckSnapshot = null
 export const streamTokens = new Map()
 const userConnections = new Map()
 const sseHistory = []
 let sseEventCounter = 1
+
+function isOriginAllowed(origin) {
+    if (!origin) return true
+    const normalizedOrigin = String(origin).trim().replace(/\/+$/, '')
+    if (!normalizedOrigin || normalizedOrigin.includes('*')) return false
+
+    const allowedRaw = (process.env.ALLOWED_ORIGINS || '').trim()
+    if (allowedRaw) {
+        const allowList = allowedRaw
+            .split(',')
+            .map(s => s.trim().replace(/\/+$/, ''))
+            .filter(s => Boolean(s) && !s.includes('*'))
+        return allowList.includes(normalizedOrigin)
+    }
+    if (process.env.NODE_ENV !== 'production') {
+        try {
+            const parsed = new URL(normalizedOrigin)
+            return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+        } catch {
+            return false
+        }
+    }
+    return false
+}
 
 // Connection status cache
 let currentBotStatus = 'connecting'
@@ -59,34 +107,9 @@ let currentPairingCode = null
 // Recently played history
 const recentlyPlayed = []
 
-// DB connection
+// Shared SQLite singleton owned by src/services/db.js
 const DB_PATH = path.resolve(process.env.DB_PATH ?? './storage/database/main.db')
-export let db = null
-
-try {
-    db = new Database(DB_PATH)
-    db.pragma('journal_mode = WAL')
-    db.pragma('synchronous = NORMAL')
-    
-    // Ensure users table exists
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS users (
-            jid TEXT PRIMARY KEY,
-            name TEXT,
-            commands_count INTEGER NOT NULL DEFAULT 0,
-            warnings INTEGER NOT NULL DEFAULT 0,
-            role TEXT DEFAULT 'user',
-            last_seen INTEGER
-        );
-    `)
-
-    // Safe migration to append commands_count to existing database tables
-    try {
-        db.exec(`ALTER TABLE users ADD COLUMN commands_count INTEGER NOT NULL DEFAULT 0`)
-    } catch (_) {}
-} catch (e) {
-    logger.error('[Radio/DB] Failed to initialize SQLite connection:', e.message)
-}
+export const db = sharedDb
 
 function getDbSize() {
     try {
@@ -163,7 +186,7 @@ async function getGroupsList() {
     }
 
     const groupJids = new Set([...Object.keys(groupsMeta), ...Object.keys(dbConfigs)])
-    
+
     // Resolve group metadata and profile picture URLs in parallel with in-memory caching
     const mergedList = await Promise.all(Array.from(groupJids).map(async (jid) => {
         const meta = groupsMeta[jid]
@@ -175,7 +198,7 @@ async function getGroupsList() {
             desc = typeof meta.desc === 'string' ? meta.desc : String(meta.desc)
         }
         let memberCount = meta?.participants?.length || 0
-        
+
         let avatarUrl = avatarCache[jid] || ''
         if (!avatarUrl && sock && sock.profilePictureUrl) {
             try {
@@ -207,20 +230,13 @@ function getUsersList() {
     if (!db) return []
     try {
         const rows = db.prepare(`SELECT * FROM users ORDER BY commands_count DESC`).all()
-        if (rows.length === 0) {
-            // Fallback mock users using command usage
-            return [
-                { jid: '6285172013920@s.whatsapp.net', name: 'Ronn Anakibu', commandsCount: 154, warnings: 0, role: 'owner', lastSeen: Date.now() },
-                { jid: '628222222222@s.whatsapp.net', name: 'Testing Account', commandsCount: 42, warnings: 2, lastSeen: Date.now() - 3600000 }
-            ]
-        }
         return rows.map(r => ({
             jid: r.jid,
             name: r.name || r.jid.split('@')[0],
-            commandsCount: r.commands_count || r.xp || 0,
-            warnings: r.warnings,
+            commandsCount: r.commands_count ?? 0,
+            warnings: r.warnings ?? 0,
             role: r.role || 'user',
-            lastSeen: r.last_seen || Date.now()
+            lastSeen: r.last_seen ?? null
         }))
     } catch (e) {
         return []
@@ -237,7 +253,11 @@ function getCommandsList() {
             aliases: cmd.aliases || [],
             enabled: cmd.enabled !== false,
             cooldown: cmd.cooldown || 3,
-            usageCount: Math.floor(Math.random() * 150) + 8
+            usageCount: metricsService.getCommandUsage(cmd.name),
+            usageProvenance: {
+                source: 'metricsService:process_session',
+                measured: true
+            }
         })
     }
     return list
@@ -353,7 +373,7 @@ function setupRadioBroadcasts() {
         }
         broadcastSSE('track:start', trackData)
         io?.emit('track:start', trackData)
-        
+
         const qUpdate = getQueueData()
         broadcastSSE('queue:update', qUpdate)
         io?.emit('queue:update', qUpdate)
@@ -396,7 +416,7 @@ function setupRadioBroadcasts() {
 // EXPORTED STATUS SINK (CALLABLE BY BOT.JS)
 // ─────────────────────────────────────────────
 
-export function updateBotStatus(state, data = null) {
+export function updateBotStatus(state, data = null, meta = {}) {
     currentBotStatus = state
     if (state === 'qr') {
         currentQrCode = data
@@ -404,14 +424,30 @@ export function updateBotStatus(state, data = null) {
     } else if (state === 'pairing') {
         currentPairingCode = data
         currentQrCode = null
-    } else if (state === 'open') {
+    } else if (state === 'open' || state === 'close' || state === 'logged_out' || state === 'error') {
         currentQrCode = null
         currentPairingCode = null
     }
-    
-    // Broadcast status to Socket.IO & SSE
-    io?.emit('status:change', { state, qr: currentQrCode, pairingCode: currentPairingCode })
-    broadcastSSE('status:change', { state, qr: currentQrCode, pairingCode: currentPairingCode })
+    recordWhatsAppStateChange(state, data, meta)
+    const waSnapshot = getWhatsAppStatusSnapshot()
+
+    // Broadcast state only to public SSE (never expose QR or pairingCode publicly)
+    broadcastSSE('status:change', { state })
+
+    // Emit pairing material ONLY to authenticated Control sockets with WHATSAPP_PAIRING_READ
+    const emitScopedStatus = (ns) => {
+        if (!ns) return
+        for (const s of ns.sockets.values()) {
+            const canSeePairing = hasPermission(s.data?.controlUser, PERMISSIONS.WHATSAPP_PAIRING_READ)
+            if (canSeePairing) {
+                s.emit('status:change', { state, qr: currentQrCode, pairingCode: currentPairingCode, whatsapp: waSnapshot })
+            } else {
+                s.emit('status:change', { state, whatsapp: waSnapshot })
+            }
+        }
+    }
+    emitScopedStatus(io?.of('/'))
+    emitScopedStatus(controlNs)
 
     // If bot becomes online/open, broadcast updated lists after dynamic sync stabilizes
     if (state === 'open') {
@@ -419,8 +455,10 @@ export function updateBotStatus(state, data = null) {
             try {
                 const groups = await getGroupsList()
                 io?.emit('groups:update', groups)
+                controlNs?.emit('groups:update', groups)
                 const users = getUsersList()
                 io?.emit('users:update', users)
+                controlNs?.emit('users:update', users)
             } catch (err) {
                 logger.error('[Radio/StatusOpen] Failed to broadcast lists on open:', err.message)
             }
@@ -436,8 +474,20 @@ export function updateBotStatus(state, data = null) {
 let logListenerCallback = null
 let messageListenerCallback = null
 
-export function startRadioServer() {
-    if (serverInstance) return
+export function startRadioServer(options = {}) {
+    if (serverInstance) return { server: serverInstance, io }
+
+    // Fail closed on missing, weak, or identical dual JWT signing secrets BEFORE binding Express/Socket.IO
+    getControlJwtSecret()
+    getRadioJwtSecret()
+
+    bootstrapOwnerFromEnv()
+    try {
+        const savedCookie = getAppSetting('SUNO_COOKIE')
+        if (savedCookie && !process.env.SUNO_COOKIE) process.env.SUNO_COOKIE = savedCookie
+        const savedTunnel = getAppSetting('SUNO_API_URL')
+        if (savedTunnel && !process.env.SUNO_API_URL) process.env.SUNO_API_URL = savedTunnel
+    } catch (_) { }
 
     // Startup recovery query
     if (db) {
@@ -467,32 +517,117 @@ export function startRadioServer() {
             logger.info(`[Token/Cleanup] Cleaned up ${cleaned} expired or consumed stream tokens.`)
         }
     }, 60000)
+    tokenCleanupInterval.unref?.()
 
     setupRadioBroadcasts()
 
     const app = express()
+    const trustProxyRaw = (process.env.TRUST_PROXY || '').trim()
+    if (trustProxyRaw) {
+        const numericTrust = Number(trustProxyRaw)
+        app.set(
+            'trust proxy',
+            Number.isInteger(numericTrust) ? numericTrust : trustProxyRaw === 'true' ? 1 : trustProxyRaw
+        )
+    }
     serverInstance = createServer(app)
     io = new SocketServer(serverInstance, {
         cors: {
-            origin: '*',
+            origin: (origin, callback) => {
+                if (isOriginAllowed(origin)) return callback(null, true)
+                return callback(new Error('Origin not allowed by CORS'), false)
+            },
             methods: ['GET', 'POST']
         }
     })
+    controlNs = io.of('/control')
 
-    // Subscribe to Suno Status updates and broadcast via Socket.IO
+    // Subscribe to Suno Status updates and broadcast via authenticated Control Socket.IO
     eventBus.subscribe('suno:status', (job) => {
         io?.emit('suno:status', job)
+        controlNs?.emit('suno:status', job)
     })
 
-    // Relay thumbnail_ready to all connected dashboard clients
+    // Relay thumbnail_ready to authenticated Control Socket.IO clients
     eventBus.subscribe('suno:thumbnail_ready', (data) => {
         io?.emit('suno:thumbnail_ready', data)
+        controlNs?.emit('suno:thumbnail_ready', data)
+    })
+
+    eventBus.subscribe('control:commands:update', () => {
+        const list = getCommandsList()
+        io?.emit('commands:update', list)
+        controlNs?.emit('commands:update', list)
+    })
+
+    eventBus.subscribe('control:groups:update', async () => {
+        try {
+            const groups = await getGroupsList()
+            io?.emit('groups:update', groups)
+            controlNs?.emit('groups:update', groups)
+        } catch (err) {
+            logger.error('[ControlSocket/GroupsBroadcast] Failed:', err.message)
+        }
+    })
+
+    const emitInboxScoped = (eventName, payload, onlyControlUserId = null) => {
+        const send = (ns) => {
+            if (!ns) return
+            for (const s of ns.sockets.values()) {
+                const actor = s.data?.controlUser
+                if (!hasPermission(actor, PERMISSIONS.WHATSAPP_INBOX_READ)) continue
+                if (onlyControlUserId && actor?.id !== onlyControlUserId) continue
+                s.emit(eventName, payload)
+            }
+        }
+        send(io?.of('/'))
+        send(controlNs)
+    }
+
+    eventBus.subscribe('inbox:message:new', (payload) => {
+        emitInboxScoped('inbox:message:new', payload)
+    })
+
+    eventBus.subscribe('inbox:message:update', (payload) => {
+        emitInboxScoped('inbox:message:update', payload)
+    })
+
+    eventBus.subscribe('inbox:conversation:read', (payload) => {
+        emitInboxScoped('inbox:conversation:read', payload, payload?.controlUserId || null)
+    })
+
+    eventBus.subscribe('inbox:takeover:update', (payload) => {
+        emitInboxScoped('inbox:takeover:update', payload)
+    })
+
+    eventBus.subscribe('inbox:takeover:suppressed', (payload) => {
+        emitInboxScoped('inbox:takeover:suppressed', payload)
     })
 
     // --- V2 Socket.IO Namespaces ---
     const chatNamespace = io.of('/chat')
     const presenceNamespace = io.of('/presence')
     const songReactionsNamespace = io.of('/song-reactions')
+
+    const ALLOWED_SONG_REACTIONS = new Set([
+        '❤️', '🔥', '👏', '🎵', '😂', '👍', '🎉', '😍', '🤘', '💯',
+        'heart', 'fire', 'clap', 'music', 'laugh', 'thumbsup'
+    ])
+
+    function createSocketRateLimiter(maxEvents, windowMs) {
+        let count = 0
+        let resetAt = Date.now() + windowMs
+        return () => {
+            const now = Date.now()
+            if (now >= resetAt) {
+                count = 0
+                resetAt = now + windowMs
+            }
+            if (count >= maxEvents) return false
+            count += 1
+            return true
+        }
+    }
 
     // --- V2 Event Bus decoupled subscriptions ---
     eventBus.subscribe('chat.message', (payload) => {
@@ -507,32 +642,47 @@ export function startRadioServer() {
 
     chatNamespace.on('connection', (socket) => {
         logger.info(`[Socket/Chat] Client connected: ${socket.id}`)
+        const allowChatMsg = createSocketRateLimiter(10, 10_000)
+        const allowChatReact = createSocketRateLimiter(15, 10_000)
 
         socket.on('chat:send_message', async (data) => {
-            if (!data.content || data.content.trim() === '') return
+            if (!data || typeof data.content !== 'string') return
+            const trimmed = data.content.trim()
+            if (!trimmed || trimmed.length > 500) {
+                socket.emit('error', 'Pesan harus antara 1 dan 500 karakter.')
+                return
+            }
+            if (!allowChatMsg()) {
+                socket.emit('error', 'Terlalu banyak pesan, coba lagi beberapa saat.')
+                return
+            }
             try {
                 const decoded = verifyJwt(data.token)
-                if (!decoded) {
+                if (!decoded || !decoded.jid) {
                     socket.emit('error', 'Sesi tidak valid.')
                     return
                 }
-                await chatService.sendMessage(decoded.jid, data.content)
+                await chatService.sendMessage(decoded.jid, trimmed)
             } catch (err) {
                 socket.emit('error', err.message)
             }
         })
 
         socket.on('chat:add_reaction', async (data) => {
+            if (!data || !allowChatReact()) return
+            const messageId = typeof data.messageId === 'string' ? data.messageId.trim() : ''
+            const reaction = typeof data.reaction === 'string' ? data.reaction.trim() : ''
+            if (!messageId || messageId.length > 128 || !reaction || reaction.length > 16) return
             try {
                 const decoded = verifyJwt(data.token)
-                if (!decoded) return
-                await chatService.addReaction(data.messageId, decoded.jid, data.reaction)
+                if (!decoded || !decoded.jid) return
+                await chatService.addReaction(messageId, decoded.jid, reaction)
                 chatNamespace.emit('chat:reactions_update', {
-                    messageId: data.messageId,
-                    reaction: data.reaction,
+                    messageId,
+                    reaction,
                     userId: decoded.jid
                 })
-            } catch (err) {
+            } catch (_) {
                 // ignore
             }
         })
@@ -540,30 +690,46 @@ export function startRadioServer() {
 
     presenceNamespace.on('connection', (socket) => {
         logger.info(`[Socket/Presence] Client connected: ${socket.id}`)
+        const allowPresence = createSocketRateLimiter(20, 10_000)
 
         socket.on('presence:change', async (data) => {
+            if (!data || !allowPresence()) return
             try {
-                const decoded = verifyJwt(data.token)
-                if (!decoded) return
-                await userRepository.updateUserPresence(decoded.jid, data.status)
+                const decoded = verifyJwt(data?.token)
+                if (!decoded || !decoded.jid) return
+                const allowedStatuses = new Set(['listening', 'idle', 'online', 'offline'])
+                const nextStatus = allowedStatuses.has(data?.status) ? data.status : null
+                if (!nextStatus) return
+
+                // Persist presence without blocking real-time broadcast if Postgres is unavailable (Lite Mode)
+                Promise.resolve(userRepository.updateUserPresence(decoded.jid, nextStatus)).catch((err) => {
+                    logger.warn(`[Socket/Presence] Persistence skipped: ${err.message}`)
+                })
                 presenceNamespace.emit('presence:listeners_update', {
                     userId: decoded.jid,
-                    status: data.status,
+                    status: nextStatus,
                     timestamp: Date.now()
                 })
             } catch (err) {
-                // ignore
+                logger.warn(`[Socket/Presence] Error handling presence:change: ${err.message}`)
             }
         })
     })
 
     songReactionsNamespace.on('connection', (socket) => {
         logger.info(`[Socket/SongReactions] Client connected: ${socket.id}`)
+        const allowReaction = createSocketRateLimiter(15, 10_000)
 
         socket.on('song:react', (data) => {
+            if (!data || typeof data !== 'object') return
+            const songId = typeof data.songId === 'string' ? data.songId.trim() : ''
+            const reaction = typeof data.reaction === 'string' ? data.reaction.trim() : ''
+            if (!songId || songId.length > 128 || !ALLOWED_SONG_REACTIONS.has(reaction)) return
+            if (!allowReaction()) return
+
             songReactionsNamespace.emit('song:reactions_sync', {
-                songId: data.songId,
-                reaction: data.reaction,
+                songId,
+                reaction,
                 timestamp: Date.now()
             })
         })
@@ -579,324 +745,352 @@ export function startRadioServer() {
             .then((file) => logger.info(`[Scheduler] Daily logs archived to: ${file}`))
             .catch((err) => logger.warn(`[Scheduler] Daily chat log archiving skipped: ${err.message}`))
     }, ONE_DAY_MS)
+    archiverInterval.unref?.()
 
-    // Setup periodic metrics broadcasts
+    // Setup periodic metrics broadcasts (to authenticated Control sockets & public SSE)
     metricsInterval = setInterval(() => {
         const sysMetrics = metricsService.getSystemMetrics()
         broadcastSSE('metrics', sysMetrics)
-        io?.emit('metrics', {
-            cpuUsage: sysMetrics.cpuUsage,
-            memoryUsage: sysMetrics.memoryUsed,
-            totalMemory: sysMetrics.memoryTotal,
-            messagesToday: metricsService.getAnalyticsData().commandsToday * 4 + 10 // Mock scale
+        const payload = buildControlMetricsSnapshot({
+            db,
+            metricsService,
+            dbSizeBytes: getDbSize()
         })
+        io?.emit('metrics', payload)
+        controlNs?.emit('metrics', payload)
     }, 3000)
+    metricsInterval.unref?.()
 
     analyticsInterval = setInterval(() => {
         const anaData = metricsService.getAnalyticsData()
         broadcastSSE('analytics', anaData)
-        io?.emit('analytics', {
-            hourlyMessageVolume: [10, 15, 8, 22, 35, 14, 18], // mock chart distribution
-            commandUsage: anaData.topCommands,
-            aiCalls: [
-                { provider: 'groq', count: 12 },
-                { provider: 'gemini', count: 8 },
-                { provider: 'nvidia', count: 5 }
-            ]
-        })
+        const payload = buildControlAnalyticsSnapshot({ metricsService })
+        io?.emit('analytics', payload)
+        controlNs?.emit('analytics', payload)
     }, 10000)
+    analyticsInterval.unref?.()
 
-    // Hook logger listeners
+    // Hook logger listeners (redacted before emission)
     logListenerCallback = (text) => {
-        io?.emit('log', text)
+        const safeText = redactSensitive(String(text))
+        io?.emit('log', safeText)
+        controlNs?.emit('log', safeText)
     }
     messageListenerCallback = (msg) => {
-        io?.emit('message', msg)
+        const safeMsg = redactSensitive(msg)
+        io?.emit('message', safeMsg)
+        controlNs?.emit('message', safeMsg)
     }
     addLogListener(logListenerCallback)
     addMessageListener(messageListenerCallback)
 
-    // Socket.IO core namespaces & connection management
-    io.on('connection', async (socket) => {
-        logger.info(`[Dashboard] Client connected: ${socket.id}`)
+    // ─────────────────────────────────────────────
+    // AUTHENTICATED CONTROL CENTER SOCKET.IO GATE (HTTP PARITY)
+    // Applied to both default '/' (legacy client compat) and '/control' namespace.
+    // Public Radio continues using '/chat', '/presence', '/song-reactions', and '/events'.
+    // ─────────────────────────────────────────────
+    function extractSocketToken(socket) {
+        const authToken = socket.handshake?.auth?.token
+        if (typeof authToken === 'string' && authToken.trim()) {
+            return authToken.trim()
+        }
+        const header = socket.handshake?.headers?.authorization
+        if (typeof header === 'string' && header.startsWith('Bearer ')) {
+            return header.slice(7).trim()
+        }
+        return null
+    }
 
-        try {
-            const groups = await getGroupsList()
-            const users = getUsersList()
+    function attachControlSocketAuth(ns) {
+        ns.use((socket, next) => {
+            const token = extractSocketToken(socket)
+            if (!token) {
+                return next(new Error('UNAUTHORIZED: Control Center token required'))
+            }
+            const result = verifyControlToken(token)
+            if (!result.user) {
+                return next(new Error(`${result.code || 'UNAUTHORIZED'}: ${result.error || 'Authentication failed'}`))
+            }
+            socket.data.token = token
+            socket.data.controlUser = result.user
+            next()
+        })
+    }
 
-            // Send initialization package
-            socket.emit('init', {
-                status: { state: currentBotStatus, qr: currentQrCode },
-                uptime: Math.floor(process.uptime()),
-                metrics: {
-                    cpuUsage: metricsService.getSystemMetrics().cpuUsage,
-                    memoryUsage: metricsService.getSystemMetrics().memoryUsed,
-                    totalMemory: metricsService.getSystemMetrics().memoryTotal,
-                    messagesToday: metricsService.getAnalyticsData().downloadsToday * 6 + 15,
-                    commandsExecuted: metricsService.getAnalyticsData().commandsToday,
-                    aiRequests: Math.floor(metricsService.getAnalyticsData().commandsToday * 0.4),
-                    downloads: metricsService.getAnalyticsData().downloadsToday,
-                    activeUsers: users.length,
-                    activeGroups: groups.length,
-                    dbSize: getDbSize()
-                },
-                analytics: {
-                    hourlyMessageVolume: [2, 5, 1, 8, 12, 16, 9, 14, 11, 23, 19, 21, 28, 30, 24, 18, 15, 12, 9, 6, 4, 3, 2, 1],
-                    commandUsage: metricsService.getAnalyticsData().topCommands,
-                    aiCalls: [
-                        { provider: 'groq', count: 24 },
-                        { provider: 'gemini', count: 18 },
-                        { provider: 'nvidia', count: 10 }
-                    ]
-                },
-                commands: getCommandsList(),
-                groups: groups,
-                users: users,
-                logs: getLogHistory(),
-                dbTables: getTableNames(),
-                sunoJobs: getActiveJobs(),
-                ai: {
-                    providers: Object.entries(BRAINS).map(([key, brain]) => {
-                        let active = false
-                        if (brain.provider === 'nvidia' && process.env.NVIDIA_API_KEY) active = true
-                        else if (brain.provider === 'groq' && process.env.GROQ_API_KEY) active = true
-                        else if (brain.provider === 'gemini' && process.env.GEMINI_API_KEY) active = true
+    function authorizeSocketEvent(socket, permission, action, target = null) {
+        const result = verifyControlToken(socket.data?.token)
+        if (!result.user) {
+            socket.emit('error', { code: result.code || 'UNAUTHORIZED', message: result.error || 'Session invalid or revoked.' })
+            socket.disconnect(true)
+            return null
+        }
+        socket.data.controlUser = result.user
+        if (!hasPermission(result.user, permission)) {
+            recordAudit({
+                actorId: result.user.id,
+                actorRole: result.user.role,
+                action,
+                target,
+                result: 'denied'
+            })
+            socket.emit('error', {
+                code: 'FORBIDDEN',
+                message: `Insufficient permissions: ${permission} required.`
+            })
+            return null
+        }
+        return result.user
+    }
 
-                        return {
-                            name: key,
-                            displayName: brain.name,
-                            active,
-                            ping: active ? Math.floor(Math.random() * 50) + 15 : 0,
-                            model: brain.model,
-                            status: active ? 'healthy' : 'offline'
-                        }
+    function registerControlSocketHandlers(ns) {
+        attachControlSocketAuth(ns)
+
+        ns.on('connection', async (socket) => {
+            const user = socket.data.controlUser
+            logger.info(`[ControlSocket] Client connected: ${socket.id} (user=${user.username}, role=${user.role})`)
+
+            try {
+                const groups = await getGroupsList()
+                const users = getUsersList()
+                const canReadPairing = hasPermission(user, PERMISSIONS.WHATSAPP_PAIRING_READ)
+                const canReadFullLogs = hasPermission(user, PERMISSIONS.LOGS_READ_FULL)
+                const canReadDbMeta = hasPermission(user, PERMISSIONS.DB_METADATA_READ)
+                const rawLogs = getLogHistory().map(l => redactSensitive(String(l)))
+                const scopedLogs = canReadFullLogs ? rawLogs : rawLogs.slice(-100)
+
+                socket.emit('init', {
+                    user: {
+                        id: user.id,
+                        username: user.username,
+                        role: user.role,
+                        permissions: user.permissions
+                    },
+                    status: {
+                        state: currentBotStatus,
+                        whatsapp: getWhatsAppStatusSnapshot(),
+                        ...(canReadPairing ? { qr: currentQrCode, pairingCode: currentPairingCode } : {})
+                    },
+                    uptime: Math.floor(process.uptime()),
+                    metrics: buildControlMetricsSnapshot({
+                        db,
+                        metricsService,
+                        usersCount: users.length,
+                        groupsCount: groups.length,
+                        dbSizeBytes: getDbSize()
                     }),
-                    fallbackChain: ['nvidia', 'groq', 'gemini']
+                    analytics: buildControlAnalyticsSnapshot({ metricsService }),
+                    commands: getCommandsList(),
+                    groups: groups,
+                    users: users,
+                    logs: scopedLogs,
+                    ...(canReadDbMeta ? { dbTables: getTableNames() } : {}),
+                    sunoJobs: getActiveJobs(),
+                    ai: buildAiProviderTelemetry()
+                })
+            } catch (err) {
+                logger.error('[ControlSocket/Init] Error compiling client init payload:', err.message)
+            }
+
+            socket.on('suno:get_active', () => {
+                if (!authorizeSocketEvent(socket, PERMISSIONS.CREATOR_READ, 'socket:suno:get_active')) return
+                try {
+                    const jobs = getActiveJobs()
+                    const activeJob = jobs.find(j => j.status === 'running')
+                    if (activeJob) {
+                        socket.emit('suno:status', activeJob)
+                    }
+                } catch (err) {
+                    logger.error('[Socket/Suno] Error fetching active jobs:', err.message)
                 }
             })
-        } catch (err) {
-            logger.error('[Dashboard/Init] Error compiling client init payload:', err.message)
-        }
 
-        // Client triggers
-        socket.on('suno:get_active', () => {
-            try {
-                const jobs = getActiveJobs()
-                const activeJob = jobs.find(j => j.status === 'running')
-                if (activeJob) {
-                    socket.emit('suno:status', activeJob)
-                }
-            } catch (err) {
-                logger.error('[Socket/Suno] Error fetching active jobs:', err.message)
-            }
-        })
-
-        socket.on('suno:generate', async (data) => {
-            const { prompt, title, enhance, model, isCustom, lyrics, tags, make_instrumental, enhanceLyrics, vignetteMode } = data
-            if (!prompt) return socket.emit('error', 'Prompt tidak boleh kosong')
-            logger.info(`[Socket/Suno] Triggering suno generation from socket: ${prompt}`)
-            try {
-                const jobId = await startSunoPipeline({ 
-                    prompt, 
-                    title, 
-                    enhance, 
-                    source: 'web', 
-                    model,
-                    isCustom,
-                    lyrics,
-                    tags,
-                    make_instrumental,
-                    enhanceLyrics,
-                    vignetteMode: vignetteMode || 'normal'
-                })
-                socket.emit('suno:started', { jobId })
-            } catch (err) {
-                socket.emit('error', `Gagal memulai generasi: ${err.message}`)
-            }
-        })
-
-        socket.on('suno:playlist_generate', async (data) => {
-            logger.info(`[Socket/Suno] suno:playlist_generate event received. Payload: ${JSON.stringify(data)}`)
-            const { songs, outputTitle, playlistDescription, transitionStyle, generateMotion, vignetteMode } = data || {}
-            if (!songs || !Array.isArray(songs) || songs.length === 0) {
-                logger.warn(`[Socket/Suno] Rejected playlist generation: songs is empty or invalid.`)
-                return socket.emit('error', 'Lagu-lagu playlist tidak boleh kosong.')
-            }
-            if (!outputTitle) {
-                logger.warn(`[Socket/Suno] Rejected playlist generation: outputTitle is empty.`)
-                return socket.emit('error', 'Judul Playlist YouTube wajib diisi.')
-            }
-            logger.info(`[Socket/Suno] Triggering playlist generation from socket: ${outputTitle} (${songs.length} songs)`)
-            try {
-                const jobId = await startPlaylistPipeline({
-                    songs,
-                    outputTitle,
-                    playlistDescription: playlistDescription || '',
-                    transitionStyle: transitionStyle || 'dissolve',
-                    generateMotion: !!generateMotion,
-                    vignetteMode: vignetteMode || 'normal',
-                    source: 'web',
-                    chatId: null
-                })
-                socket.emit('suno:started', { jobId })
-            } catch (err) {
-                socket.emit('error', `Gagal memulai playlist pipeline: ${err.message}`)
-            }
-        })
-
-        // Thumbnail confirmation from dashboard user
-        socket.on('suno:confirm_thumbnail', ({ jobId, approved, newPrompt }) => {
-            const ok = confirmThumbnail(jobId, { approved, newPrompt: newPrompt || null })
-            if (!ok) {
-                logger.warn(`[Socket/Suno] suno:confirm_thumbnail received for unknown job: ${jobId}`)
-            } else {
-                logger.info(`[Socket/Suno] Thumbnail ${approved ? 'approved' : 'rejected'} for job ${jobId}`)
-            }
-        })
-
-        socket.on('bot:restart', () => {
-            logger.warn('[Dashboard] Process exit triggered by dashboard user.')
-            process.exit(0)
-        })
-
-        socket.on('command:toggle', ({ name, enabled }) => {
-            const cmd = commands.get(name)
-            if (cmd) {
-                cmd.enabled = enabled
-                logger.info(`[Dashboard] Toggled command "${name}" -> ${enabled}`)
-                io?.emit('commands:update', getCommandsList())
-            }
-        })
-
-        socket.on('group:toggle_ai', async ({ chatId, enabled }) => {
-            try {
-                memoryService.setAiEnabled(chatId, enabled)
-                logger.info(`[Dashboard] Toggled AI Chat for group "${chatId}" -> ${enabled}`)
-                
-                // Broadcast updated groups list to all connected clients
-                const groups = await getGroupsList()
-                io?.emit('groups:update', groups)
-            } catch (err) {
-                logger.error('[Dashboard/ToggleAI] Failed to toggle group AI:', err.message)
-            }
-        })
-
-        socket.on('group:toggle_moderation', async ({ chatId, enabled }) => {
-            try {
-                await moderatorService.setModerationEnabled(chatId, enabled)
-                logger.info(`[Dashboard] Toggled AI Moderation for group "${chatId}" -> ${enabled}`)
-                
-                // Broadcast updated groups list to all connected clients
-                const groups = await getGroupsList()
-                io?.emit('groups:update', groups)
-            } catch (err) {
-                logger.error('[Dashboard/ToggleMod] Failed to toggle group moderation:', err.message)
-            }
-        })
-
-        socket.on('group:broadcast', async ({ chatId, text }) => {
-            const sock = getSocket()
-            if (!sock) {
-                logger.error('[Dashboard/Broadcast] Failed: WhatsApp socket offline.')
-                return
-            }
-            logger.info(`[Dashboard/Broadcast] Sending message to ${chatId}: "${text}"`)
-            try {
-                let mentions = []
+            socket.on('suno:generate', async (data) => {
+                const actor = authorizeSocketEvent(socket, PERMISSIONS.CREATOR_OPERATE, 'socket:suno:generate')
+                if (!actor) return
+                const { prompt, title, enhance, model, isCustom, lyrics, tags, make_instrumental, enhanceLyrics, vignetteMode } = data || {}
+                if (!prompt) return socket.emit('error', { code: 'BAD_REQUEST', message: 'Prompt tidak boleh kosong' })
+                logger.info(`[Socket/Suno] Triggering suno generation by ${actor.username}`)
                 try {
-                    const groupMeta = await sock.groupMetadata(chatId)
-                    if (groupMeta && groupMeta.participants) {
-                        mentions = groupMeta.participants.map(p => p.id)
-                    }
-                } catch (_) {}
-
-                await sock.sendMessage(chatId, {
-                    text: `📢 *PENGUMUMAN DARI OWNER*\n\n${text}`,
-                    mentions
-                })
-            } catch (err) {
-                logger.error(`[Dashboard/Broadcast] Failed to send message to ${chatId}:`, err.message)
-            }
-        })
-
-        socket.on('group:leave', async ({ chatId }) => {
-            const sock = getSocket()
-            if (!sock) {
-                logger.error('[Dashboard/LeaveGroup] Failed: WhatsApp socket offline.')
-                socket.emit('error', 'Gagal: WhatsApp socket sedang offline.')
-                return
-            }
-            logger.info(`[Dashboard/LeaveGroup] Leaving group ${chatId}...`)
-            try {
-                // Kirim salam pamit jika memungkinkan sebelum keluar
-                try {
-                    await sock.sendMessage(chatId, { text: '👋 *Bot pamit keluar dari grup ini.* Terima kasih!' })
-                } catch (_) {}
-
-                await sock.groupLeave(chatId)
-                logger.info(`[Dashboard/LeaveGroup] Successfully left group ${chatId}`)
-
-                // Bersihkan cache avatar grup
-                delete avatarCache[chatId]
-
-                // Hapus konfigurasi grup dari database jika ada
-                if (db) {
-                    try {
-                        db.prepare('DELETE FROM chat_config WHERE chat_id = ?').run(chatId)
-                        db.prepare('DELETE FROM moderation_config WHERE chat_id = ?').run(chatId)
-                    } catch (_) {}
-                }
-
-                // Broadcast updated groups list to all connected clients
-                const groups = await getGroupsList()
-                io?.emit('groups:update', groups)
-                socket.emit('group:left', { chatId, success: true })
-            } catch (err) {
-                logger.error(`[Dashboard/LeaveGroup] Failed to leave group ${chatId}:`, err.message)
-                socket.emit('error', `Gagal keluar dari grup: ${err.message}`)
-            }
-        })
-
-        socket.on('db:query', ({ sql }) => {
-            if (!db) {
-                socket.emit('db:query_result', { success: false, error: 'Database connection offline.' })
-                return
-            }
-            logger.info(`[Dashboard/DB] Executing query: "${sql}"`)
-            try {
-                const trimmed = sql.trim()
-                const stmt = db.prepare(trimmed)
-                
-                // Use better-sqlite3 statement.reader property to identify SELECT and other read queries
-                const isSelect = stmt.reader
-                if (isSelect) {
-                    const rows = stmt.all()
-                    socket.emit('db:query_result', { success: true, isSelect: true, data: rows })
-                } else {
-                    const info = stmt.run()
-                    socket.emit('db:query_result', { 
-                        success: true, 
-                        isSelect: false, 
-                        data: {
-                            changes: info.changes,
-                            lastInsertRowid: info.lastInsertRowid
-                        },
-                        // Refresh table names just in case a table was created or dropped
-                        dbTables: getTableNames()
+                    const jobId = await startSunoPipeline({
+                        prompt,
+                        title,
+                        enhance,
+                        source: 'web',
+                        model,
+                        isCustom,
+                        lyrics,
+                        tags,
+                        make_instrumental,
+                        enhanceLyrics,
+                        vignetteMode: vignetteMode || 'normal'
                     })
-                    // Also broadcast updated tables list to all connected clients if DDL/DML ran
-                    io?.emit('db:tables_update', getTableNames())
+                    recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:suno:generate', target: jobId, result: 'allowed' })
+                    socket.emit('suno:started', { jobId })
+                } catch (err) {
+                    socket.emit('error', { code: 'INTERNAL_ERROR', message: safeErrorMessage(err, 'Gagal memulai generasi') })
                 }
-            } catch (err) {
-                logger.error(`[Dashboard/DB] Query execution failed: "${sql}" - ${err.message}`)
-                socket.emit('db:query_result', { success: false, error: err.message })
-            }
-        })
+            })
 
-        socket.on('disconnect', () => {
-            logger.info(`[Dashboard] Client disconnected: ${socket.id}`)
+            socket.on('suno:playlist_generate', async (data) => {
+                const actor = authorizeSocketEvent(socket, PERMISSIONS.CREATOR_OPERATE, 'socket:suno:playlist_generate')
+                if (!actor) return
+                const { songs, outputTitle, playlistDescription, transitionStyle, generateMotion, vignetteMode } = data || {}
+                if (!songs || !Array.isArray(songs) || songs.length === 0) {
+                    return socket.emit('error', { code: 'BAD_REQUEST', message: 'Lagu-lagu playlist tidak boleh kosong.' })
+                }
+                if (!outputTitle) {
+                    return socket.emit('error', { code: 'BAD_REQUEST', message: 'Judul Playlist YouTube wajib diisi.' })
+                }
+                try {
+                    const jobId = await startPlaylistPipeline({
+                        songs,
+                        outputTitle,
+                        playlistDescription: playlistDescription || '',
+                        transitionStyle: transitionStyle || 'dissolve',
+                        generateMotion: !!generateMotion,
+                        vignetteMode: vignetteMode || 'normal',
+                        source: 'web',
+                        chatId: null
+                    })
+                    recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:suno:playlist_generate', target: jobId, result: 'allowed' })
+                    socket.emit('suno:started', { jobId })
+                } catch (err) {
+                    socket.emit('error', { code: 'INTERNAL_ERROR', message: safeErrorMessage(err, 'Gagal memulai playlist pipeline') })
+                }
+            })
+
+            socket.on('suno:confirm_thumbnail', (data) => {
+                const actor = authorizeSocketEvent(socket, PERMISSIONS.CREATOR_OPERATE, 'socket:suno:confirm_thumbnail', data?.jobId)
+                if (!actor) return
+                const { jobId, approved, newPrompt } = data || {}
+                const ok = confirmThumbnail(jobId, { approved, newPrompt: newPrompt || null })
+                recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:suno:confirm_thumbnail', target: jobId, result: ok ? 'allowed' : 'not_found' })
+            })
+
+            socket.on('bot:restart', (data) => {
+                const actor = authorizeSocketEvent(socket, PERMISSIONS.SYSTEM_RESTART, 'socket:bot:restart', 'process')
+                if (!actor) return
+                if (data?.confirm !== true) {
+                    return socket.emit('error', { code: 'CONFIRMATION_REQUIRED', message: 'Explicit confirm: true is required to restart.' })
+                }
+                recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:bot:restart', target: 'process', result: 'allowed' })
+                logger.warn(`[ControlSocket] Process exit triggered by ${actor.username} (${actor.role}).`)
+                process.exit(0)
+            })
+
+            socket.on('command:toggle', ({ name, enabled } = {}) => {
+                const actor = authorizeSocketEvent(socket, PERMISSIONS.COMMANDS_TOGGLE, 'socket:command:toggle', name)
+                if (!actor) return
+                const cmd = commands.get(name)
+                if (!cmd) return
+                const perms = Array.isArray(cmd.permissions) ? cmd.permissions : []
+                if (perms.includes('owner') && actor.role !== ROLES.OWNER) {
+                    recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:command:toggle', target: name, result: 'denied' })
+                    return socket.emit('error', { code: 'FORBIDDEN', message: 'Only Owner can toggle owner-scoped commands.' })
+                }
+                cmd.enabled = Boolean(enabled)
+                recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:command:toggle', target: name, result: 'allowed' })
+                logger.info(`[ControlSocket] Toggled command "${name}" -> ${Boolean(enabled)} by ${actor.username}`)
+                const list = getCommandsList()
+                io?.emit('commands:update', list)
+                controlNs?.emit('commands:update', list)
+            })
+
+            socket.on('group:toggle_ai', async ({ chatId, enabled } = {}) => {
+                const actor = authorizeSocketEvent(socket, PERMISSIONS.WHATSAPP_GROUP_CONFIG, 'socket:group:toggle_ai', chatId)
+                if (!actor) return
+                try {
+                    memoryService.setAiEnabled(chatId, Boolean(enabled))
+                    recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:group:toggle_ai', target: chatId, result: 'allowed' })
+                    const groups = await getGroupsList()
+                    io?.emit('groups:update', groups)
+                    controlNs?.emit('groups:update', groups)
+                } catch (err) {
+                    logger.error('[ControlSocket/ToggleAI] Failed to toggle group AI:', err.message)
+                }
+            })
+
+            socket.on('group:toggle_moderation', async ({ chatId, enabled } = {}) => {
+                const actor = authorizeSocketEvent(socket, PERMISSIONS.WHATSAPP_GROUP_CONFIG, 'socket:group:toggle_moderation', chatId)
+                if (!actor) return
+                try {
+                    await moderatorService.setModerationEnabled(chatId, Boolean(enabled))
+                    recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:group:toggle_moderation', target: chatId, result: 'allowed' })
+                    const groups = await getGroupsList()
+                    io?.emit('groups:update', groups)
+                    controlNs?.emit('groups:update', groups)
+                } catch (err) {
+                    logger.error('[ControlSocket/ToggleMod] Failed to toggle group moderation:', err.message)
+                }
+            })
+
+            socket.on('group:broadcast', async ({ chatId, text, confirm } = {}) => {
+                const actor = authorizeSocketEvent(socket, PERMISSIONS.WHATSAPP_GROUP_BROADCAST, 'socket:group:broadcast', chatId)
+                if (!actor) return
+                if (confirm !== true) {
+                    return socket.emit('error', { code: 'CONFIRMATION_REQUIRED', message: 'Explicit confirm: true is required for broadcast.' })
+                }
+                const sock = getSocket()
+                if (!sock) {
+                    return socket.emit('error', { code: 'SERVICE_UNAVAILABLE', message: 'WhatsApp socket offline.' })
+                }
+                try {
+                    let mentions = []
+                    try {
+                        const groupMeta = await sock.groupMetadata(chatId)
+                        if (groupMeta?.participants) mentions = groupMeta.participants.map(p => p.id)
+                    } catch (_) { }
+                    await sock.sendMessage(chatId, { text: `📢 *PENGUMUMAN DARI OWNER*\n\n${text}`, mentions })
+                    recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:group:broadcast', target: chatId, result: 'allowed' })
+                } catch (err) {
+                    logger.error(`[ControlSocket/Broadcast] Failed for ${chatId}:`, err.message)
+                    socket.emit('error', { code: 'INTERNAL_ERROR', message: safeErrorMessage(err) })
+                }
+            })
+
+            socket.on('group:leave', async ({ chatId, confirm } = {}) => {
+                const actor = authorizeSocketEvent(socket, PERMISSIONS.WHATSAPP_GROUP_LEAVE, 'socket:group:leave', chatId)
+                if (!actor) return
+                if (confirm !== true) {
+                    return socket.emit('error', { code: 'CONFIRMATION_REQUIRED', message: 'Explicit confirm: true is required to leave a group.' })
+                }
+                const sock = getSocket()
+                if (!sock) {
+                    return socket.emit('error', { code: 'SERVICE_UNAVAILABLE', message: 'WhatsApp socket sedang offline.' })
+                }
+                try {
+                    try {
+                        await sock.sendMessage(chatId, { text: '👋 *Bot pamit keluar dari grup ini.* Terima kasih!' })
+                    } catch (_) { }
+                    await sock.groupLeave(chatId)
+                    delete avatarCache[chatId]
+                    if (db) {
+                        try {
+                            db.prepare('DELETE FROM chat_config WHERE chat_id = ?').run(chatId)
+                            db.prepare('DELETE FROM moderation_config WHERE chat_id = ?').run(chatId)
+                        } catch (_) { }
+                    }
+                    recordAudit({ actorId: actor.id, actorRole: actor.role, action: 'socket:group:leave', target: chatId, result: 'allowed' })
+                    const groups = await getGroupsList()
+                    io?.emit('groups:update', groups)
+                    controlNs?.emit('groups:update', groups)
+                    socket.emit('group:left', { chatId, success: true })
+                } catch (err) {
+                    logger.error(`[ControlSocket/LeaveGroup] Failed for ${chatId}:`, err.message)
+                    socket.emit('error', { code: 'INTERNAL_ERROR', message: safeErrorMessage(err) })
+                }
+            })
+
+            // db:query permanently removed per SEC-007 (use /api/v2/control/db/tables read-only metadata)
+
+            socket.on('disconnect', () => {
+                logger.info(`[ControlSocket] Client disconnected: ${socket.id}`)
+            })
         })
-    })
+    }
+
+    registerControlSocketHandlers(io.of('/'))
+    registerControlSocketHandlers(controlNs)
 
     function generateRequestId() {
         const today = new Date()
@@ -924,8 +1118,12 @@ export function startRadioServer() {
         // Log request entry
         logger.info(`[${reqId}] ${req.method} ${req.originalUrl || req.url}`)
 
-        // CORS headers
-        res.setHeader('Access-Control-Allow-Origin', '*')
+        // CORS headers (restricted via ALLOWED_ORIGINS in production)
+        const reqOrigin = req.headers.origin
+        if (reqOrigin && isOriginAllowed(reqOrigin)) {
+            res.setHeader('Access-Control-Allow-Origin', reqOrigin)
+            res.setHeader('Vary', 'Origin')
+        }
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Accept, Authorization, X-Request-ID, X-API-Key')
         res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID, Content-Disposition')
@@ -935,6 +1133,9 @@ export function startRadioServer() {
         })
 
         if (req.method === 'OPTIONS') {
+            if (reqOrigin && !isOriginAllowed(reqOrigin)) {
+                return res.sendStatus(403)
+            }
             return res.sendStatus(200)
         }
         next()
@@ -954,10 +1155,10 @@ export function startRadioServer() {
 
         const referer = (req.headers['referer'] || '').toLowerCase()
         const isRefererValid = referer && (
-            referer.includes('/radio') || 
-            referer.includes('/dashboard') || 
-            referer.includes('ronnproject') || 
-            referer.includes('localhost') || 
+            referer.includes('/radio') ||
+            referer.includes('/dashboard') ||
+            referer.includes('ronnproject') ||
+            referer.includes('localhost') ||
             referer.includes(':5173')
         )
 
@@ -1107,6 +1308,7 @@ export function startRadioServer() {
 
     // Mount modular routes
     apiV2.use('/auth', authRouter)
+    apiV2.use('/control', controlRouter)
     apiV2.use('/suno', sunoRouter)
     apiV2.use('/', systemRouter)
     apiV2.use('/', lyricsRouter)
@@ -1124,14 +1326,26 @@ export function startRadioServer() {
         res.json(getFullStatus())
     })
 
-    // REST API /api/system/ping for health check & live telemetry polling
-    app.get(['/api/system/ping', '/ping', '/healthz'], (req, res) => {
+    // Canonical /healthz endpoint (ping routes are handled deterministically by systemRouter)
+    app.get('/healthz', (req, res) => {
         const mem = process.memoryUsage()
         const rssMB = Math.round(mem.rss / 1024 / 1024)
         const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024)
         const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024)
+        const sock = getSocket()
+
+        let sqliteOk = false
+        try {
+            if (db) {
+                db.prepare('SELECT 1').get()
+                sqliteOk = true
+            }
+        } catch {
+            sqliteOk = false
+        }
+
         res.json({
-            status: 'ok',
+            status: sqliteOk ? 'ok' : 'degraded',
             uptime: Math.floor(process.uptime()),
             timestamp: Date.now(),
             memory: {
@@ -1139,12 +1353,81 @@ export function startRadioServer() {
                 heapUsedMB,
                 heapTotalMB
             },
-            bot: {
-                connected: !!(sock?.user),
-                user: sock?.user?.id || null,
-                pushName: sock?.user?.name || 'BotOS'
+            whatsapp: {
+                connected: Boolean(sock?.user),
+                state: currentBotStatus
+            },
+            database: {
+                sqlite: sqliteOk ? 'ok' : 'error'
             }
         })
+    })
+
+    function buildReadinessSnapshot() {
+        let sqliteOk = false
+        try {
+            if (db) {
+                db.prepare('SELECT 1').get()
+                sqliteOk = true
+            }
+        } catch {
+            sqliteOk = false
+        }
+
+        const leaseHealthy = isRuntimeLeaseHealthy()
+        let secretsConfigured = false
+        try {
+            getControlJwtSecret()
+            getRadioJwtSecret()
+            secretsConfigured = true
+        } catch {
+            secretsConfigured = false
+        }
+
+        const sock = getSocket()
+        const waConnected = Boolean(sock?.user) || currentBotStatus === 'open'
+        const mem = process.memoryUsage()
+        const coreOk = sqliteOk && leaseHealthy && secretsConfigured
+        const overallStatus = !coreOk ? 'unhealthy' : waConnected ? 'healthy' : 'degraded'
+
+        return {
+            status: overallStatus,
+            timestamp: new Date().toISOString(),
+            uptime: Math.floor(process.uptime()),
+            checks: {
+                sqlite: sqliteOk ? 'pass' : 'fail',
+                runtimeSingleton: leaseHealthy ? 'pass' : 'fail',
+                secrets: secretsConfigured ? 'pass' : 'fail',
+                whatsapp: waConnected ? 'pass' : 'degraded',
+                http: serverInstance?.listening ? 'pass' : 'fail',
+                socket: io ? 'pass' : 'fail'
+            },
+            memory: {
+                rssMB: Math.round(mem.rss / (1024 * 1024)),
+                heapUsedMB: Math.round(mem.heapUsed / (1024 * 1024))
+            }
+        }
+    }
+
+    lastSelfCheckSnapshot = buildReadinessSnapshot()
+    if (selfMonitorInterval) clearInterval(selfMonitorInterval)
+    selfMonitorInterval = setInterval(() => {
+        try {
+            lastSelfCheckSnapshot = buildReadinessSnapshot()
+            if (lastSelfCheckSnapshot.status === 'unhealthy') {
+                logger.error(`[SelfMonitor] Unhealthy dependency state: sqlite=${lastSelfCheckSnapshot.checks.sqlite}, lease=${lastSelfCheckSnapshot.checks.runtimeSingleton}`)
+            }
+        } catch (err) {
+            logger.warn('[SelfMonitor] Snapshot failed:', err.message)
+        }
+    }, 60_000)
+    selfMonitorInterval.unref?.()
+
+    app.get('/readyz', (req, res) => {
+        const snapshot = buildReadinessSnapshot()
+        lastSelfCheckSnapshot = snapshot
+        const httpStatus = snapshot.status === 'unhealthy' ? 503 : 200
+        res.status(httpStatus).json(snapshot)
     })
 
     // REST API /queue endpoint
@@ -1165,7 +1448,7 @@ export function startRadioServer() {
     app.get('/api/radio/history', (req, res) => {
         res.json({ success: true, data: { history: recentlyPlayed, total: recentlyPlayed.length } })
     })
-    app.get('/api/bot/commands', async (req, res) => {
+    app.get('/api/bot/commands', authenticateControlJwt, requirePermission(PERMISSIONS.COMMANDS_READ), async (req, res) => {
         try {
             if (commands.size === 0) {
                 await initializeRegistry()
@@ -1186,80 +1469,112 @@ export function startRadioServer() {
             }
             res.json({ success: true, total: cmdList.length, data: cmdList })
         } catch (err) {
-            res.status(500).json({ success: false, error: err.message })
+            res.status(500).json({ success: false, error: safeErrorMessage(err) })
         }
     })
 
-    // REST API /api/groups endpoint
-    app.get(['/api/groups', '/groups'], async (req, res) => {
+    // REST API /api/groups endpoint (Protected)
+    app.get(['/api/groups', '/groups'], authenticateControlJwt, requirePermission(PERMISSIONS.WHATSAPP_GROUPS_READ), async (req, res) => {
         try {
             const list = await getGroupsList()
             res.json({ success: true, total: list.length, groups: list })
         } catch (err) {
-            res.status(500).json({ success: false, error: err.message })
+            res.status(500).json({ success: false, error: safeErrorMessage(err) })
         }
     })
 
-    // REST API Group actions
-    app.post('/api/groups/:jid/toggle-ai', async (req, res) => {
+    // REST API Group actions (Protected + RBAC + Confirmation for broadcast/leave)
+    app.post('/api/groups/:jid/toggle-ai', authenticateControlJwt, requirePermission(PERMISSIONS.WHATSAPP_GROUP_CONFIG), async (req, res) => {
         try {
             const { jid } = req.params
-            const { enabled } = req.body
+            const { enabled } = req.body || {}
             memoryService.setAiEnabled(jid, Boolean(enabled))
+            recordAudit({
+                actorId: req.controlUser.id,
+                actorRole: req.controlUser.role,
+                action: 'http:group:toggle_ai',
+                target: jid,
+                result: 'allowed',
+                correlationId: req.id || null
+            })
             res.json({ success: true, jid, ai_enabled: Boolean(enabled) })
         } catch (err) {
-            res.status(500).json({ success: false, error: err.message })
+            res.status(500).json({ success: false, error: safeErrorMessage(err) })
         }
     })
 
-    app.post('/api/groups/:jid/toggle-moderation', async (req, res) => {
+    app.post('/api/groups/:jid/toggle-moderation', authenticateControlJwt, requirePermission(PERMISSIONS.WHATSAPP_GROUP_CONFIG), async (req, res) => {
         try {
             const { jid } = req.params
-            const { enabled } = req.body
+            const { enabled } = req.body || {}
             await moderatorService.setModerationEnabled(jid, Boolean(enabled))
+            recordAudit({
+                actorId: req.controlUser.id,
+                actorRole: req.controlUser.role,
+                action: 'http:group:toggle_moderation',
+                target: jid,
+                result: 'allowed',
+                correlationId: req.id || null
+            })
             res.json({ success: true, jid, mod_enabled: Boolean(enabled) })
         } catch (err) {
-            res.status(500).json({ success: false, error: err.message })
+            res.status(500).json({ success: false, error: safeErrorMessage(err) })
         }
     })
 
-    app.post('/api/groups/:jid/broadcast', async (req, res) => {
+    app.post('/api/groups/:jid/broadcast', authenticateControlJwt, requirePermission(PERMISSIONS.WHATSAPP_GROUP_BROADCAST), requireConfirmation, async (req, res) => {
         try {
             const { jid } = req.params
-            const { text } = req.body
+            const { text } = req.body || {}
             const sock = getSocket()
             if (!sock) return res.status(503).json({ success: false, error: 'WhatsApp socket offline' })
             let mentions = []
             try {
                 const groupMeta = await sock.groupMetadata(jid)
                 if (groupMeta?.participants) mentions = groupMeta.participants.map(p => p.id)
-            } catch (_) {}
+            } catch (_) { }
             await sock.sendMessage(jid, { text: `📢 *PENGUMUMAN DARI OWNER*\n\n${text}`, mentions })
+            recordAudit({
+                actorId: req.controlUser.id,
+                actorRole: req.controlUser.role,
+                action: 'http:group:broadcast',
+                target: jid,
+                result: 'allowed',
+                correlationId: req.id || null
+            })
             res.json({ success: true, jid })
         } catch (err) {
-            res.status(500).json({ success: false, error: err.message })
+            res.status(500).json({ success: false, error: safeErrorMessage(err) })
         }
     })
 
-    app.post('/api/groups/:jid/leave', async (req, res) => {
+    app.post('/api/groups/:jid/leave', authenticateControlJwt, requirePermission(PERMISSIONS.WHATSAPP_GROUP_LEAVE), requireConfirmation, async (req, res) => {
         try {
             const { jid } = req.params
             const sock = getSocket()
             if (!sock) return res.status(503).json({ success: false, error: 'WhatsApp socket offline' })
             try {
                 await sock.sendMessage(jid, { text: '👋 *Bot pamit keluar dari grup ini.* Terima kasih!' })
-            } catch (_) {}
+            } catch (_) { }
             await sock.groupLeave(jid)
             delete avatarCache[jid]
             if (db) {
                 try {
                     db.prepare('DELETE FROM chat_config WHERE chat_id = ?').run(jid)
                     db.prepare('DELETE FROM moderation_config WHERE chat_id = ?').run(jid)
-                } catch (_) {}
+                } catch (_) { }
             }
+            recordAudit({
+                actorId: req.controlUser.id,
+                actorRole: req.controlUser.role,
+                action: 'http:group:leave',
+                target: jid,
+                result: 'allowed',
+                correlationId: req.id || null
+            })
             res.json({ success: true, jid })
         } catch (err) {
-            res.status(500).json({ success: false, error: err.message })
+            res.status(500).json({ success: false, error: safeErrorMessage(err) })
         }
     })
 
@@ -1315,8 +1630,16 @@ export function startRadioServer() {
         res.on('error', cleanup)
     })
 
-    // QR Code & Pairing Code Web Endpoint
-    app.get(['/qr', '/pairing', '/code'], async (req, res) => {
+    // QR Code & Pairing Code Web Endpoint (Protected: Admin/Owner only + Audited)
+    app.get(['/qr', '/pairing', '/code'], authenticateControlJwt, requirePermission(PERMISSIONS.WHATSAPP_PAIRING_READ), async (req, res) => {
+        recordAudit({
+            actorId: req.controlUser.id,
+            actorRole: req.controlUser.role,
+            action: 'whatsapp:pairing:view',
+            target: req.path,
+            result: 'allowed',
+            correlationId: req.id || null
+        })
         if (currentPairingCode) {
             return res.send(`
                 <!DOCTYPE html>
@@ -1454,18 +1777,25 @@ export function startRadioServer() {
         res.status(404).send('Not found')
     })
 
-    const listenHost = process.env.RADIO_LISTEN_HOST || '0.0.0.0'
+    const listenPort = options.port !== undefined ? options.port : RADIO_PORT
+    const listenHost = options.host !== undefined ? options.host : appConfig.host
     const displayHost = process.env.RADIO_HOST || 'localhost'
-    serverInstance.listen(RADIO_PORT, listenHost, () => {
-        logger.info(`[Radio] HTTP Express Server active on ${listenHost}:${RADIO_PORT}`)
-        console.log(`📻 [Radio] BotOS Dashboard active: http://${displayHost}:${RADIO_PORT}/dashboard`)
-        console.log(`📻 [Radio] Radio Dashboard active: http://${displayHost}:${RADIO_PORT}/radio`)
-        console.log(`📻 [Radio] Audio Stream URL: http://${displayHost}:${RADIO_PORT}/stream`)
+    serverInstance.listen(listenPort, listenHost, () => {
+        const addr = serverInstance.address()
+        const activePort = typeof addr === 'object' && addr ? addr.port : listenPort
+        logger.info(`[Radio] HTTP Express Server active on ${listenHost}:${activePort}`)
+        if (options.port === undefined) {
+            console.log(`📻 [Radio] BotOS Dashboard active: http://${displayHost}:${activePort}/dashboard`)
+            console.log(`📻 [Radio] Radio Dashboard active: http://${displayHost}:${activePort}/radio`)
+            console.log(`📻 [Radio] Audio Stream URL: http://${displayHost}:${activePort}/stream`)
+        }
     })
 
     serverInstance.on('error', (err) => {
         logger.error('[Radio] Server startup failed:', err.message)
     })
+
+    return { app, server: serverInstance, io }
 }
 
 export function stopRadioServer() {
@@ -1485,6 +1815,11 @@ export function stopRadioServer() {
         clearInterval(archiverInterval)
         archiverInterval = null
     }
+    if (selfMonitorInterval) {
+        clearInterval(selfMonitorInterval)
+        selfMonitorInterval = null
+    }
+    lastSelfCheckSnapshot = null
 
     if (logListenerCallback) {
         removeLogListener(logListenerCallback)
@@ -1497,7 +1832,7 @@ export function stopRadioServer() {
 
     // Close all SSE connections
     for (const client of sseClients) {
-        try { client.end() } catch (_) {}
+        try { client.end() } catch (_) { }
     }
     sseClients.clear()
     sseHistory.length = 0
@@ -1509,6 +1844,7 @@ export function stopRadioServer() {
         io.close()
         io = null
     }
+    controlNs = null
 
     if (serverInstance) {
         serverInstance.close()

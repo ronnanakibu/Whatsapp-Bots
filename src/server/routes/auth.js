@@ -3,6 +3,7 @@ import express from 'express'
 import crypto from 'crypto'
 import { userService } from '../../services/user-v2.js'
 import { authenticateJwt, normalizeUserAgent } from '../middleware/auth.js'
+import { hashPassword } from '../security/controlAuth.js'
 import { streamTokens } from '../radio.js'
 
 const router = express.Router()
@@ -31,7 +32,10 @@ router.post('/register', authenticateJwt, async (req, res) => {
         return res.status(400).json({ success: false, error: 'Username dan password wajib diisi.' })
     }
     try {
-        const passwordHash = crypto.createHash('sha256').update(password).digest('hex')
+        if (String(password).length < 8) {
+            return res.status(400).json({ success: false, error: 'Password minimal 8 karakter.' })
+        }
+        const passwordHash = hashPassword(password)
         await userService.claimAccount(req.user.jid, username, passwordHash)
         res.json({
             success: true,

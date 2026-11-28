@@ -122,11 +122,16 @@ router.get('/users/me/profile', authenticateJwt, async (req, res) => {
                     avatarUrl: profile.avatarUrl,
                     bannerUrl: profile.bannerUrl,
                     bio: profile.bio,
-                    level: 1,
+                    level: null,
                     experiencePoints: profile.stats ? Number(profile.stats.listeningTimeMs) : 0,
                     role: 'user',
                     achievementsUnlocked: profile.stats ? profile.stats.achievementsEarned : 0,
-                    topFavorites: []
+                    topFavorites: null,
+                    provenance: {
+                        level: { measured: false, source: 'prisma:users', unavailableReason: 'User leveling not yet instrumented' },
+                        topFavorites: { measured: false, source: 'sqlite:favorites', unavailableReason: 'Top favorites not aggregated on profile endpoint' },
+                        experiencePoints: { measured: Boolean(profile.stats), source: 'prisma:user_stats', unit: 'ms' }
+                    }
                 }
             }
         })
@@ -182,11 +187,16 @@ router.get('/users/:userJid/profile', async (req, res) => {
                     avatarUrl: profile.avatarUrl,
                     bannerUrl: profile.bannerUrl,
                     bio: profile.bio,
-                    level: 1,
+                    level: null,
                     experiencePoints: profile.stats ? Number(profile.stats.listeningTimeMs) : 0,
                     role: 'user',
                     achievementsUnlocked: profile.stats ? profile.stats.achievementsEarned : 0,
-                    topFavorites: []
+                    topFavorites: null,
+                    provenance: {
+                        level: { measured: false, source: 'prisma:users', unavailableReason: 'User leveling not yet instrumented' },
+                        topFavorites: { measured: false, source: 'sqlite:favorites', unavailableReason: 'Top favorites not aggregated on profile endpoint' },
+                        experiencePoints: { measured: Boolean(profile.stats), source: 'prisma:user_stats', unit: 'ms' }
+                    }
                 }
             }
         })
@@ -214,10 +224,18 @@ router.get('/users/me/stats', authenticateJwt, async (req, res) => {
                 stats: {
                     totalListeningHours: parseFloat((totalListenSec / 3600).toFixed(2)),
                     totalRequestsCount: requestsCount,
-                    favoriteArtist: '—',
-                    favoriteSong: '—',
-                    currentListeningStreak: 1,
-                    longestListeningStreak: 3
+                    favoriteArtist: null,
+                    favoriteSong: null,
+                    currentListeningStreak: null,
+                    longestListeningStreak: null,
+                    provenance: {
+                        totalListeningHours: { measured: Boolean(stats), source: 'prisma:user_stats', unit: 'hours' },
+                        totalRequestsCount: { measured: Boolean(stats), source: 'prisma:user_stats', unit: 'requests' },
+                        favoriteArtist: { measured: false, source: 'prisma:user_stats', unavailableReason: 'Not instrumented' },
+                        favoriteSong: { measured: false, source: 'prisma:user_stats', unavailableReason: 'Not instrumented' },
+                        currentListeningStreak: { measured: false, source: 'prisma:user_stats', unavailableReason: 'Listening streak not instrumented' },
+                        longestListeningStreak: { measured: false, source: 'prisma:user_stats', unavailableReason: 'Listening streak not instrumented' }
+                    }
                 }
             }
         })
@@ -245,10 +263,18 @@ router.get('/users/:userJid/stats', async (req, res) => {
                 stats: {
                     totalListeningHours: parseFloat((totalListenSec / 3600).toFixed(2)),
                     totalRequestsCount: requestsCount,
-                    favoriteArtist: '—',
-                    favoriteSong: '—',
-                    currentListeningStreak: 1,
-                    longestListeningStreak: 3
+                    favoriteArtist: null,
+                    favoriteSong: null,
+                    currentListeningStreak: null,
+                    longestListeningStreak: null,
+                    provenance: {
+                        totalListeningHours: { measured: Boolean(stats), source: 'prisma:user_stats', unit: 'hours' },
+                        totalRequestsCount: { measured: Boolean(stats), source: 'prisma:user_stats', unit: 'requests' },
+                        favoriteArtist: { measured: false, source: 'prisma:user_stats', unavailableReason: 'Not instrumented' },
+                        favoriteSong: { measured: false, source: 'prisma:user_stats', unavailableReason: 'Not instrumented' },
+                        currentListeningStreak: { measured: false, source: 'prisma:user_stats', unavailableReason: 'Listening streak not instrumented' },
+                        longestListeningStreak: { measured: false, source: 'prisma:user_stats', unavailableReason: 'Listening streak not instrumented' }
+                    }
                 }
             }
         })
@@ -403,10 +429,10 @@ router.get('/wrapped/:year', (req, res) => {
                 year: parseInt(year),
                 listening_seconds: totalListenSec,
                 total_requests: totalReqs,
-                favorite_artist: topArtistRow ? topArtistRow.artist : '—',
+                favorite_artist: topArtistRow ? topArtistRow.artist : null,
                 favorite_song_id: topSongRow ? topSongRow.song_id : null,
-                top_genre: 'Pop Indo',
-                percentile: 5.0
+                top_genre: null,
+                percentile: null
             }
 
             db.prepare(`
@@ -439,12 +465,18 @@ router.get('/wrapped/:year', (req, res) => {
                     year: cached.year,
                     listeningHours: parseFloat((cached.listening_seconds / 3600).toFixed(1)),
                     songsPlayed: Math.round(cached.listening_seconds / 240),
-                    favoriteArtist: cached.favorite_artist,
-                    favoriteSong: favSong || '—',
-                    topGenre: cached.top_genre,
+                    favoriteArtist: cached.favorite_artist || null,
+                    favoriteSong: favSong || null,
+                    topGenre: null,
                     totalRequests: cached.total_requests,
-                    rankPercentile: cached.percentile,
-                    achievementsUnlocked: db.prepare('SELECT COUNT(*) as count FROM achievement_unlocks WHERE user_jid = ?').get(userJid)?.count || 0
+                    rankPercentile: null,
+                    achievementsUnlocked: db.prepare('SELECT COUNT(*) as count FROM achievement_unlocks WHERE user_jid = ?').get(userJid)?.count || 0,
+                    provenance: {
+                        listeningHours: { measured: true, source: 'sqlite:listening_sessions', unit: 'hours' },
+                        songsPlayed: { measured: false, estimated: true, source: 'derived:listening_seconds/240', unavailableReason: 'Estimated from average 4m track length' },
+                        topGenre: { measured: false, source: 'sqlite:wrapped', unavailableReason: 'Genre classification not instrumented' },
+                        rankPercentile: { measured: false, source: 'sqlite:wrapped', unavailableReason: 'Percentile ranking not instrumented' }
+                    }
                 }
             }
         })

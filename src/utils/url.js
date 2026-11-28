@@ -32,7 +32,7 @@ export function getBasePublicUrl() {
     }
 
     const host = process.env.RADIO_HOST || 'localhost'
-    const port = process.env.PORT || process.env.RADIO_PORT || '7860'
+    const port = process.env.PORT || process.env.RADIO_PORT || '25637'
 
     // If host already includes scheme (http/https)
     if (host.startsWith('http://') || host.startsWith('https://')) {

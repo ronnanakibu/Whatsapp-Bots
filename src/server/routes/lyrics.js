@@ -19,7 +19,11 @@ const mockLyrics = (title) => ({
         { time: 110, text: "[Chorus]" },
         { time: 130, text: "Terima kasih atas segalanya..." }
     ],
-    synced: true
+    synced: false,
+    isMock: true,
+    measured: false,
+    source: 'placeholder_mock',
+    unavailableReason: 'Live lyrics provider not connected to this endpoint'
 })
 
 router.get('/lyrics/current', (req, res) => {

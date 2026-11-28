@@ -4,44 +4,17 @@ import fs from 'fs'
 import path from 'path'
 import { metricsService } from '../../services/metrics.js'
 import { logger, getLogHistory } from '../../utils/logger.js'
-import { authenticateJwt } from '../middleware/auth.js'
+import { db } from '../../services/db.js'
+import { buildControlMetricsSnapshot } from '../telemetry.js'
+import { authenticateControlJwt, requirePermission, requireAnyPermission } from '../middleware/auth.js'
+import { PERMISSIONS, hasPermission } from '../security/rbac.js'
+import { timingSafeEqualStr, recordAudit } from '../security/controlAuth.js'
+import { redactSensitive } from '../security/redaction.js'
 
 const router = express.Router()
 
-// ─────────────────────────────────────────────
-// AUTH HELPER UNTUK LOGS & SYSTEM WEBHOOK
-// ─────────────────────────────────────────────
-function isAuthorized(req) {
-    // Selalu izinkan akses GET untuk membaca log (app.log & logs)
-    if (req.method === 'GET') {
-        return true
-    }
-
-    const authHeader = req.headers['authorization']
-    const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
-    const key = req.query.key || req.headers['x-api-key'] || bearerToken
-
-    const allowedKeys = [
-        process.env.ADMIN_KEY,
-        process.env.ADMIN_SECRET,
-        process.env.PTERO_API_KEY,
-        process.env.JWT_SECRET,
-        'ronnbot-logs',
-        'wabot2026',
-        '6285172013920'
-    ].filter(Boolean)
-
-    if (key && allowedKeys.includes(key)) {
-        return true
-    }
-
-    const ownerRaw = process.env.OWNER_NUMBER || ''
-    const ownerNumbers = ownerRaw.split(',').map(n => n.trim().replace(/[^0-9]/g, '')).filter(Boolean)
-    if (key && ownerNumbers.includes(String(key).replace(/[^0-9]/g, ''))) {
-        return true
-    }
-
-    return false
+function getRedactedLogHistory() {
+    return getLogHistory().map(line => redactSensitive(String(line)))
 }
 
 // ─────────────────────────────────────────────
@@ -426,22 +399,33 @@ function renderLogTerminalHtml(lines, source, fileName) {
 }
 
 // ─────────────────────────────────────────────
-// DIRECT APP.LOG & CONSOLE.LOG STREAM HANDLER
+// DIRECT APP.LOG & CONSOLE.LOG STREAM HANDLER (PROTECTED + REDACTED)
 // ─────────────────────────────────────────────
 function handleAppLog(req, res) {
+    const hasFullLogs = hasPermission(req.controlUser, PERMISSIONS.LOGS_READ_FULL)
     const isConsole = req.path.includes('console') || req.query.file === 'console'
     const targetFile = isConsole ? 'console.log' : 'app.log'
     const targetPath = path.resolve(`./storage/logs/${targetFile}`)
 
     const isDownload = req.query.download === 'true'
-    if (isDownload && fs.existsSync(targetPath)) {
-        return res.download(targetPath, targetFile)
+    if (isDownload) {
+        if (!hasFullLogs) {
+            return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Full log permission required for download.' } })
+        }
+        if (fs.existsSync(targetPath)) {
+            const rawContent = fs.readFileSync(targetPath, 'utf8')
+            const redactedContent = rawContent.split('\n').map(l => redactSensitive(l)).join('\n')
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+            res.setHeader('Content-Disposition', `attachment; filename="${targetFile}"`)
+            return res.send(redactedContent)
+        }
     }
 
     const searchQuery = req.query.search || req.query.q ? String(req.query.search || req.query.q).toLowerCase() : null
-    const linesParam = req.query.lines || req.query.tail || '1000'
-    const isAll = linesParam === 'all' || req.query.all === 'true'
-    const limit = isAll ? Infinity : Math.min(Math.max(parseInt(linesParam, 10) || 1000, 1), 50000)
+    const linesParam = req.query.lines || req.query.tail || (hasFullLogs ? '1000' : '100')
+    const isAll = (linesParam === 'all' || req.query.all === 'true') && hasFullLogs
+    const maxCap = hasFullLogs ? 50000 : 100
+    const limit = isAll ? Infinity : Math.min(Math.max(parseInt(linesParam, 10) || 100, 1), maxCap)
 
     let content = ''
     let sourceUsed = targetFile
@@ -460,7 +444,7 @@ function handleAppLog(req, res) {
                 content = fs.readFileSync(targetPath, 'utf8')
             }
         } catch (err) {
-            logger.warn(`[System/AppLog] Gagal baca ${targetPath}: ${err.message}`)
+            logger.warn(`[System/AppLog] Gagal baca ${targetFile}: ${err.message}`)
         }
     }
 
@@ -476,7 +460,7 @@ function handleAppLog(req, res) {
     }
 
     // Fallback jika file fisik belum ada/kosong, gunakan in-memory log buffer
-    let lines = content ? content.split('\n') : getLogHistory()
+    let lines = content ? content.split('\n').map(l => redactSensitive(l)) : getRedactedLogHistory()
     if (!content) sourceUsed = 'memory (fallback)'
 
     if (searchQuery) {
@@ -505,7 +489,7 @@ function handleAppLog(req, res) {
         return res.send(renderLogTerminalHtml(resultLines, sourceUsed, targetFile))
     }
 
-    // Default: text/plain response (langsung dibaca di curl, script, atau AI inspector)
+    // Default: text/plain response
     res.setHeader('Content-Type', 'text/plain; charset=utf-8')
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
     return res.send(resultLines.join('\n'))
@@ -515,15 +499,10 @@ function handleAppLog(req, res) {
 // LOGS HANDLER (app.log, console.log, in-memory)
 // ─────────────────────────────────────────────
 function handleLogs(req, res) {
-    if (!isAuthorized(req)) {
-        return res.status(401).json({
-            success: false,
-            error: 'Unauthorized: Harap sertakan ?key=ronnbot-logs atau header x-api-key'
-        })
-    }
-
+    const hasFullLogs = hasPermission(req.controlUser, PERMISSIONS.LOGS_READ_FULL)
     const fileType = (req.query.file || req.query.type || 'app').toLowerCase()
-    const limit = Math.min(Math.max(parseInt(req.query.lines || '250', 10), 1), 5000)
+    const maxCap = hasFullLogs ? 5000 : 100
+    const limit = Math.min(Math.max(parseInt(req.query.lines || (hasFullLogs ? '250' : '100'), 10), 1), maxCap)
     const searchQuery = req.query.search ? String(req.query.search).toLowerCase() : null
     const isRaw = req.query.raw === 'true' || req.path.endsWith('/raw')
     const isDownload = req.query.download === 'true'
@@ -535,10 +514,11 @@ function handleLogs(req, res) {
     }
 
     if (fileType === 'memory') {
-        let history = getLogHistory()
+        let history = getRedactedLogHistory()
         if (searchQuery) {
             history = history.filter(line => line.toLowerCase().includes(searchQuery))
         }
+        history = history.slice(-limit)
         if (isRaw) {
             res.setHeader('Content-Type', 'text/plain; charset=utf-8')
             return res.send(history.join('\n'))
@@ -553,8 +533,17 @@ function handleLogs(req, res) {
 
     const targetPath = logPaths[fileType] || logPaths.app
 
-    if (isDownload && fs.existsSync(targetPath)) {
-        return res.download(targetPath)
+    if (isDownload) {
+        if (!hasFullLogs) {
+            return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Full log permission required for download.' } })
+        }
+        if (fs.existsSync(targetPath)) {
+            const rawContent = fs.readFileSync(targetPath, 'utf8')
+            const redactedContent = rawContent.split('\n').map(l => redactSensitive(l)).join('\n')
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+            res.setHeader('Content-Disposition', `attachment; filename="${fileType}.log"`)
+            return res.send(redactedContent)
+        }
     }
 
     let fileContent = ''
@@ -574,7 +563,7 @@ function handleLogs(req, res) {
                 fileContent = fs.readFileSync(targetPath, 'utf8')
             }
         } catch (readErr) {
-            logger.warn(`[System/Logs] Gagal membaca ${targetPath}: ${readErr.message}`)
+            logger.warn(`[System/Logs] Gagal membaca ${fileType}: ${readErr.message}`)
         }
     }
 
@@ -586,7 +575,7 @@ function handleLogs(req, res) {
         } catch (_) {}
     }
 
-    let lines = fileContent ? fileContent.split('\n') : getLogHistory()
+    let lines = fileContent ? fileContent.split('\n').map(l => redactSensitive(l)) : getRedactedLogHistory()
     if (!fileContent) sourceUsed = 'memory (fallback)'
 
     if (searchQuery) {
@@ -609,12 +598,11 @@ function handleLogs(req, res) {
     return res.json({
         success: true,
         source: sourceUsed,
-        path: targetPath,
         filter: searchQuery || null,
         totalLines,
         returnedLines: tailLines.length,
         lines: tailLines,
-        inMemorySnippet: getLogHistory().slice(-20)
+        inMemorySnippet: getRedactedLogHistory().slice(-20)
     })
 }
 
@@ -622,55 +610,96 @@ function handleLogs(req, res) {
 // ENDPOINTS
 // ─────────────────────────────────────────────
 
-// Liveness Ping (Digunakan untuk Docker / Railway Healthcheck)
+// Liveness Ping (Canonical deterministic /ping, /api/ping, /api/system/ping, /api/v2/system/ping)
 router.get('/system/ping', (req, res) => {
-    res.json({ success: true, message: 'PONG', timestamp: Date.now() })
+    res.json({
+        success: true,
+        status: 'ok',
+        message: 'PONG',
+        uptime: Math.floor(process.uptime()),
+        timestamp: Date.now()
+    })
 })
 router.get('/ping', (req, res) => {
-    res.json({ success: true, message: 'PONG', timestamp: Date.now() })
+    res.json({
+        success: true,
+        status: 'ok',
+        message: 'PONG',
+        uptime: Math.floor(process.uptime()),
+        timestamp: Date.now()
+    })
 })
 
-// Direct Log View Endpoints (Langsung Streaming Plain Text .log)
-router.get('/system/app.log', handleAppLog)
-router.get('/app.log', handleAppLog)
-router.get('/system/console.log', handleAppLog)
-router.get('/console.log', handleAppLog)
+const logAuthMiddleware = [
+    authenticateControlJwt,
+    requireAnyPermission([PERMISSIONS.LOGS_READ_SUMMARY, PERMISSIONS.LOGS_READ_FULL])
+]
 
-// Logs Endpoints (JSON / Raw API)
-router.get('/system/logs', handleLogs)
-router.get('/system/logs/raw', (req, res) => {
+// Direct Log View Endpoints (Protected + Redacted)
+router.get('/system/app.log', ...logAuthMiddleware, handleAppLog)
+router.get('/app.log', ...logAuthMiddleware, handleAppLog)
+router.get('/system/console.log', ...logAuthMiddleware, handleAppLog)
+router.get('/console.log', ...logAuthMiddleware, handleAppLog)
+
+// Logs Endpoints (Protected + Redacted)
+router.get('/system/logs', ...logAuthMiddleware, handleLogs)
+router.get('/system/logs/raw', ...logAuthMiddleware, (req, res) => {
     req.query.raw = 'true'
     handleLogs(req, res)
 })
-router.get('/logs', handleLogs)
-router.get('/logs/raw', (req, res) => {
+router.get('/logs', ...logAuthMiddleware, handleLogs)
+router.get('/logs/raw', ...logAuthMiddleware, (req, res) => {
     req.query.raw = 'true'
     handleLogs(req, res)
 })
 
-// SYSTEM RESTART Webhook
-router.post('/system/restart', (req, res) => {
+// SYSTEM RESTART Webhook (Deployment PTERO_API_KEY OR Control Owner JWT + confirmation)
+router.post('/system/restart', (req, res, next) => {
     const authHeader = req.headers['authorization']
-    const token = authHeader && authHeader.split(' ')[1]
+    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
+    const pteroKey = (process.env.PTERO_API_KEY || '').trim()
 
-    if (!token || token !== process.env.PTERO_API_KEY) {
-        logger.error('[System/Restart] Unauthorized remote restart attempt blocked.')
-        return res.status(401).json({ success: false, error: 'Unauthorized' })
+    if (pteroKey && token && timingSafeEqualStr(token, pteroKey)) {
+        req.restartActor = { id: 'deploy-webhook', role: 'system' }
+        return next()
     }
+
+    return authenticateControlJwt(req, res, () => {
+        requirePermission(PERMISSIONS.SYSTEM_RESTART)(req, res, () => {
+            if (req.body?.confirm !== true) {
+                return res.status(400).json({
+                    success: false,
+                    error: { code: 'CONFIRMATION_REQUIRED', message: 'Explicit confirmation ({ confirm: true }) required for restart.' }
+                })
+            }
+            req.restartActor = { id: req.controlUser.id, role: req.controlUser.role }
+            next()
+        })
+    })
+}, (req, res) => {
+    recordAudit({
+        actorId: req.restartActor?.id || null,
+        actorRole: req.restartActor?.role || null,
+        action: 'system:restart',
+        target: 'process',
+        result: 'allowed',
+        correlationId: req.id || null
+    })
 
     res.json({ success: true, message: 'Restarting bot...' })
 
-    logger.warn('[System/Restart] Remote restart triggered via deployment webhook.')
+    logger.warn('[System/Restart] Remote restart triggered by authorized actor.')
     setTimeout(() => {
         process.exit(0)
     }, 1000)
 })
 
-router.get('/system/metrics', authenticateJwt, (req, res) => {
+router.get('/system/metrics', authenticateControlJwt, requirePermission(PERMISSIONS.OVERVIEW_READ), (req, res) => {
     res.json({
         success: true,
         data: {
-            metrics: metricsService.getSystemMetrics()
+            metrics: metricsService.getSystemMetrics(),
+            provenance: buildControlMetricsSnapshot({ db, metricsService })
         }
     })
 })

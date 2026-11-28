@@ -11,6 +11,7 @@ import { dbService } from '../services/db.js'
 import { interactiveService } from '../services/interactive.js'
 import { unwrapMessage, getCleanQuoted } from '../utils/message.js'
 import { mediaCache } from '../services/mediaCache.js'
+import { inboxService } from '../services/inbox.js'
 import { handleIncomingViewOnce } from './viewOnce.js'
 import { batchStickerService } from '../services/batchSticker.js'
 
@@ -77,6 +78,11 @@ async function processSingleMessage(sock, msg) {
         // Log setiap incoming message ke konsol terminal
         botLogger.message({ sender, type, body, isGroup, chatId: from })
 
+        // Persist incoming/echoed WhatsApp message to durable Inbox store (idempotent)
+        try {
+            inboxService.ingestBaileysUpsert(msg)
+        } catch (_) { }
+
         // Hook Anti-Delete & Anti-Edit
         if (type === 'protocolMessage') {
             const { checkRevokeUpsert } = await import('./revoke.js')
@@ -95,6 +101,21 @@ async function processSingleMessage(sock, msg) {
         // Filter: abaikan respon command / AI untuk pesan dari bot sendiri
         if (msg.key.fromMe) return
 
+        // Phase 1C Human Takeover Gate (fail-closed + generation version fencing):
+        // inbound messages stay ingested in Inbox, while automated commands, read receipts,
+        // moderator actions, and AI replies are suppressed when takeover is active or DB fails.
+        const preGate = inboxService.evaluateAutomatedSendGate(from)
+        if (!preGate.allowed) {
+            inboxService.recordSuppressedAutomatedSend(from, {
+                outcome: preGate.outcome,
+                expectedVersion: preGate.expectedVersion,
+                actualVersion: preGate.actualVersion
+            })
+            return
+        }
+        const capturedVersion = preGate.state?.version ?? 1
+
+        await inboxService.runWithAutomationContext({ chatJid: from, capturedVersion }, async () => {
         // ── RECORD MEDIA FOR BATCH PROCESSING (ALBUM / BURST DETECTION) ──
         batchStickerService.recordMedia(from, sender, msg)
 
@@ -316,7 +337,7 @@ async function processSingleMessage(sock, msg) {
             await executeAiFlow(ctx, bodyWithoutMention)
             return
         }
-
+        })
 
     } catch (err) {
         botLogger.err('handler', err, 'fatal')
